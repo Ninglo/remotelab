@@ -1,4 +1,6 @@
 import { handleSiteLogin } from './router-site-login.mjs';
+import { handleSiteUsageRoutes } from './router-site-usage.mjs';
+import { injectSiteUsageHtml } from './site-usage-html.mjs';
 import { handleSiteDirectory } from './router-site-directory.mjs';
 import { checkEmployeeStaticAccess } from './employee-static-access.mjs';
 import {readMonitoringPortal} from './monitoring-portal.mjs';
@@ -1348,6 +1350,7 @@ export async function handleRequest(req, res) {
   const pathname = parsedUrl.pathname;
 
   if (await handleSiteLogin(req, res, pathname)) return;
+  if (pathname === '/api/site-usage/events' && await handleSiteUsageRoutes({ req, res, pathname })) return;
   if (await handleSiteDirectory(req, res, pathname)) return;
   if (await checkEmployeeStaticAccess(req, res, pathname)) return;
 
@@ -1360,10 +1363,13 @@ export async function handleRequest(req, res) {
     }
     try {
       const versionTag = getSingleQueryValue(parsedUrl.query?.v).trim();
-      const content = rewriteCssImportUrls(
+      let content = rewriteCssImportUrls(
         await readFile(staticAsset.filepath),
         staticAsset.contentType.startsWith('text/css') ? versionTag : '',
       );
+      if (req.employeeStaticPage && req.method === 'GET' && !req.headers.range && /^text\/html/.test(staticAsset.contentType)) {
+        content = injectSiteUsageHtml(content);
+      }
       if (staticAsset.contentType.startsWith('audio/')) {
         writeRangedStaticResponse(req, res, staticAsset, content);
         return;
@@ -1467,6 +1473,7 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+  if (await handleSiteUsageRoutes({ req, res, pathname, authSession })) return;
 
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;
   if (await handleMonitoringPreview({ req, res, pathname })) return;

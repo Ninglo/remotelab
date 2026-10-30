@@ -5,6 +5,7 @@ import { readBody } from '../lib/utils.mjs';
 import { employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
 import { createUsageEventStore, usageKey, validUsageSiteId as validSite } from './usage-events.mjs';
 import { reverseLedgerLines } from './context-query-ledger-reader.mjs';
+import { legacySiteLogin } from '../lib/legacy-site-login.mjs';
 
 const DAY = 86_400_000;
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
@@ -19,7 +20,7 @@ function validAction(event) {
 
 // A browser supplies no site ID. Its same-origin Referer is matched to the
 // current employee publication/preview registry, never fetched as a URL.
-export async function resolveSiteUsageSite(req, { publicPagesDir = PUBLIC_PAGES_DIR, configDir = CONFIG_DIR } = {}) {
+export async function resolveSiteUsageSite(req, { publicPagesDir = PUBLIC_PAGES_DIR, configDir = CONFIG_DIR, personId = '' } = {}) {
   let page;
   try { page = new URL(req.headers.referer); } catch { return null; }
   if (page.origin !== req.headers.origin || page.username || page.password) return null;
@@ -35,7 +36,9 @@ export async function resolveSiteUsageSite(req, { publicPagesDir = PUBLIC_PAGES_
     }
     const routes = JSON.parse(await readFile(join(configDir, 'preview-routes.json'), 'utf8'));
     const route = routes?.[slug];
-    return route?.access === 'employee' && Number.isInteger(route.port) && route.port > 0 && route.port <= 65535 ? site : null;
+    if (!Number.isInteger(route?.port) || route.port < 1 || route.port > 65535) return null;
+    if (route.access === 'employee' || route.recognizeIdentity === true) return site;
+    return route.reuseIdentity === true && personId && await legacySiteLogin.lookup(slug, personId) ? site : null;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error; // Invalid/unreadable policy is unavailable, never public.
@@ -163,7 +166,7 @@ export function createSiteUsageHandler({ store = createSiteUsageStore(), personF
       }
       const person = await personFor(req, res);
       if (!person?.id || person.auth_kind === 'service') { send(401, { error: 'Employee browser identity required' }); return true; }
-      const site = await resolveSite(req);
+      const site = await resolveSite(req, { personId: person.id });
       if (!site) { send(403, { error: 'A registered employee website Referer is required' }); return true; }
       let body;
       try { body = JSON.parse(await readBody(req, 32 * 1024)); }

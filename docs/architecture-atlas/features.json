@@ -758,9 +758,9 @@
         {
           "id": "employee-site-login",
           "name": "网站统一员工登录",
-          "purpose": "内部站点复用自有飞书员工登录，无需各站密码；公司 SSO 适配保留但当前暂停接入。",
+          "purpose": "内部站点复用飞书员工登录，已有账号与旧站逐步兼容接入。",
           "entry": "沿托管网站入口接入；设备授权走 /site-login，公司 SSO 由已登记的网关完成登录和回调。",
-          "condition": "当前沿用飞书设备授权与共享会话，不授予控制台凭证，保留原公开站、Basic Auth 和研究 API 登录。未来启用公司 SSO 需另完成生产应用和网关登记。",
+          "condition": "复用有效网页登录、员工和旧前沿身份；控制台飞书入口仅映射已有个人凭据的原账号，员工身份不直接授予控制台使用权。旧 Basic 保留原验证，按人按站复用；公开入口保持原访问方式。公司 SSO 暂停。",
           "example": "发布一个内部网站，公司员工均可访问，由本次创建人负责。",
           "sources": [
             "lib/employee-site-identity.mjs",
@@ -774,7 +774,13 @@
             "static/site-login.js",
             "docs/employee-site-login.md",
             "docs/architecture-atlas/employee-login-demo.html",
-            "examples/employee-site-login/README.md"
+            "examples/employee-site-login/README.md",
+            "chat/workbench-site-login.mjs",
+            "lib/legacy-site-login.mjs",
+            "chat/preview-proxy.mjs",
+            "lib/preview-command.mjs",
+            "tests/test-workbench-site-login.mjs",
+            "tests/test-legacy-site-login.mjs"
           ],
           "commands": []
         },
@@ -785,7 +791,31 @@
           "entry": "员工登录后打开 /sites；新发布自动收录，其他实例或外部网站手动登记。",
           "condition": "目录覆盖当前实例；缺失创建人和源码不猜填。登记修改不改变原站权限或部署，导出清单不含凭据且不执行迁移。",
           "example": "收整大家发布的网站，登记项目、维护联系人和源码部署位置。",
-          "sources": ["lib/site-directory.mjs", "chat/router-site-directory.mjs", "static/site-directory.js", "static/site-directory.css", "templates/site-directory.html", "docs/site-directory.md"],
+          "sources": [
+            "lib/site-directory.mjs",
+            "chat/router-site-directory.mjs",
+            "static/site-directory.js",
+            "static/site-directory.css",
+            "templates/site-directory.html",
+            "docs/site-directory.md"
+          ],
+          "commands": []
+        },
+        {
+          "id": "site-usage",
+          "name": "网站行为回收",
+          "purpose": "将已核用户的网站访问和显式操作回收到独立账本，按站点汇总。",
+          "entry": "员工网站与总站自动加载同源脚本；通过原控制台鉴权查询 /api/site-usage/summary。",
+          "condition": "服务端确定身份与登记站点。旧 Basic 需有该人的原站映射；公开兼容站仅采集已登录员工。原 CSP 禁止连接时保留页面，匿名不补归属。网站事件不改变控制台原有统计分母。",
+          "example": "查看员工网站的去重访问人数、访问批次和明确标记的打开、下载、预览动作。",
+          "sources": [
+            "chat/router-site-usage.mjs",
+            "chat/site-usage-html.mjs",
+            "static/site-usage.js",
+            "docs/site-usage.md",
+            "tests/test-site-usage.mjs",
+            "tests/test-site-usage-html.mjs"
+          ],
           "commands": []
         }
       ]

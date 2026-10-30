@@ -3,6 +3,7 @@ import { createSiteDirectory } from '../lib/site-directory.mjs';
 import { getCachedAuthDocument, loadAuthDocument } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { requireEmployeeSite, sameSiteOrigin } from './employee-site-auth.mjs';
+import { injectSiteUsageHtml } from './site-usage-html.mjs';
 
 export const siteDirectory = createSiteDirectory({ people: async () => (getCachedAuthDocument() || await loadAuthDocument()).people });
 export function createSiteDirectoryHandler({ directory = siteDirectory, authorize = requireEmployeeSite } = {}) {
@@ -29,7 +30,8 @@ export function createSiteDirectoryHandler({ directory = siteDirectory, authoriz
       const asset = assets[pathname]; if (!asset) { send(404, { error: '入口不存在' }); return true; }
       res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
       res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'same-origin');
-      const body = await readFile(new URL(asset[0], import.meta.url));
+      let body = await readFile(new URL(asset[0], import.meta.url));
+      if (asset[1] === 'text/html' && req.method === 'GET') body = injectSiteUsageHtml(body, res.getHeader('Content-Security-Policy'));
       res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8' }); res.end(req.method === 'HEAD' ? undefined : body);
     } catch (e) { send(e.status || (e instanceof SyntaxError ? 400 : 503), { error: e.status ? e.message : '暂时无法读取或保存，请保留内容后重试' }); }
     return true;

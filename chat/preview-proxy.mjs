@@ -1,4 +1,6 @@
-import { requireEmployeeSite, sameSiteOrigin } from './employee-site-auth.mjs';
+import { requireEmployeeSite, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
+import { legacySiteLogin } from '../lib/legacy-site-login.mjs';
+import { siteUsageHtmlTransform } from './site-usage-html.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -31,6 +33,8 @@ async function routeFor(slug) {
     return {
       port: route.port,
       access: route.access || 'basic',
+      reuseIdentity: route.reuseIdentity === true,
+      recognizeIdentity: route.recognizeIdentity === true,
       postPaths: Array.isArray(route.postPaths) ? route.postPaths.filter(validPreviewPostPath) : [],
       requestHeaders: Array.isArray(route.requestHeaders) ? route.requestHeaders.filter(validPreviewRequestHeader) : [],
     };
@@ -57,6 +61,10 @@ export async function handlePreviewProxy(req, res, pathname) {
     if (!['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
       res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end('Cross-origin write denied'); return true;
     }
+  } else if (route.reuseIdentity || route.recognizeIdentity) {
+    // Optional recognition preserves old requests, challenges and in-flight work.
+    // Failure of the new identity store must not block the original login.
+    try { person = await employeeSitePerson(req, res); } catch {}
   }
   const suffix = match[2] || '/';
   const allowsPost = route.postPaths.includes(suffix);
@@ -71,19 +79,45 @@ export async function handlePreviewProxy(req, res, pathname) {
   const requestHeaders = ['authorization', 'range', 'if-range', 'if-none-match', 'if-modified-since',
     'content-type', 'content-length', 'origin', 'sec-fetch-site', ...route.requestHeaders];
   for (const name of requestHeaders) {
-    if (person && name === 'authorization') continue;
+    if (route.access === 'employee' && name === 'authorization') continue;
     if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];
   }
   if (person) headers['x-remotelab-person-id'] = person.id;
-  const upstream = http.request({ hostname: '127.0.0.1', port: route.port, path: `${suffix}${search}`, method: req.method, headers, timeout: 5000 }, (response) => {
+  let replayedAuthorization = false;
+  if (route.access === 'basic' && route.reuseIdentity && person) {
+    // Keep the browser's original credential authoritative when it is present.
+    if (typeof req.headers.authorization === 'string') headers.authorization = req.headers.authorization;
+    else try {
+      headers.authorization = await legacySiteLogin.lookup(match[1], person.id) || undefined;
+      replayedAuthorization = Boolean(headers.authorization);
+    } catch {}
+    if (!headers.authorization) delete headers.authorization;
+    if (replayedAuthorization && !['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
+      res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end('Cross-origin write denied'); return true;
+    }
+  }
+  const upstream = http.request({ hostname: '127.0.0.1', port: route.port, path: `${suffix}${search}`, method: req.method, headers, timeout: 5000 }, async (response) => {
+    if (route.access === 'basic' && route.reuseIdentity && person && req.method === 'GET'
+      && suffix === '/' && response.statusCode >= 200 && response.statusCode < 300
+      && req.headers.authorization?.startsWith('Basic ')) {
+      // Enabling reuse verified the root rejects anonymous access. A successful
+      // original root login is proof for this Person, never a company-wide grant.
+      await legacySiteLogin.remember(match[1], person.id, req.headers.authorization)
+        .catch(() => console.error('Could not retain a legacy site identity mapping'));
+    }
     const allowed = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified',
-      'www-authenticate', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'x-robots-tag'];
+      'www-authenticate', 'content-security-policy', 'content-encoding', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'x-robots-tag'];
     const responseHeaders = { 'Cache-Control': 'private, no-store, max-age=0' };
     for (const name of allowed) {
       if (response.headers[name]) responseHeaders[name] = response.headers[name];
     }
+    const html = person && req.method === 'GET' && !req.headers.range && response.statusCode === 200
+      && /^text\/html(?:;|$)/i.test(response.headers['content-type'] || '')
+      && (!response.headers['content-encoding'] || response.headers['content-encoding'] === 'identity');
+    if (html) { delete responseHeaders['content-length']; delete responseHeaders.etag; }
     res.writeHead(response.statusCode || 502, responseHeaders);
-    response.pipe(res);
+    if (html) response.pipe(siteUsageHtmlTransform(response.headers['content-security-policy'] || '')).pipe(res);
+    else response.pipe(res);
   });
   upstream.on('timeout', () => upstream.destroy(new Error('Preview service timed out')));
   upstream.on('error', () => {

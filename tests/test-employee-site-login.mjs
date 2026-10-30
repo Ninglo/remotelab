@@ -128,6 +128,21 @@ try {
   const legacy = cookie.replace('employee_site_session=', 'qianyan_session=');
   const upgraded = await request('/api/qianyan/internal/auth/me', { headers: { Cookie: legacy } });
   assert.match(upgraded.headers.get('set-cookie'), /employee_site_session=.*Path=\/;/);
+  const mixed = await request('/api/qianyan/internal/auth/me', { headers: { Cookie: 'employee_site_session=expired-shared; ' + legacy } });
+  assert.equal(mixed.status, 200, 'a stale shared cookie must not mask a valid legacy identity');
+  assert.match(mixed.headers.get('set-cookie'), /employee_site_session=.*Path=\/;/);
+  assert.equal((await identity.member({ headers: {} }, { personId: people[0].id })).id, people[0].id,
+    'a valid workbench session with an exact same-realm Feishu identity is already verified');
+  assert.equal(await identity.member({ headers: {} }, { personId: people[0].id, authKind: 'service' }), null);
+  assert.equal(await identity.member({ headers: {} }, { personId: 'unknown-person' }), null);
+  const remoteRequest = { headers: {} };
+  const known = await identity.member(remoteRequest, { personId: people[0].id });
+  const reused = await identity.renew(remoteRequest, known);
+  assert.match(reused, /employee_site_session=/, 'a previously verified Web identity gets a shared employee session without Feishu');
+  const reusedRequest = { headers: { cookie: reused.split(';')[0] } };
+  assert.equal((await identity.member(reusedRequest, null)).id, people[0].id);
+  assert.equal(await identity.renew(reusedRequest, await identity.member(reusedRequest, { personId: people[0].id })), null,
+    'existing fresh shared sessions are retained without cookie churn');
   assert.equal(calls, count, 'cross-site access, restart and migration do not call Feishu again');
 
   if (process.env.EMPLOYEE_TEST_PLAYWRIGHT && process.env.EMPLOYEE_TEST_CHROME) {

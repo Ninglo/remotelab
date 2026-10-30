@@ -53,8 +53,10 @@ export function createEmployeeSiteAccess(identity = employeeSiteIdentity, remote
       // A server credential is not an employee browser login.
       const person = await identity.member(req, remote?.authKind === 'service' ? null : remote);
       if (person) {
-        const renewed = await identity.renew(req, person);
-        if (renewed) res.setHeader('Set-Cookie', renewed);
+        try {
+          const renewed = await identity.renew(req, person);
+          if (renewed) res.setHeader('Set-Cookie', renewed);
+        } catch { console.error('Employee login renewal failed; retaining this request’s verified identity'); }
       }
       return person;
     })());

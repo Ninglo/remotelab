@@ -1,4 +1,6 @@
 import { readFile } from 'fs/promises';
+import { handleWorkbenchSiteLogin } from './workbench-site-login.mjs';
+import { siteLoginConfigured } from '../lib/site-publication-policy.mjs';
 import { performance } from 'perf_hooks';
 import {
   auth,
@@ -62,6 +64,8 @@ function safeLoginNextPath(value) {
   }
   return path;
 }
+
+if (await handleWorkbenchSiteLogin(req, res, pathname, parsedUrl.query)) return true;
 
 function normalizeForwardedPrefix(value) {
   const trimmed = trimString(value);
@@ -319,6 +323,8 @@ if (pathname === '/login') {
     ERROR_CLASS: hasError ? '' : 'hidden',
     MODE: mode,
     NEXT_PATH: escapeHtml(nextPath),
+    FEISHU_LOGIN_URL: escapeHtml('/login/feishu?next=' + encodeURIComponent(nextPath)),
+    FEISHU_LOGIN_CLASS: await siteLoginConfigured().catch(() => false) ? '' : 'hidden',
   });
   const renderMs = performance.now() - renderStartMs;
   const totalMs = performance.now() - requestStartMs;

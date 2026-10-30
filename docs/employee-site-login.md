@@ -61,6 +61,12 @@ confirmation; the page observes completion at the provider's interval and stops
 at its deadline. Refreshing an existing attempt reuses its pending authorization.
 No website password is issued.
 
+A valid RemoteLab browser session with an exact Feishu identity in the configured
+realm is already verified, receives a shared employee cookie, and enters websites without another Feishu
+confirmation. Explicit `personIds` remain supported. A service credential does
+not establish a human browser identity. A stale shared cookie does not hide a
+valid legacy research cookie; the latter upgrades without reauthorization.
+
 `employee_site_session` is host-only, HttpOnly, SameSite=Lax, Secure on HTTPS and
 scoped to `/`. Static pages, previews and research internal APIs share it on the
 same instance domain. The existing `qianyan-identity.json` durable store is reused.
@@ -90,13 +96,54 @@ forwarded. The existing allowed-method and exact POST-path registration remain;
 employee POSTs additionally require the same origin. Application input validation
 and business behavior stay with the application.
 
-The employee cookie never authenticates the RemoteLab workbench. New verified
-employees receive a Person identity with no control-plane credential. A service
-token is not accepted as an employee browser login.
+The employee cookie does not directly authenticate control-plane APIs. The
+RemoteLab login page offers `/login/feishu?next=...`: an existing valid workbench
+session continues unchanged; otherwise, a verified employee maps to the exact
+existing Person only if that Person currently has a personal password or token
+credential and Web identity. The bridge persists an ordinary workbench session
+before redirecting. New employees with no workbench credential are not admitted.
+The original password and Token forms remain usable when the optional bridge is
+unavailable. Existing requests, Sessions and credentials are not rewritten.
+
+## Existing websites without interrupting their original login
+
+Ask the agent to enable compatible identity reuse for selected existing Basic
+websites, preserve the original URLs and allowed operations, and verify both the
+old login and the exact person's reused login. Use `preview reuse-identity --slug
+<existing-slug>` only after the original root still returns a Basic challenge.
+It adds `reuseIdentity: true`; it preserves the port, owner, access mode, registered
+POST paths and forwarded-header list. It does not restart the application.
+
+The old Basic request continues unchanged. When a browser also has a verified
+employee identity and its original Basic login succeeds at the site's root, the
+proxy saves that site's accepted credential for that Person. Later requests from
+that verified Person can reuse it; a different employee gets no grant. The
+upstream still validates the credential on every request, so changing or revoking
+the original credential takes effect. Explicit browser credentials take precedence.
+Replayed authenticated writes require the same origin; original authenticated
+requests retain their existing CSRF contract. Failed optional mapping storage
+does not interrupt the old access path. Sharing a password alone never identifies
+one employee, and anonymous historical visits are not attributed retrospectively.
+
+`site-legacy-logins.json` is a private credential store (0600), outside Git. It
+contains reusable Basic authorization and must remain with private instance
+backup/credential handling; never include it in site-directory exports, telemetry
+or public artifacts. Disable reuse by removing `reuseIdentity` from the retained
+route; original Basic authentication remains in effect.
+
+For an intentionally public existing application, `preview recognize-identity
+--slug <existing-slug>` adds optional verified attribution without requiring login
+or changing its original access. Anonymous and in-flight calls continue. Closing
+public access requires a separate access-policy change; do not infer it from a
+legacy `basic` metadata label. No automatic company-SSO switch is performed.
 
 ## Verification and rollout
 
 Run `node scripts/run-with-clean-instance-env.mjs node tests/test-employee-site-login.mjs`.
+`tests/test-workbench-site-login.mjs` covers existing-session precedence, the
+exact original account, durable exchange, admission and failure compatibility;
+`tests/test-legacy-site-login.mjs` covers preserved Basic calls and writes,
+per-person reuse, forgery, revocation and private persistence.
 Optional `EMPLOYEE_TEST_PLAYWRIGHT` (module path) and `EMPLOYEE_TEST_CHROME`
 (executable path) exercise the actual login page at desktop/mobile sizes against
 an isolated provider fixture. The fixture is not a real employee authorization.

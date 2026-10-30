@@ -33,6 +33,15 @@ select it with `--access basic`. The command checks its upstream Basic challenge
 Switching a known route to `--access employee` requires removing the redundant
 upstream login; no passwords are automatically migrated or deleted.
 
+For a gradual migration that preserves existing Basic logins and registered
+operations, use `preview reuse-identity --slug <existing-name>`. The upstream must
+still challenge anonymous root access. Only a verified employee who also
+successfully uses the original site's Basic login receives a reusable mapping;
+other employees gain no access. `preview recognize-identity --slug <existing-name>`
+adds optional attribution to an intentionally public upstream without gating it.
+Both commands preserve the existing route fields. See the employee-login guide
+for the private credential store, scope and rollback.
+
 Both modes use `<instance-domain>/preview/<name>/` and the existing domain/tunnel.
 Keep the service under a restart-safe supervisor. Remove it with
 `remotelab preview unexpose --slug <name>`.

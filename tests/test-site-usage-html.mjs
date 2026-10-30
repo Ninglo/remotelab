@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import { injectSiteUsageHtml, siteUsageHtmlTransform } from '../chat/site-usage-html.mjs';
+
+const html = Buffer.from('<!doctype html><html><head><title>测试站</title></head><body>原页面内容</body></html>');
+const injected = injectSiteUsageHtml(html);
+assert.equal((injected.toString().match(/src="\/site-usage.js"/g) || []).length, 1);
+assert.deepEqual(injectSiteUsageHtml(injected), injected);
+assert.deepEqual(injectSiteUsageHtml(html, "default-src 'self'; connect-src 'none'"), html);
+assert.deepEqual(injectSiteUsageHtml(html, "script-src https://other.test; connect-src 'self'"), html);
+assert.match(injectSiteUsageHtml(html, "script-src 'nonce-fixture'; connect-src 'self'").toString(), /nonce="fixture"/);
+const meta = Buffer.from('<head><meta http-equiv="Content-Security-Policy" content="script-src &apos;self&apos;; connect-src &apos;none&apos;"></head>');
+assert.deepEqual(injectSiteUsageHtml(meta), meta);
+const chunks = [html.subarray(0, 25), html.subarray(25, 49), html.subarray(49, 68), html.subarray(68)];
+const output = [];
+for await (const part of Readable.from(chunks).pipe(siteUsageHtmlTransform())) output.push(part);
+assert.deepEqual(Buffer.concat(output), injected, 'chunked UTF-8 and HTML remain byte-identical except for the script tag');
+const big = Buffer.from('<head>' + 'x'.repeat(300000) + '</head>');
+const streamed = [];
+for await (const part of Readable.from([big.subarray(0, 262144), big.subarray(262144)]).pipe(siteUsageHtmlTransform())) streamed.push(part);
+assert.deepEqual(Buffer.concat(streamed), big, 'oversized heads pass through without unbounded buffering');
+console.log('Site usage HTML: one insertion, CSP preservation, nonce, streaming UTF-8 and bounded fallback PASS');

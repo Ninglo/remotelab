@@ -1,11 +1,11 @@
 # 员工网站行为采集与只读汇总
 
-交给主话题接线的输入：
+给 Agent 的接入要求：
 
 > 在原员工站服务中接入 `handleSiteUsageRoutes`，复用已核身份和现有控制台鉴权。
 > 对服务端确认的员工站 HTML 集中加载 `/site-usage.js`，不逐站修改源文件。
 > 保留原 URL、登录态、访问策略、CSP 和在途响应；验证未登录不采集、员工可采集但不能读汇总、原控制台读取权限保留。
-> 本分支只交付实现和隔离测试，不执行接线、部署或生产测试事件。
+> 复用现有入口与登录，真实使用数据从启用后产生，不伪造生产测试事件。
 
 本实现复用 `employeeSitePerson` 和 usage-events schema v1 的写入器，独立保存到实例配置目录的
 `site-usage-events/`。员工站事件不写入控制台的 `usage-events/`，不改变原有会话、消息、功能使用量的分母或计数。
@@ -15,7 +15,7 @@
 
 | 接口 | 鉴权与行为 |
 | --- | --- |
-| `POST /api/site-usage/events` | 同源 Origin；`employeeSitePerson` 的已核员工浏览器身份；同源 Referer 必须匹配当前登记的员工站。成功持久化返回 `202 {"recorded":true}`。 |
+| `POST /api/site-usage/events` | 同源 Origin；`employeeSitePerson` 的已核员工浏览器身份；同源 Referer 必须匹配当前登记的受管站点。成功持久化返回 `202 {"recorded":true}`。 |
 | `GET /api/site-usage/summary?days=7&site=static:example` | 保留现有 RemoteLab 控制台鉴权，包括原有 service 读取权限。`days` 为 1–30，`site` 可省略。员工 Cookie 本身不授予读取权。 |
 
 网站范围由服务端从 Referer 路径和当前发布记录确定：
@@ -63,9 +63,9 @@ people/visits 按窗口内任意有效事件去重，因此前台切换可使跨
 首次写失败且无法写健康回执的故障在本进程可见；现有写入器在恢复后的成功写入中持久化缺口，
 恢复前进程即退出则无法保证保存该失败回执。正常读取不会回填历史。
 
-## 主话题最小接线
+## 已接通的集中入口
 
-本分支没有修改 `router.mjs`、`preview-proxy.mjs` 或 `employee-static-access.mjs`。
+当前由 `router.mjs`、`router-site-directory.mjs` 和 `preview-proxy.mjs` 集中接线，员工站源文件不需要逐站修改。
 
 1. `router.mjs` 导入 `handleSiteUsageRoutes`。在控制台 `requireAuth` **之前**只将
    `pathname === '/api/site-usage/events'` 分派给它；沿用员工身份独立采集。
@@ -74,18 +74,18 @@ people/visits 按窗口内任意有效事件去重，因此前台切换可使跨
 3. `/site-usage.js` 可由已有静态文件解析器直接提供。脚本必须从员工文档的同源入口加载，
    fetch 的 Referrer-Policy 固定为 same-origin，只在 HTTP 头中供服务端匹配站点。
 
-集中注入建议：主话题在原 HTML 响应边界添加一个共用的脚本标签插入步骤
+HTML 响应边界通过 `site-usage-html.mjs` 插入共用脚本标签
 `<script defer src="/site-usage.js"></script>`，已有同标签时不重复添加。
 静态响应只处理已通过 `checkEmployeeStaticAccess` 的 employee HTML；preview 只处理
 `access: employee` 上游的成功完整 HTML 响应；总站在服务端模板输出时走同一步骤。
-这样当前与后续员工站自动接入，public/basic 站、控制台、JSON、图片、下载和其他资源不改。
+当前与后续员工站、总站自动接入；已启用 `reuseIdentity` 的旧 Basic 站仅在该人拥有原站映射时接收事件。显式启用 `recognizeIdentity` 的公开旧站只为已核员工采集，匿名访问保留原行为。未接入的 public/basic 站、控制台、JSON、图片和其他资源不注入。
 
 接线需沿用原 CSP 的 nonce/script-src 规则（标签需要 nonce 时复用该响应 nonce），
 不扩大 CSP；保留 private/no-store、登录续期 Set-Cookie 和其他业务头。
 动态 HTML 转换需同步处理 Content-Length、ETag、压缩编码；不注入 HEAD、Range/206、304 或错误响应，
 不能直接把字节追加到压缩内容。可在该 HTML 通路请求 identity 编码后仅转换未压缩完整文档，
 保持其他响应透传；若原策略无法加载同源脚本，则留为明确接线缺项，不放宽访问策略。
-该接线由主话题集中实现和验收，本分支不要求站点作者逐份复制埋点。
+脚本在已核个人的成功完整 HTML 响应中集中加载。原 CSP 禁止脚本或同源连接时不放宽策略；流式 HTML 只缓存有界 head，压缩、Range、错误响应保持原样。
 
 扩展到独立域名或其他外部网站，需要其自己的同源受管入口和服务端站点登记；此实现不跨域发送身份。
 总站外部链接登记本身不构成该网站已接入采集的证据。
