@@ -373,7 +373,7 @@ Defaults alert on a net increase of 1 GiB within 15 minutes, 2 GiB within one ho
 
 Fresh readings and matching filesystem identity/size are required. Missing history, stale/failed measurements and a changed filesystem remain unknown and cannot clear a prior incident. Cleanup decreases produce no growth warning. Once a supported observation clears the growth condition, the existing incident is closed; ordinary byte fluctuations do not generate repeated cards. Verified same-filesystem observations may seed the history, preserving their actual timestamps.
 
-Active growth cards show the latest presented measurement, its observation time and the applicable threshold. Original trigger evidence stays in the history; a new incident cycle starts with its own trigger data rather than inheriting the recovered cycle's evidence.
+Active growth cards show the latest presented measurement, its observation time and the applicable threshold. Original trigger evidence and its image stay in the collapsed history; a new incident cycle starts with its own trigger data rather than inheriting the recovered cycle's evidence.
 - Execution health includes recurring tasks, current one-time work and recent failed one-time work, plus configured independent services/timers. A successful inactive oneshot is healthy; a never-run oneshot is unknown. Execution success does not prove delivery. Existing task controls and Session records remain authoritative.
 - Fixed allowance-check requests retain their receipts and are not project output. Available capacity suggests choosing useful existing work; it is neither evidence of waste nor permission to start arbitrary work.
 

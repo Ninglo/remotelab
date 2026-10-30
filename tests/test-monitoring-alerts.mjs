@@ -554,6 +554,7 @@ test('an active growth card presents the current rule and preserves the original
   const current = '172分钟净增 20.87 GiB；180分钟增长预警线 8.00 GiB。';
   const event = { kind: 'diskGrowth', subject: 'System disk', severity: 'warning', detail: current,
     triggerReason: original, observedAt: '2026-10-03T07:00:00Z',
+    evidenceImage: { imageKey: 'img_original_trigger' },
     history: [{ at: '2026-10-03T06:00:00Z', label: '触发预警', summary: original }] };
   const card = renderMonitoringAlertCard([event], {});
   const body = card.elements.find(element => element.tag === 'div').text.content;
@@ -561,4 +562,6 @@ test('an active growth card presents the current rule and preserves the original
   assert.doesNotMatch(body, /预警线 1.00 GiB/);
   assert.match(body, /观测时间/);
   assert.match(JSON.stringify(card.elements.find(element => element.tag === 'collapsible_panel')), /1.00 GiB/);
+  assert.equal(card.elements.some(element => element.tag === 'img'), false);
+  assert.equal(card.elements.find(element => element.tag === 'collapsible_panel').elements.at(-1).img_key, 'img_original_trigger');
 });

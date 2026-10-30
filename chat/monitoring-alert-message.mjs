@@ -108,9 +108,15 @@ export function renderMonitoringAlertCard(events, config) {
     elements: events.flatMap(item => {
       const next = monitoringNextStep(item, config), recovery = repairFor(item, config);
       const original = link(recovery?.sessionId || item.sessionId, config.overviewUrl);
-      return [ ...alertEvidenceImage(item),
+      const evidence = alertEvidenceImage(item), history = alertHistoryPanel(item.history || []);
+      if (item.kind === 'diskGrowth' && evidence.length) {
+        if (!history.length) history.push({ tag: 'collapsible_panel', expanded: false,
+          header: { title: { tag: 'plain_text', content: '历史监测记录' } }, elements: [] });
+        history[0].elements.push(...evidence);
+      }
+      return [ ...(item.kind === 'diskGrowth' ? [] : evidence),
         { tag: 'div', text: { tag: 'lark_md', content: renderMonitoringAlert([item], config, { color: true, links: false }) } },
-        ...alertHistoryPanel(item.history || []),
+        ...history,
         ...(original || next.url ? [{ tag: 'action', actions: [{ tag: 'button', type: next.type === 'notice' ? 'default' : 'primary',
           text: { tag: 'plain_text', content: original && next.type === 'notice' ? '查看原始处理对话' : next.label }, url: original || next.url }] }] : [])];
     }) };
