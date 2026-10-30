@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { getAuthSession, authenticateBearerToken } from '../lib/auth.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { employeeSiteIdentity as identity } from './employee-site-auth.mjs';
+import { researchSiteIdentity as identity } from './employee-site-auth.mjs';
 import { createQianyanCollaboration } from '../knowledge/qianyan-collaboration.mjs';
 import { createQianyanSourceCredentials } from '../knowledge/qianyan-source-credentials.mjs';
 

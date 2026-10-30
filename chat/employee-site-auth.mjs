@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { getAuthSession, authenticateBearerToken } from '../lib/auth.mjs';
 import { getCachedAuthDocument, loadAuthDocument, updateAuthDocument } from '../lib/auth-config.mjs';
+import { createManagedSiteIdentity } from '../lib/managed-site-identity.mjs';
 import { createEmployeeSiteIdentity } from '../lib/employee-site-identity.mjs';
+import { loadEmployeeSiteSettings } from '../lib/site-publication-policy.mjs';
 
-async function registerIdentity({ realm, openId, name }) {
+export async function registerEmployeeIdentity({ kind = 'feishu', realm, openId, name }) {
+  const matches = p => p.identities.some(i => i.kind === kind && i.realm === realm && i.subjectId === openId);
+  const existing = (getCachedAuthDocument() || await loadAuthDocument()).people.find(matches);
+  if (existing) return { id: existing.id, name: existing.name };
   const result = await updateAuthDocument(document => {
-    let person = document.people.find(p => p.identities.some(i => i.kind === 'feishu' && i.realm === realm && i.subjectId === openId));
+    let person = document.people.find(matches);
     if (!person) {
       person = { id: 'person_' + randomUUID().replaceAll('-', '').slice(0, 24), name: name || '飞书员工', discovered: true,
-        credentials: [], identities: [{ id: 'identity_' + randomUUID(), kind: 'feishu', realm, subjectId: openId, displayName: name }], preferences: {} };
+        credentials: [], identities: [{ id: 'identity_' + randomUUID(), kind, realm, subjectId: openId, displayName: name }], preferences: {} };
       document.people.push(person);
     }
     return { id: person.id, name: person.name };
@@ -17,8 +24,18 @@ async function registerIdentity({ realm, openId, name }) {
   return result.result;
 }
 
-export const employeeSiteIdentity = createEmployeeSiteIdentity({ configDir: CONFIG_DIR,
-  authDocument: async () => getCachedAuthDocument() || await loadAuthDocument(), registerIdentity });
+// The separate research API is not part of the managed-website migration.
+export const researchSiteIdentity = createEmployeeSiteIdentity({ configDir: CONFIG_DIR,
+  authDocument: async () => getCachedAuthDocument() || await loadAuthDocument(), registerIdentity: registerEmployeeIdentity,
+  loadSettings: async () => {
+    const cfg = await loadEmployeeSiteSettings(CONFIG_DIR);
+    return cfg.provider === 'muka-sso-gateway'
+      ? JSON.parse(await readFile(join(CONFIG_DIR, 'qianyan-internal.json'), 'utf8')) : cfg;
+  } });
+
+export const employeeSiteIdentity = createManagedSiteIdentity({ configDir: CONFIG_DIR,
+  legacyIdentity: researchSiteIdentity,
+  authDocument: async () => getCachedAuthDocument() || await loadAuthDocument(), registerIdentity: registerEmployeeIdentity });
 
 export function sameSiteOrigin(req) {
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();

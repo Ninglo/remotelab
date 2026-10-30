@@ -9,6 +9,29 @@ export function createSiteLoginHandler({ identity = employeeSiteIdentity, person
     res.setHeader('Vary', 'Cookie');
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
+      const gateway = await identity.gatewaySettings?.(req);
+      if (gateway) {
+        if (gateway.enabled === false) { send(503, { error: '员工登录已停用' }); return true; }
+        const person = await personFor(req, res);
+        if (pathname === '/site-login' && req.method === 'GET') {
+          if (!person) { send(503, { error: '公司统一登录入口尚未接通，请联系网站负责人' }); return true; }
+          const raw = new URL(req.url, gateway.publicOrigin).searchParams.get('returnTo') || '';
+          const target = new URL(raw || '/site-login', gateway.publicOrigin);
+          if (raw.startsWith('/') && target.origin === gateway.publicOrigin && target.pathname !== '/site-login') {
+            res.writeHead(303, { Location: target.pathname + target.search + target.hash }); res.end(); return true;
+          }
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('已通过公司统一登录，请打开目标网站。'); return true;
+        }
+        const action = pathname.slice('/api/site-login/'.length);
+        const method = { me: 'GET', start: 'POST', poll: 'GET', logout: 'POST' }[action];
+        if (!method || req.method !== method) { send(405, { error: 'Method not allowed' }); return true; }
+        if (method === 'POST' && !sameSiteOrigin(req)) { send(403, { error: '请从本站提交' }); return true; }
+        if (!person) { send(401, { error: '请通过公司统一登录访问', login: '/site-login' }); return true; }
+        if (action === 'logout') {
+          send(200, { state: 'redirect', redirect_url: `${gateway.issuer}/sso/logout/start?app=${encodeURIComponent(gateway.appId)}` }); return true;
+        }
+        send(200, { state: 'connected', person, provider: 'muka-sso' }); return true;
+      }
       if (pathname === '/site-login' && req.method === 'GET') {
         const nonce = generateNonce(); setSecurityHeaders(res, nonce);
         const page = await readFile(new URL('../templates/site-login.html', import.meta.url), 'utf8');

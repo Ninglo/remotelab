@@ -1,8 +1,8 @@
 // A local presentation state machine. Deliberately no auth API, cookies or storage.
 const states = {
-  login: { tab: '原标签页', address: '当前域名 /site-login?returnTo=/public-pages/employee-login-demo-a/', text: '打开站点 A → 服务器发现未登录 → 跳到统一员工登录页，并记住原网址。' },
-  feishu: { tab: '新标签页：飞书（示意）', address: 'accounts.feishu.cn / 身份确认', text: '点击“使用飞书登录”会新开飞书页面。原标签页仍停在员工登录页，按飞书给定的间隔等待授权结果。' },
-  a: { tab: '回到原标签页', address: '当前域名 /public-pages/employee-login-demo-a/', text: '飞书确认完成 → 服务器核对公司身份，签发共享登录 Cookie → 原标签页自动进入最初请求的站点 A。' },
+  login: { tab: '当前标签页：公司统一登录', address: 'auth.mukarobotics.com / 登录', text: '打开站点 A → 网关跳到公司 SSO；已有 Hub/Data 有效登录时直接继续，否则显示飞书登录。' },
+  feishu: { tab: '飞书身份确认（示意）', address: '公司 SSO / 飞书扫码或当前设备登录', text: '首次登录使用公司现有飞书入口。无需为每个网站创建账号，也不再使用网站自己的设备授权轮询。' },
+  a: { tab: '自动返回原网站', address: '网站入口 /public-pages/employee-login-demo-a/', text: '公司身份已确认或已有有效主会话 → 网关完成 OAuth 回调 → 返回原网站 A；RemoteLab 接收已核员工身份。' },
   b: { tab: '同一浏览器内打开另一个网站', address: '当前域名 /public-pages/employee-login-demo-b/', text: '站点 B 与 A 使用同一域名。浏览器自动携带有效 Cookie，服务器直接放行，本次不会再打开登录页或飞书。' },
 };
 function show(name) {
