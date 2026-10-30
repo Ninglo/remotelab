@@ -725,11 +725,14 @@
           "name": "静态网页发布",
           "purpose": "发布报告、图表、演示和说明页，给出稳定可访问的链接。",
           "entry": "要求 Agent 发布已有静态文件；publish static。",
-          "condition": "公开静态页无需登录，只适合已核对可公开的内容。生成文件与公网实际可读需分别检查。",
+          "condition": "已配置飞书员工登录时，新站默认公司员工可访问，创建人为负责人，管理员字段预留；显式公开发布与既有公开站保留公开访问。登录与内容可读分别验收。",
           "example": "把这份可公开报告发布成网页，给我可直接打开的链接。",
           "sources": [
             "lib/static-publish-command.mjs",
-            "docs/platform-skills/stable-static-publish.md"
+            "docs/platform-skills/stable-static-publish.md",
+            "lib/site-publication-policy.mjs",
+            "chat/employee-static-access.mjs",
+            "docs/employee-site-login.md"
           ],
           "commands": [
             "publish"
@@ -740,16 +743,35 @@
           "name": "本地服务预览与端口暴露",
           "purpose": "让已有的本地动态页面通过稳定入口访问，保留认证与视频跳转，并按明确登记的路径开放提交。",
           "entry": "让 Agent 检查本地服务后使用 preview，或受控 guest 入口。",
-          "condition": "服务需已监听且属于授权范围；当前实例预览要求相应认证。与静态发布是不同流程。",
+          "condition": "已配置员工登录时新预览由入口统一认证，服务只监听 loopback；已有 Basic Auth 预览保持原方式。",
           "example": "把这个已经运行的本地预览接到当前实例的认证入口。",
           "sources": [
             "chat/preview-proxy.mjs",
             "lib/preview-command.mjs",
-            "docs/platform-skills/guest-port-expose.md"
+            "docs/platform-skills/guest-port-expose.md",
+            "docs/employee-site-login.md"
           ],
           "commands": [
             "preview"
           ]
+        },
+        {
+          "id": "employee-site-login",
+          "name": "网站统一员工登录",
+          "purpose": "复用一次飞书身份确认访问同一实例域名下的内部站点，无需各站密码。",
+          "entry": "内部站点自动跳转 /site-login；已有研究站登录自动兼容。",
+          "condition": "配置本企业 tenantKey、应用 realm 和现有凭据路径；仅处理登录，不授予 RemoteLab 控制台凭证，不实现管理员权限或跨独立域名 SSO。",
+          "example": "发布一个内部网站，公司员工均可访问，由本次创建人负责。",
+          "sources": [
+            "lib/employee-site-identity.mjs",
+            "knowledge/qianyan-identity.mjs",
+            "chat/employee-site-auth.mjs",
+            "chat/router-site-login.mjs",
+            "templates/site-login.html",
+            "static/site-login.js",
+            "docs/employee-site-login.md"
+          ],
+          "commands": []
         }
       ]
     },

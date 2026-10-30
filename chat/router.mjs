@@ -1,3 +1,5 @@
+import { handleSiteLogin } from './router-site-login.mjs';
+import { checkEmployeeStaticAccess } from './employee-static-access.mjs';
 import {readMonitoringPortal} from './monitoring-portal.mjs';
 import { readFile, readdir } from 'fs/promises';
 import { createReadStream, watch } from 'fs';
@@ -1344,9 +1346,16 @@ export async function handleRequest(req, res) {
   const parsedUrl = parseUrl(req.url, true);
   const pathname = parsedUrl.pathname;
 
+  if (await handleSiteLogin(req, res, pathname)) return;
+  if (await checkEmployeeStaticAccess(req, res, pathname)) return;
+
   // Static assets (read from disk each time for hot-reload)
   const staticAsset = await resolveStaticAsset(pathname, parsedUrl.query);
   if (staticAsset) {
+    if (req.employeeStaticPage) {
+      staticAsset.cacheControl = 'private, no-store';
+      staticAsset.responseHeaders = { ...staticAsset.responseHeaders, Vary: 'Cookie' };
+    }
     try {
       const versionTag = getSingleQueryValue(parsedUrl.query?.v).trim();
       const content = rewriteCssImportUrls(

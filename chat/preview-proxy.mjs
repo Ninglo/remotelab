@@ -1,3 +1,4 @@
+import { requireEmployeeSite, sameSiteOrigin } from './employee-site-auth.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -19,16 +20,17 @@ export function validPreviewPostPath(value) {
 
 export function validPreviewRequestHeader(value) {
   return typeof value === 'string' && /^x-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
-    && !value.startsWith('x-forwarded-') && value !== 'x-real-ip';
+    && !value.startsWith('x-remotelab-') && !value.startsWith('x-forwarded-') && value !== 'x-real-ip';
 }
 
 async function routeFor(slug) {
   try {
     const routes = JSON.parse(await readFile(PREVIEW_ROUTES_FILE, 'utf8'));
     const route = routes?.[slug];
-    if (!validPreviewPort(route?.port)) return null;
+    if (!validPreviewPort(route?.port) || route.access && !['basic', 'employee'].includes(route.access)) return null;
     return {
       port: route.port,
+      access: route.access || 'basic',
       postPaths: Array.isArray(route.postPaths) ? route.postPaths.filter(validPreviewPostPath) : [],
       requestHeaders: Array.isArray(route.requestHeaders) ? route.requestHeaders.filter(validPreviewRequestHeader) : [],
     };
@@ -48,6 +50,14 @@ export async function handlePreviewProxy(req, res, pathname) {
     res.end('Preview route not found');
     return true;
   }
+  let person;
+  if (route.access === 'employee') {
+    person = await requireEmployeeSite(req, res);
+    if (!person) return true;
+    if (!['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
+      res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end('Cross-origin write denied'); return true;
+    }
+  }
   const suffix = match[2] || '/';
   const allowsPost = route.postPaths.includes(suffix);
   if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && allowsPost)) {
@@ -61,8 +71,10 @@ export async function handlePreviewProxy(req, res, pathname) {
   const requestHeaders = ['authorization', 'range', 'if-range', 'if-none-match', 'if-modified-since',
     'content-type', 'content-length', 'origin', 'sec-fetch-site', ...route.requestHeaders];
   for (const name of requestHeaders) {
+    if (person && name === 'authorization') continue;
     if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];
   }
+  if (person) headers['x-remotelab-person-id'] = person.id;
   const upstream = http.request({ hostname: '127.0.0.1', port: route.port, path: `${suffix}${search}`, method: req.method, headers, timeout: 5000 }, (response) => {
     const allowed = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified',
       'www-authenticate', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'referrer-policy', 'x-robots-tag'];

@@ -1094,6 +1094,12 @@
       "route": "manual-session-delegate.html",
       "title": "独立会话委派",
       "description": "说明网页子会话与飞书话题的适用入口和承接关系。"
+    },
+    {
+      "source": "docs/employee-site-login.md",
+      "route": "manual-employee-site-login.html",
+      "title": "网站统一员工登录",
+      "description": "新站默认员工访问、创建人负责，并复用同一实例域名下的飞书登录状态。"
     }
   ]
 }

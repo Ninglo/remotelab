@@ -2,6 +2,12 @@
 
 Use for static HTML reports, review pages, dashboards, demos, or any other directory that can be served as files without a running application process.
 
+Give the agent: “Publish this site using the instance's employee login. Make the current
+human creator its owner, allow all company employees, and reserve the administrator
+field without adding role management.” Supply the source directory and stable slug.
+The agent resolves the accepted Request's creator; outside a human Request, supply
+`--owner <person-id>`. No per-site account or password is generated.
+
 ## Product boundary
 
 RemoteLab owns the static file server and publish lifecycle. Public ingress is separate:
@@ -12,10 +18,12 @@ RemoteLab owns the static file server and publish lifecycle. Public ingress is s
 - an ordinary publish does not call Cloudflare, Wrangler, or any provider API.
 
 Use Service Port Forwarding instead when the result needs a long-running process, API, database connection, WebSocket, or server-side state.
-Pages containing private task instructions or other internal data should stay
-behind authentication. For an existing loopback preview with HTTP Basic login,
-use `remotelab preview expose --slug <name> --port <port> --json` instead of
-copying its files into the public static directory.
+When employee login is configured, new publications default to `employee` access.
+The managed server authenticates every file, including JSON, images and downloads,
+before loading it. Explicitly public material uses `--access public`. Instances
+without employee identity configuration retain the existing public default.
+Dynamic loopback services use `remotelab preview expose`; see
+[employee site login](../employee-site-login.md) for the shared login contract.
 
 ## Publish
 
@@ -23,7 +31,12 @@ copying its files into the public static directory.
 remotelab publish static --source ./dist --slug my-report --json
 ```
 
-The source may be one HTML file or a directory containing `index.html`. Use `--replace` only when intentionally updating the same stable slug.
+The source may be one HTML file or a directory containing `index.html`. Use `--replace`
+only when intentionally updating the same stable slug. Replacements retain the
+original owner, reserved administrators and access unless `--access` is explicit;
+legacy public publications remain public. `--access employee` requires configured
+Feishu identity and a verified creator. `--access public` explicitly publishes
+without employee login.
 
 Management commands:
 
@@ -36,9 +49,15 @@ remotelab publish delete my-report --json
 
 - Default storage is the instance-local `public-pages` directory under RemoteLab's configured data root.
 - Override the storage location with `REMOTELAB_PUBLIC_PAGES_DIR` when the host needs a dedicated volume.
-- Override the external URL base with `REMOTELAB_PUBLIC_PAGES_BASE_URL` when ingress does not use the main RemoteLab domain.
+- Public publications may override the URL base with `REMOTELAB_PUBLIC_PAGES_BASE_URL`. Employee publications must use the managed instance `/public-pages` ingress; a separate file server would bypass its login check.
 - The command returns a public URL when public ingress is configured and a loopback URL otherwise.
-- Verify that the returned URL resolves directly to the intended page; a redirect to login is not successful delivery.
+- For public content, verify the URL resolves directly to the intended page.
+- For employee content, the publisher verifies anonymous rejection; a failed
+  boundary check rolls back the publication. Its result explicitly reports
+  `contentVerified: false`: also verify the content using an employee login.
+  A login page alone is not proof the intended content is readable.
+- Owner/access metadata is hidden from static HTTP access; employee content uses
+  private, no-store responses. Do not place a bypassing static ingress over this directory.
 
 ## Safety
 

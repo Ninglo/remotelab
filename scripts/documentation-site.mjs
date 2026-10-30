@@ -169,7 +169,7 @@ async function publish() {
     const target = path.join(config.publicPagesDir, 'remotelab-architecture-atlas'), recovery = path.join(temp, 'previous-site');
     const hadPrevious = await cp(target, recovery, { recursive: true }).then(() => true).catch(error => { if (error.code === 'ENOENT') return false; throw error; });
     try {
-      await exec(process.execPath, [path.join(root, 'cli.js'), 'publish', 'static', '--source', out, '--slug', 'remotelab-architecture-atlas', '--replace', '--json', '--no-verify'], { cwd: root, env: { ...process.env, REMOTELAB_PUBLIC_PAGES_DIR: config.publicPagesDir, REMOTELAB_PUBLIC_PAGES_BASE_URL: config.publicBase || '' }, maxBuffer: 1024 * 1024 });
+      await exec(process.execPath, [path.join(root, 'cli.js'), 'publish', 'static', '--access', 'public', '--source', out, '--slug', 'remotelab-architecture-atlas', '--replace', '--json', '--no-verify'], { cwd: root, env: { ...process.env, REMOTELAB_PUBLIC_PAGES_DIR: config.publicPagesDir, REMOTELAB_PUBLIC_PAGES_BASE_URL: config.publicBase || '' }, maxBuffer: 1024 * 1024 });
       for (const [name, hash] of Object.entries(sums)) if (sha(await readFile(path.join(target, name))) !== hash) throw Error(`Published file readback differs: ${name}`);
     } catch (error) {
       if (hadPrevious) {

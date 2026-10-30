@@ -1,30 +1,13 @@
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { getAuthSession, authenticateBearerToken } from '../lib/auth.mjs';
-import { getCachedAuthDocument, loadAuthDocument, updateAuthDocument } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { createQianyanIdentity } from '../knowledge/qianyan-identity.mjs';
+import { employeeSiteIdentity as identity } from './employee-site-auth.mjs';
 import { createQianyanCollaboration } from '../knowledge/qianyan-collaboration.mjs';
 import { createQianyanSourceCredentials } from '../knowledge/qianyan-source-credentials.mjs';
 
-async function registerIdentity({ realm, openId, name }) {
-  // Match verified IDs within an app realm. Names never authorize an account merge.
-  const result = await updateAuthDocument(document => {
-    let p = document.people.find(p => p.identities.some(i => i.kind === 'feishu' && i.realm === realm && i.subjectId === openId));
-    if (!p) {
-      p = { id: 'person_' + randomUUID().replaceAll('-', '').slice(0, 24), name: name || '飞书员工', discovered: true,
-        credentials: [], identities: [{ id: 'identity_' + randomUUID(), kind: 'feishu', realm, subjectId: openId, displayName: name }], preferences: {} };
-      document.people.push(p);
-    }
-    return { id: p.id, name: p.name };
-  });
-  return result.result;
-}
 const project = process.env.REMOTELAB_QIANYAN_PROJECT || join(homedir(), '.remotelab/workspace/qianyan-workbench');
-const identity = createQianyanIdentity({ configDir: CONFIG_DIR,
-  authDocument: async () => getCachedAuthDocument() || await loadAuthDocument(), registerIdentity });
 const collaboration = createQianyanCollaboration({ configDir: CONFIG_DIR,
   documentsPath: join(project, 'private/pipeline/research_documents.json'), publicDataPath: join(project, 'build/data.json'),
   sourceCatalogPath: join(project, 'private/pipeline/source_catalog.json'),

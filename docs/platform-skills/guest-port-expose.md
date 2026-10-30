@@ -18,12 +18,24 @@ Keep the application on loopback and verify the configured public route reaches 
 
 ## Managed guest command
 
-For a preview on the current RemoteLab instance with its own HTTP Basic login,
-use `remotelab preview expose --slug <name> --port <port> --json`. It checks that
-the loopback service challenges unauthenticated requests, then serves it at
-`<instance-domain>/preview/<name>/`. This reuses the instance's existing
-domain and tunnel. Keep the service under a restart-safe supervisor. Use
-`remotelab preview unexpose --slug <name>` to remove the route.
+For a preview on an instance with employee login configured, use
+`remotelab preview expose --slug <name> --port <port> --json`. New routes default
+to company employees, record the current human creator as owner, and reserve
+`adminPersonIds: []`. Use `--owner <person-id>` outside a human Request.
+The loopback application must be healthy without its own login: the proxy handles
+login once and forwards the verified `x-remotelab-person-id`, never the employee
+cookie or a client-supplied identity header. Keep the application loopback-only.
+See [employee site login](../employee-site-login.md).
+
+Existing Basic Auth routes retain their authentication on replacement. Instances
+without employee identity configuration retain the Basic Auth default; explicitly
+select it with `--access basic`. The command checks its upstream Basic challenge.
+Switching a known route to `--access employee` requires removing the redundant
+upstream login; no passwords are automatically migrated or deleted.
+
+Both modes use `<instance-domain>/preview/<name>/` and the existing domain/tunnel.
+Keep the service under a restart-safe supervisor. Remove it with
+`remotelab preview unexpose --slug <name>`.
 
 Preview routes allow GET and HEAD by default. Byte-range requests and response
 headers are preserved so video playback can seek without downloading the whole
@@ -36,8 +48,9 @@ remotelab preview expose --slug review --port 18746 --replace \
 ```
 
 Both options can be repeated. POST is enabled only at the registered paths;
-other paths and existing routes remain read-only. The application still owns
-authentication, request validation and CSRF protection. Standard authorization,
+other paths and existing routes remain read-only. For employee routes, the proxy authenticates and rejects cross-origin POSTs.
+The application still owns input validation and business operations. Basic routes
+retain application-owned authentication and CSRF protection. Standard authorization,
 content metadata, origin and range headers are forwarded; RemoteLab cookies
 are not. Custom headers must be lowercase `x-` application headers, excluding
 proxy address headers. Replacement supplies the complete route configuration;
