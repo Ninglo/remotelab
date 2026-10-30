@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>第一次打开内部网站 · RemoteLab</title>
+  <link rel="stylesheet" href="guide.css">
+  <link rel="stylesheet" href="employee-login-demo.css?v=20261030a">
+  <script type="module" src="guide-shell.js"></script>
+  <script src="employee-login-demo.js?v=20261030a" defer></script>
+</head>
+<body data-guide-page="employee-login-demo.html" data-guide-chapter="manuals">
+<main class="employee-demo">
+  <header>
+    <p class="eyebrow">网站统一员工登录 · 2026-10-30</p>
+    <h1>第一次打开内部网站</h1>
+    <p class="lead">从业务网站进入，确认一次飞书身份，再回到原网站。同一浏览器、同一实例域名下，其他内部站点共用这次登录。</p>
+    <p><a href="#try-live">体验真实登录</a> · <a href="#infra">看现有基础设施</a> · <a href="manual-employee-site-login.html">完整接入说明</a></p>
+  </header>
+
+  <section id="simulation" aria-labelledby="simulation-title">
+    <div class="section-heading"><h2 id="simulation-title">点击体验首次登录</h2><button id="reset" type="button">重新演示</button></div>
+    <p class="simulation-note">流程模拟：不连接飞书，不创建或清除真实登录态。登录卡片沿用现有页面；飞书确认页只用示意框表示。</p>
+    <div class="stages" role="group" aria-label="选择演示阶段">
+      <button type="button" data-stage="login" aria-pressed="true">1 员工登录</button>
+      <button type="button" data-stage="feishu" aria-pressed="false">2 飞书确认</button>
+      <button type="button" data-stage="a" aria-pressed="false">3 进入站点 A</button>
+      <button type="button" data-stage="b" aria-pressed="false">4 打开站点 B</button>
+    </div>
+    <div class="browser" aria-label="模拟浏览器">
+      <div class="browser-bar"><span id="tab-label">原标签页</span><code id="address">当前域名 /site-login?returnTo=/public-pages/employee-login-demo-a/</code></div>
+      <div class="viewport">
+        <div id="screen-login" class="screen">
+          <div class="login-card">
+            <h2>员工登录</h2>
+            <p>使用公司飞书账号确认身份，即可访问内部网站。</p>
+            <button type="button" data-next="feishu">使用飞书登录</button>
+            <p class="login-status">确认身份后，回到此页会自动继续。</p>
+            <footer>已有有效登录时会自动进入，无需另设网站密码。</footer>
+          </div>
+        </div>
+        <div id="screen-feishu" class="screen" hidden>
+          <div class="confirmation">
+            <span class="eyebrow">飞书页面示意 · 非实际界面</span>
+            <h2>在飞书确认公司身份</h2>
+            <p>这里代表新打开的飞书标签页。实际显示什么，由飞书账号登录状态和客户端决定。</p>
+            <button type="button" data-next="a">模拟完成身份确认</button>
+            <p class="small">确认后回到原标签页，原页面检测到成功便自动打开站点 A。演示省略等待时间。</p>
+          </div>
+        </div>
+        <div id="screen-a" class="screen" hidden>
+          <div class="sample-site"><div class="site-kicker">示例内容 · 已模拟登录</div><h2>站点 A · 项目资料</h2><p>已经进入最初想访问的网站，没有单独的网站账号或密码。</p><div class="sample-row">示例文档 <span>可查看</span></div><button type="button" data-next="b">打开同域名下的站点 B</button></div>
+        </div>
+        <div id="screen-b" class="screen" hidden>
+          <div class="sample-site"><div class="site-kicker">示例内容 · 复用登录态</div><h2>站点 B · 实验看板</h2><p>浏览器自动带上同一份登录凭据，服务器验证后直接返回站点 B。</p><div class="sample-row">登录页面 <span>本次无需显示</span></div><button type="button" data-next="a">返回站点 A</button></div>
+        </div>
+      </div>
+    </div>
+    <p id="explanation" class="explanation" role="status" aria-live="polite">打开站点 A → 服务器发现未登录 → 跳到统一员工登录页，并记住原网址。</p>
+    <noscript><p>无脚本时可直接阅读：站点 A → 员工登录页 → 新标签页完成飞书确认 → 回到原标签页，自动进入 A → 再开同域站点 B，直接进入。</p></noscript>
+  </section>
+
+  <section id="try-live">
+    <h2>体验真实登录</h2>
+    <p>下面两个示例站实际接入了员工登录。先打开 A，完成确认后再打开 B。已有有效登录时，两站会直接打开；要观察真实首次页面，可在无痕窗口打开 A。</p>
+    <div class="actions"><a class="primary" href="/public-pages/employee-login-demo-a/" target="_blank" rel="noopener">打开示例站 A</a><a href="/public-pages/employee-login-demo-b/" target="_blank" rel="noopener">打开示例站 B</a></div>
+    <p class="small">示例站只显示示例内容与当前登录者姓名，不操作业务数据。飞书内置浏览器与外部浏览器可能各自需要登录。</p>
+  </section>
+
+  <section id="infra">
+    <h2>现有 infra 怎样接住网站</h2>
+    <div class="infra-flow" aria-label="请求通过同一个服务器入口分发">
+      <div><strong>浏览器</strong><span>保存本域登录 Cookie</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div><strong>HTTPS 入口</strong><span>当前域名的反向代理</span></div><span class="arrow" aria-hidden="true">→</span>
+      <div><strong>RemoteLab 入口</strong><span>先检查员工登录</span></div>
+    </div>
+    <div class="branches"><div><strong>静态网站</strong><code>/public-pages/站点名/</code><span>通过检查后读取 HTML、图片和数据文件</span></div><div><strong>动态网站</strong><code>/preview/站点名/</code><span>通过检查后代理到本机服务，并传递已核身份</span></div></div>
+    <p>统一登录服务只在需要确认身份时联系飞书，核对所属公司，再签发本站登录凭据。平时切换网站由服务器检查本地会话，无需反复向飞书验证。</p>
+    <details><summary>看身份、会话与网站登记分别存什么</summary>
+      <dl><dt>飞书</dt><dd>提供已登录用户身份与公司标识；飞书密码不交给业务网站。</dd><dt>RemoteLab 人员记录</dt><dd>把飞书身份对应到一个 Person；网站创建人写入负责人字段，管理员字段预留。</dd><dt>共享员工会话</dt><dd>浏览器保存 HttpOnly Cookie，服务端持久化会话；有效期 30 天，活跃使用时最多每天续一次，服务重启不要求重新登录。</dd><dt>新网站登记</dt><dd>已配置员工登录的实例默认登记为 employee。静态发布器或动态预览入口统一接入，网站本身无需再做一套密码。</dd></dl>
+    </details>
+    <p>复用范围是同一浏览器、同一实例域名。换独立域名、换浏览器、清除 Cookie 或会话过期，需要重新确认。旧站独立密码体系尚未自动迁移；员工网站登录也不授予 RemoteLab 控制台权限。</p>
+    <p class="small">依据：现有登录实现 <code>e79bab8e</code>；<a href="manual-employee-site-login.html">接入方式与范围</a>。本页为交互演示，不把模拟结果当作真人授权回执。</p>
+  </section>
+</main>
+</body></html>

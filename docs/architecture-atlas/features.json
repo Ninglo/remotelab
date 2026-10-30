@@ -769,7 +769,9 @@
             "chat/router-site-login.mjs",
             "templates/site-login.html",
             "static/site-login.js",
-            "docs/employee-site-login.md"
+            "docs/employee-site-login.md",
+            "docs/architecture-atlas/employee-login-demo.html",
+            "examples/employee-site-login/README.md"
           ],
           "commands": []
         }

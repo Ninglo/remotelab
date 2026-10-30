@@ -514,6 +514,25 @@
       "chapter": "manuals",
       "reference": "reference-manual-display-maintenance.md",
       "sections": []
+    },
+    {
+      "route": "employee-login-demo.html",
+      "chapter": "manuals",
+      "reference": "reference-manual-employee-site-login.md",
+      "sections": [
+        [
+          "simulation",
+          "首次登录模拟"
+        ],
+        [
+          "try-live",
+          "体验真实登录"
+        ],
+        [
+          "infra",
+          "现有基础设施"
+        ]
+      ]
     }
   ],
   "deliverables": {

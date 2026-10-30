@@ -7,6 +7,29 @@ state and implement only login.” Provide the source directory or a healthy
 loopback service and its stable slug. The accepted human Request supplies the
 creator; a manual or unattended publication supplies `--owner <person-id>`.
 
+## 首次登录与现有基础设施
+
+[点击体验首次登录与站点切换](/public-pages/remotelab-architecture-atlas/employee-login-demo.html)。
+演示位于现有整体说明网站；其中的“使用飞书登录”按钮只切换模拟画面，不接触真实登录态。
+页面另有两个真实员工示例站的入口，业务内容均标为示例。
+
+实际访问顺序是：打开目标网站 → 未登录则跳到 `/site-login?returnTo=原网址` →
+点击“使用飞书登录”，在新标签页完成飞书身份确认 → 回到原标签页，它检测到成功后自动进入原网站。
+飞书页不负责跳到各个业务网站；原登录页按飞书给定间隔查询授权结果，再按 `returnTo` 继续。
+已有有效身份时直接进入，正常切站无需再打开飞书。
+
+| 现有组件 | 承担的工作 |
+| --- | --- |
+| 域名的 HTTPS／反向代理入口 | 将静态网站、动态网站与登录请求送到同一 RemoteLab 服务 |
+| 静态发布 `/public-pages/<slug>/` | 发布时登记员工访问和负责人；服务端检查登录后才返回 HTML、数据与图片 |
+| 动态预览 `/preview/<slug>/` | 检查登录后代理到本机服务，并向服务传递已核人员身份 |
+| 统一员工登录 `/site-login` | 调用飞书设备授权接口，核对公司标识，签发同域共享会话 |
+| 浏览器与服务端会话存储 | 浏览器保存 HttpOnly Cookie；服务端持久化会话，避免每次访问都调用飞书 |
+
+新建网站复用静态发布器或动态预览入口即可接入。负责人取创建人的已核身份，公司员工均可访问；
+管理员字段预留，不增加角色管理。独立域名、其他浏览器或浏览器内置 WebView 不共享同一份 Cookie。
+当前实现不要求先到网站门户挑选站点，也没有替旧站自动移除原有密码。
+
 ## Configuration and scope
 
 `site-login.json` in the instance config directory contains `realm`, `tenantKey`,
