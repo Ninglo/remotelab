@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectServiceIncidents, mergeServiceJournal, serviceIncidentAttention } from '../chat/service-incidents.mjs';
+import { collectServiceIncidents, mergeServiceJournal, mergeServiceCycles, serviceIncidentAttention } from '../chat/service-incidents.mjs';
 import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 const unit = 'example.service';
 const row = (MESSAGE, n, other={}) => ({ MESSAGE, __CURSOR: `cursor${n}`, __REALTIME_TIMESTAMP: String(1_790_000_000_000_000+n*1000), ...other });
@@ -14,17 +14,19 @@ test('one crash survives rapid restart and observer restart, without duplicate a
  assert.deepEqual(mergeServiceJournal(events,rows,unit),events);
  let state=null,sends=0;
  const services=[{unit,status:'healthy',label:'App'}];
- const attention=serviceIncidentAttention(events,services);
+ const now=Date.parse(events[0].at)+1000;
+ const attention=serviceIncidentAttention(events,services,{now});
  const snapshot={generatedAt:new Date().toISOString(),attention,services,disks:[],accounts:[],coverage:{gaps:[]},automations:{items:[]}};
- const options={config:{confirmationObservations:5,noisePolicy:{mode:'risk_only'}},snapshot,
+ const options={now,config:{confirmationObservations:5,noisePolicy:{mode:'risk_only'}},snapshot,
  load:async()=>structuredClone(state), save:async(_,s)=>{state=structuredClone(s)},send:async()=>{sends++;return 'om_test'},update:async()=> 'om_test'};
  await dispatchMonitoringAlerts(options); assert.equal(sends,1,'durable crash must bypass five-sample threshold');
  await dispatchMonitoringAlerts(options); assert.equal(sends,1);
- assert.equal(Object.values(state.incidents)[0].event.recovered,undefined);
+ assert.equal(Object.values(state.incidents)[0].event.recovered,false);
  assert.match(renderMonitoringAlert(attention,{}),/根因|原因仍需/);
  const next=mergeServiceJournal(events,[row('FATAL ERROR: JavaScript heap out of memory',4,{_SYSTEMD_INVOCATION_ID:'new'})],unit);
- await dispatchMonitoringAlerts({...options,snapshot:{...snapshot,attention:serviceIncidentAttention(next,services)}});
- assert.equal(sends,2,'a new invocation rearms even if the service is healthy');
+ await dispatchMonitoringAlerts({...options,snapshot:{...snapshot,attention:serviceIncidentAttention(next,services,{now})}});
+ assert.equal(sends,1,'repeated crashes belong to the same service incident');
+ assert.equal(Object.values(state.incidents)[0].event.crashCount,2);
 });
 test('normal stop is not a crash; cursor is durable and failed reads never advance it',async()=>{
  assert.deepEqual(mergeServiceJournal([],[row(`${unit}: Main process exited, code=exited, status=0/SUCCESS`,1,{UNIT:unit})],unit),[]);

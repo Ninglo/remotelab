@@ -1,4 +1,5 @@
 import { metricAlertBundles, metricBundleCard } from '../lib/metric-alert-bundle.mjs';
+import { ALERT_MERGE_MS, observePersistentAlert } from '../lib/alert-notification-policy.mjs';
 import { buildAgentDashboard } from './monitoring-dashboard.mjs';
 import { prepareAlertEvidenceImage } from '../lib/alert-evidence-image.mjs';
 import { alertTime, appendAlertHistory, alertHistoryPanel, alertEvidenceImage, alertSessionUrl, resolutionAttribution } from '../lib/alert-card-history.mjs';
@@ -40,6 +41,7 @@ export function sessionDiagnosisCard(item, config) {
   const content = `${item.test ? '链路测试，使用模拟样本，不代表真实故障。\n' : ''}`
     + `当前状态：${resolved ? '当前问题已解决' : item.status === 'action_verified' ? '已执行并核对，整体恢复待验证' : '已初步分析'}\n`
     + `上次预警：${alertTime(item.createdAt)}（北京时间）\n预警原因：${trigger}\n`
+    + (!resolved && item.persistentWarningAt ? '持续告警：连续10分钟未见改善。\n' : '')
     + (resolved ? `处理方式：${resolutionAttribution(item)}\n处理结果：${item.summary || '指标已复查恢复'}\n确认时间：${alertTime(item.updatedAt)}\n`
       : `分析与处理：${accountRisk ? '已核对当前绑定、额度读数和执行需求；未重放任务。' : item.summary || '已核对记录，具体原因尚未确认'}${!accountRisk && item.action ? `；${item.action}` : ''}\n`)
     + (config.noisePolicy?.mode !== 'risk_only' ? `涉及会话：${item.members?.length || 0}个\n` : '')
@@ -154,11 +156,12 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
     }
     for(const [id,item] of Object.entries(state.incidents))if(item.delivery?.status==='delivered' && ['resolved','action_verified'].includes(item.status) && now-Date.parse(item.updatedAt)>7*86400000)delete state.incidents[id];
     for(const c of candidates) {
-      let item = Object.values(state.incidents).find(i => i.key === c.key && i.status !== 'resolved');
+      let item = Object.values(state.incidents).find(i => i.key === c.key
+        && (i.status !== 'resolved' || now - Date.parse(i.createdAt) < ALERT_MERGE_MS));
       const lastAnomalyAt = Math.max(...c.members.flatMap(m => m.recent.filter(r => r.value >= m.threshold).map(r => r.at)));
       if(item) {
         item.lastAnomalyAt=Math.max(item.lastAnomalyAt,lastAnomalyAt);
-        if(item.fingerprint === c.fingerprint || now-Date.parse(item.diagnosedAt) < cooldown) continue;
+        if(item.status !== 'resolved' && (item.fingerprint === c.fingerprint || now-Date.parse(item.diagnosedAt) < cooldown)) continue;
       }
       if(diagnosed >= 1) continue;
       if(!item) {
@@ -175,13 +178,18 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       diagnosed++;
     }
     for(const candidate of extras) {
-      let item=Object.values(state.incidents).find(i=>i.key===candidate.key && i.status!=='resolved');
+      let item=Object.values(state.incidents).find(i=>i.key===candidate.key
+        && (i.status!=='resolved' || now-Date.parse(i.createdAt)<ALERT_MERGE_MS));
+      if (item?.status === 'resolved') {
+        item.persistence = { since: state.checkedAt }; delete item.persistentWarningAt;
+        appendAlertHistory(item, { at: state.checkedAt, label: '三小时内再次预警', summary: candidate.summary });
+      }
       if(item && riskOnly && candidate.kind==='metric')Object.assign(item,{status:candidate.status,nextStep:candidate.nextStep});
       // Fresh evidence must advance even when the human-readable conclusion is
       // unchanged. Repeated reads of one quota sample never confirm an alert.
       if(item && riskOnly && candidate.riskType==='exhausted_bindings')item.notificationEvidenceKey=candidate.notificationEvidenceKey;
-      if(item?.fingerprint===candidate.fingerprint)continue;
-      if(item && candidate.kind==='metric' && item.baselinePolicyKey===candidate.baselinePolicyKey && now-Date.parse(item.diagnosedAt)<cooldown)continue;
+      if(item?.fingerprint===candidate.fingerprint && item.status!=='resolved')continue;
+      if(item && item.status!=='resolved' && candidate.kind==='metric' && item.baselinePolicyKey===candidate.baselinePolicyKey && now-Date.parse(item.diagnosedAt)<cooldown)continue;
       if(!item) {
         if(Object.keys(state.incidents).length>=100)continue;
         item={id:diagnosisKey([candidate.key,now]),createdAt:state.checkedAt,test};state.incidents[item.id]=item;
@@ -221,6 +229,21 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       const freshKeys=new Set(complete?extras.map(i=>i.key):[]);
       for(const item of Object.values(state.incidents).filter(i=>i.kind==='metric')) item.notification=privateDiagnosisNotification(item,{fresh:freshKeys.has(item.key),metricAlerts,baseline:!validDiagnosisRecipient(config.notification)});
     }
+    for (const item of Object.values(state.incidents)) {
+      const delivered = item.delivery?.messageId || Object.values(state.metricNotifications || {})
+        .find(group => group.memberIds.includes(item.id))?.delivery?.messageId;
+      if (!delivered) continue;
+      const before = item.persistentWarningAt;
+      const notifiedAt = item.firstNotifiedAt || item.delivery?.sentAt || item.createdAt;
+      const signal = extras.find(c => c.key === item.key) || item;
+      const newMetricSample = signal.lastAnomalyAt > Date.parse(notifiedAt) && signal.lastAnomalyAt <= now;
+      const fresh = complete && (item.status === 'resolved' || (item.kind === 'metric'
+        ? newMetricSample && extras.some(c => c.key === item.key && c.alarm !== false)
+        : [...candidates, ...extras].some(c => c.key === item.key)));
+      observePersistentAlert(item, { ...signal, recovered: item.status === 'resolved' },
+        { now, since: notifiedAt, fresh });
+      if (item.persistentWarningAt !== before && item.notification) item.notification.ready = true;
+    }
     await writeDurableJson(stateFile,state);
     const bundles = metricAlerts && validDiagnosisRecipient(config.notification) ? metricAlertBundles(state,config.notification,now) : [];
     const deliveries = [...bundles,...Object.values(state.incidents).filter(i=>!metricAlerts || i.kind!=='metric')];
@@ -237,12 +260,16 @@ export async function processSessionDiagnostics({config = {},snapshot = {},dryRu
       item.delivery={...item.delivery,status:'sending',recipientKey:item.delivery?.recipientKey || recipientKey(config.notification)};
       await writeDurableJson(stateFile,state);
       try {
-        item.delivery={...await deliver(item,config.notification),version,status:'delivered'};
+        item.delivery={...await deliver(item,config.notification),sentAt:item.delivery?.sentAt || state.checkedAt,version,status:'delivered'};
+        item.firstNotifiedAt ||= state.checkedAt;
         if(item.kind==='metric-bundle') {
           item.migration=false;
           for(const id of item.memberIds) {
             const member=state.incidents[id];
-            if(member?.notification?.ready) member.notification={...member.notification,sentSemantic:member.notification.semantic,sentRatio:member.ratio,sentLevel:member.notification.level,ready:false};
+            if(member?.notification?.ready) {
+              member.firstNotifiedAt ||= state.checkedAt;
+              member.notification={...member.notification,sentSemantic:member.notification.semantic,sentRatio:member.ratio,sentLevel:member.notification.level,ready:false};
+            }
           }
         }
         else if(riskOnly)item.notification={...item.notification,sentSemantic:item.notification.semantic,...(item.kind==='metric'?{sentRatio:item.ratio,sentLevel:item.notification.level}:{}),ready:false};

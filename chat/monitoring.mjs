@@ -214,7 +214,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     const growthHistory = config.diskGrowth?.enabled ? await observe('diskGrowth', () => getRecord(DISK_GROWTH_FILE), null) : null;
     const diskGrowth = assessDiskGrowth(disks, growthHistory, config.diskGrowth, now());
     analysis.attention.push(...diskGrowthAttention(diskGrowth, disks));
-    analysis.attention.push(...serviceIncidentAttention(savedIncidents?.events || [], services));
+    analysis.attention.push(...serviceIncidentAttention(savedIncidents?.cycles || savedIncidents?.events || [], services, { now: now(), gaps }).filter(item => !item.recovered));
     if (runtimeFresh && runtimeHealth.heapUsed / runtimeHealth.heapLimit >= 0.85) analysis.attention.push({ kind: 'servicePressure', id: runtimeService.unit, unit: runtimeService.unit, subject: runtimeService.label, severity: 'critical', detail: `堆用量 ${(runtimeHealth.heapUsed / GiB).toFixed(2)} / ${(runtimeHealth.heapLimit / GiB).toFixed(2)} GiB`, signals: { pid: runtimeHealth.pid } });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));

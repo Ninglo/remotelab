@@ -88,7 +88,7 @@ try {
  rows=[row('one',start+24*minute)];
  for(let n=4;n<7;n++){rt=runtime(start+n*6*minute);await processSessionDiagnostics({...recovery,now:start+n*6*minute});}
  assert.equal(recoveredSends.length,3,'verified recovery rearms a later independent recurrence');
- assert.notEqual(recoveredSends[2].id,recoveredSends[0].id);
+ assert.equal(recoveredSends[2].id,recoveredSends[0].id,'recurrence inside three hours retains the original card');
 
  // Explicit metric notifications coexist with risk-only account policy.
  const metricRows=Array.from({length:90},(_,i)=>({runId:'base'+i,sessionId:'m'+i%6,responseAt:start-(2+i%10)*86400000,state:'completed',model:'m',tool:'codex',metrics:{injectionChars:10000}}));

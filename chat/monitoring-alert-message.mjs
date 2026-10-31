@@ -65,6 +65,7 @@ export function monitoringProblem(item) {
     : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
 export function monitoringProgress(item, recovery) {
+  if (item.kind === 'serviceCrash' && item.recovered) return '已连续稳定运行30分钟，根因修复待确认。';
   if (item.kind === 'diskGrowth') return item.recovered ? '最新有效观测不再满足增长预警条件，容量继续独立监测。' : '已保存实际增长窗口与基线，容量继续独立监测。';
   const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
   if (!inFlight && recovery?.summary) return brief(recovery.summary.replace(/^同一[^。]*告警接续。/, ''));
@@ -84,12 +85,14 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
   return events.map(item => {
     const recovery = repairFor(item, config), next = monitoringNextStep(item, config);
     const resolved = item.recovered === true;
-    const status = resolved ? item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
+    const status = resolved ? item.kind === 'serviceCrash' ? '服务已稳定恢复，根因修复待确认' : item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
     const decision = color && next.type !== 'notice' ? `<font color="red">${next.summary}</font>` : next.summary;
     return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
       + `上次预警：${alertTime(item.lastAlertAt || item.triggeredAt)}（北京时间）\n`
       + `预警原因：${text(item.kind === 'diskGrowth' && !resolved ? monitoringProblem(item) : item.triggerReason || monitoringProblem(item), 200)}\n`
       + (item.kind === 'diskGrowth' && !resolved ? `观测时间：${alertTime(item.observedAt)}（北京时间）\n` : '')
+      + (item.kind === 'serviceCrash' ? `崩溃记录：累计${item.crashCount || 1}次；最近 ${alertTime(item.lastOccurredAt || item.occurredAt)}\n` : '')
+      + (!resolved && item.persistentWarningAt ? `**持续告警：连续10分钟未见改善。**（${alertTime(item.persistentWarningAt)}）\n` : '')
       + (resolved ? `处理方式：${item.recoveryStopped ? '任务停止，保留历史记录' : resolutionAttribution(recovery)}\n`
         + `处理结果：${monitoringProgress(item, recovery)}${item.recoveryObservation ? `；复查：${text(item.recoveryObservation, 160)}` : ''}\n`
         + `确认时间：${alertTime(item.recoveredAt || item.observedAt)}\n`

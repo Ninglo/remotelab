@@ -8,9 +8,11 @@ import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 
 const exec = promisify(execFile);
 const signature = 'FATAL ERROR:|Main process exited,|Failed with result|Scheduled restart job';
+export const SERVICE_STABLE_MS = 30 * 60_000;
 
 // A process may recover between observations. The journal is the evidence,
-// not the instantaneous ActiveState. One invocation is one incident.
+// not the instantaneous ActiveState. Preserve one evidence record per invocation;
+// human-facing incidents group these records into service failure cycles.
 export function mergeServiceJournal(previous, rows, unit) {
   const events = new Map((previous || []).map(event => [event.id, event]));
   for (const row of rows) {
@@ -35,6 +37,30 @@ export function mergeServiceJournal(previous, rows, unit) {
     events.set(id, event);
   }
   return [...events.values()].sort((a, b) => a.at.localeCompare(b.at)).slice(-256);
+}
+
+export function mergeServiceCycles(previous = [], events = []) {
+  const cycles = structuredClone(previous);
+  for (const event of [...events].sort((a, b) => a.at.localeCompare(b.at))) {
+    let cycle = cycles.find(c => c.eventIds.includes(event.id));
+    if (!cycle) {
+      cycle = cycles.findLast(c => c.unit === event.unit && Date.parse(event.at) >= Date.parse(c.lastAt)
+        && Date.parse(event.at) - Date.parse(c.lastAt) < SERVICE_STABLE_MS);
+      if (!cycle) {
+        cycle = { id: event.id, unit: event.unit, at: event.at, lastAt: event.at, count: 0, eventIds: [] };
+        cycles.push(cycle);
+      }
+      cycle.count++;
+      // Raw evidence is archived separately. This dedup set covers the entire
+      // bounded journal projection, so long crash loops retain a stable cycle ID.
+      cycle.eventIds = [...cycle.eventIds, event.id].slice(-256);
+    }
+    if (event.at >= cycle.lastAt) Object.assign(cycle, {
+      lastAt: event.at, reason: event.reason, automaticRestart: event.automaticRestart,
+      evidence: event.evidence,
+    });
+  }
+  return cycles.sort((a, b) => a.at.localeCompare(b.at)).slice(-256);
 }
 
 export async function collectServiceIncidents({ services = [], config = {},
@@ -71,19 +97,27 @@ export async function collectServiceIncidents({ services = [], config = {},
     }
   }
   state.observedAt = new Date(now).toISOString();
+  state.cycles = mergeServiceCycles(state.cycles, state.events);
   state.gaps = gaps;
   if (!dryRun) await save(file, state);
-  return { events: state.events, gaps, observedAt: state.observedAt };
+  return { events: state.events, cycles: state.cycles, gaps, observedAt: state.observedAt };
 }
 
-export function serviceIncidentAttention(events, services) {
-  return events.map(event => {
+export function serviceIncidentAttention(events, services, { now = Date.now(), gaps = [] } = {}) {
+  const cycles = events.every(e => Array.isArray(e.eventIds)) ? events : mergeServiceCycles([], events);
+  return cycles.map(event => {
     const service = services.find(s => s.unit === event.unit);
     const available = service?.status === 'healthy';
+    const stableSince = Math.max(Date.parse(event.lastAt), Date.parse(service?.lastRunAt) || 0);
+    const recovered = available && now - stableSince >= SERVICE_STABLE_MS
+      && !gaps.some(g => g.source === 'serviceIncidents' || g.source === `serviceJournal:${event.unit}`);
     return { kind: 'serviceCrash', severity: 'critical', id: event.id, unit: event.unit,
-      subject: service?.label || event.unit, occurredAt: event.at,
-      detail: `${event.at}：${event.reason}；${available ? '服务目前已运行，根因尚未认定修复' : '服务当前状态待核查'}。`,
-      signals: { reason: event.reason, automaticRestart: event.automaticRestart === true, available },
+      subject: service?.label || event.unit, occurredAt: event.at, lastOccurredAt: event.lastAt,
+      crashCount: event.count, eventIds: event.eventIds, recovered,
+      recoveryObservation: recovered ? '服务已连续稳定运行30分钟，根因修复待确认' : undefined,
+      detail: `本轮累计崩溃${event.count}次，最近一次 ${event.lastAt}：${event.reason}；${recovered ? '已稳定恢复，根因修复待确认' : available ? '服务目前已运行，根因尚未认定修复' : '服务当前状态待核查'}。`,
+      signals: { reason: event.reason, automaticRestart: event.automaticRestart === true, available,
+        unavailable: service?.status === 'failed', count: event.count, lastAt: event.lastAt },
       evidence: event.evidence };
   });
 }

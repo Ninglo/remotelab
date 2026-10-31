@@ -60,7 +60,7 @@ try {
  const running=processSessionDiagnostics({...args,stateFile:join(root,'busy.json'),readSessions:async()=>{entered();await held;return {sessions:[],coverage:{}};}});
  await gate;assert.equal((await processSessionDiagnostics({...args,stateFile:join(root,'busy.json')})).skipped,'busy');release();await running;
  let groupCalls=0, diagnosticCalls=0;
- await runMonitoringAlerts({config:{alertDelivery:{enabled:false},sessionDiagnostics:{enabled:true}},reader:async()=>({}),recover:async()=>({}),dispatch:async()=>{groupCalls++;return {muted:true};},diagnose:async options=>{assert(options.config.enabled);diagnosticCalls++;return {};}});
+ await runMonitoringAlerts({config:{alertDelivery:{enabled:false},sessionDiagnostics:{enabled:true}},reader:async()=>({attention:[],services:[],disks:[],coverage:{gaps:[]}}),recover:async()=>({}),dispatch:async()=>{groupCalls++;return {muted:true};},diagnose:async options=>{assert(options.config.enabled);diagnosticCalls++;return {};}});
  assert.equal(groupCalls,1);assert.equal(diagnosticCalls,1,'private diagnosis is independent of paused group delivery');
  const item={...candidate,id:'test',summary:'test',nextStep:'无需操作'};
  let command;

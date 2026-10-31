@@ -1086,6 +1086,8 @@
             "chat/monitoring-alerts.mjs",
             "chat/monitoring-alert-message.mjs",
             "lib/alert-card-history.mjs",
+            "lib/alert-notification-policy.mjs",
+            "lib/metric-alert-bundle.mjs",
             "lib/alert-evidence-image.mjs",
             "lib/monitoring-actions.mjs",
             "chat/usage-ledger.mjs",

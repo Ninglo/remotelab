@@ -10,7 +10,7 @@ const snapshot = attention => ({ generatedAt: '2026-10-03T06:00:00Z', attention,
 
 function fixture() {
   let state = null, sends = 0, updates = 0;
-  return { options: { config: {}, load: async () => structuredClone(state), save: async (_file, value) => { state = structuredClone(value); },
+  return { options: { config: {}, now: Date.parse('2026-10-03T06:00:00Z'), load: async () => structuredClone(state), save: async (_file, value) => { state = structuredClone(value); },
     send: async (_events, _config, id) => { sends++; assert.ok(id.length <= 50); return `om_batch_${sends}`; },
     update: async (_events, _config, id) => { updates++; return id; } },
   getState: () => state, getSends: () => sends, getUpdates: () => updates };
@@ -25,7 +25,7 @@ test('normal observations are silent; simultaneous urgent issues send once and s
   const recovered = snapshot([]); recovered.disks = [{ label: disk.subject, status: 'healthy' }];
   recovered.services = [{ label: 'Service', status: 'healthy' }];
   await dispatchMonitoringAlerts({ ...f.options, snapshot: recovered });
-  await dispatchMonitoringAlerts({ ...f.options, snapshot: value }); assert.equal(f.getSends(), 2);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: value, now: f.options.now + 3 * 3600_000 }); assert.equal(f.getSends(), 2);
 });
 
 test('unknown disk measurement is not recovery; only explicit recovery rearms an urgent notification', async () => {
@@ -68,7 +68,7 @@ test('a missing or renamed source does not rearm an already reported automation 
   recovered.automations.items = [{ id: 'sch_daily', state: 'active', lastExecution: { state: 'completed' } }];
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered });
   for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
-  assert.equal(f.getSends(), 2, 'a real recovery rearms a later failure');
+  assert.equal(f.getSends(), 1, 'a recurrence within three hours edits the original card');
 });
 
 test('an unfinished retry and a disappeared service or disk are not recovery', async () => {
@@ -92,7 +92,8 @@ test('independently verified repair rearms the next failed Run without rewriting
   repaired.recovery = [{ kind: 'automation', id: 'sch_daily', originRunId: 'run_original', status: 'resolved' }];
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: repaired });
   for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: failed });
-  assert.equal(f.getSends(), 2);
+  assert.equal(f.getSends(), 1);
+  assert.ok(f.getUpdates() >= 2);
 });
 
 test('resuming with a baseline also acknowledges important failures below the three-observation threshold', async () => {
@@ -176,7 +177,8 @@ test('normal exhaustion and remote account observation loss do not notify; servi
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered });
   await dispatchMonitoringAlerts(options); await dispatchMonitoringAlerts(options);
   assert.equal(f.getSends(), 1);
-  assert.equal((await dispatchMonitoringAlerts(options)).sent, 1);
+  assert.equal((await dispatchMonitoringAlerts(options)).sent, 0);
+  assert.equal(f.getSends(), 1);
 });
 
 test('account consolidation is opt-in and baselines existing failures before the threshold', async () => {
@@ -205,7 +207,7 @@ test('local continuity incidents require persistence; fleet exhaustion alone sta
   const ready = snapshot([]); ready.accountContinuity = { status: 'ready' };
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: ready });
   for (let i = 0; i < 3; i++) await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
-  assert.equal(f.getSends(), 2);
+  assert.equal(f.getSends(), 1);
 });
 
 test('disk deterioration and a concrete confirmation plan update the original message', async () => {
@@ -313,7 +315,9 @@ test('a recovery observed while muted updates the old message even if a new inci
   await dispatchMonitoringAlerts({ ...f.options, config: { enabled: false }, snapshot: failed });
   let oldEvents;
   await dispatchMonitoringAlerts({ ...f.options, snapshot: failed, update: async (events, _config, id) => { oldEvents = events; return id; } });
-  assert.equal(oldEvents[0].recovered, true); assert.equal(f.getSends(), 2);
+  assert.ok(!oldEvents[0].recovered); assert.equal(f.getSends(), 1);
+  assert.ok(oldEvents[0].history.some(h => h.label === '复查确认恢复'));
+  assert.ok(oldEvents[0].history.some(h => h.label === '三小时内再次预警'));
 });
 
 test('baseline records the existing confirmation plan without admitting repair or later replaying it as new', async () => {
@@ -528,7 +532,7 @@ test('legacy migration separates the original send time from later recorded data
   assert.match(current.triggerReason, /原始触发数值未保存.*8.00 GiB/);
 });
 
-test('a new growth cycle keeps its own trigger instead of inheriting a recovered incident', async () => {
+test('a new growth cycle outside three hours keeps its own trigger', async () => {
   const f = fixture();
   const event = { kind: 'diskGrowth', id: '/', subject: 'System disk', severity: 'warning',
     detail: '11分钟净增 2.33 GiB；15分钟增长预警线 1.00 GiB。', signals: { growthRule: 'window:15' } };
@@ -537,8 +541,8 @@ test('a new growth cycle keeps its own trigger instead of inheriting a recovered
   await dispatchMonitoringAlerts({ ...f.options, snapshot: recovered });
   const next = { ...event, detail: '172分钟净增 20.87 GiB；180分钟增长预警线 8.00 GiB。',
     signals: { growthRule: 'window:180' } };
-  const current = { ...snapshot([next]), generatedAt: '2026-10-03T07:00:00Z' };
-  await dispatchMonitoringAlerts({ ...f.options, snapshot: current });
+  const current = { ...snapshot([next]), generatedAt: '2026-10-03T10:00:00Z' };
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: current, now: Date.parse(current.generatedAt) });
   const incident = Object.values(f.getState().incidents)[0];
   assert.equal(incident.cycle, 2);
   assert.equal(incident.triggeredAt, current.generatedAt);
