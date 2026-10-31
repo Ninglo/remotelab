@@ -58,7 +58,7 @@ flowchart LR
 
 RemoteLab 负责入口连接、持久会话、上下文提供、运行状态、定时工作和结果投递。Harness 是实际理解任务、规划、选择工具和执行工作的 Agent 层，保留其原生能力与安全机制。当前原生接入包括 Codex、Claude Code、Pi 和 Antigravity，详见[运行接入说明](docs/native-harness-input.md)。模型、账号与可用工具取决于部署者的配置。
 
-新会话默认走 Auto：普通工作使用 `gpt-6-astra / xhigh`，快速档使用 Astra/low，明确选择 medium 时使用 Astra/medium；经济档保留 Luna/low。手动模式与 `/quick` 的默认模型也为 Astra，已有普通会话保留已选模型。实例可覆盖这些默认值，详见[默认模型配置](docs/setup.md#jev-auto-model-routing)。
+新会话默认走 Auto：普通工作使用 `gpt-6-astra / xhigh`，快速档使用 GPT-6.1 Sol/low，明确选择 medium 时使用 Astra/medium；经济档保留 Luna/low。手动模式默认模型为 Astra，`/quick` 默认使用 GPT-6.1 Sol/low，已有普通会话保留已选模型。实例可覆盖这些默认值，详见[默认模型配置](docs/setup.md#jev-auto-model-routing)。
 
 Session 是持续工作的单位，Run 是一次执行。历史和运行状态落盘，控制服务与执行进程分离；浏览器断开后记录仍在，服务重启后可依据持久状态恢复或核对运行。具体状态格式需与源码兼容，升级前按[迁移说明](docs/request-state-upgrade.md)检查。
 

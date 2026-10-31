@@ -77,7 +77,7 @@ dropdowns showing the concrete model and effort. Later messages keep that
 selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
-- `quick`: GPT-6 Astra with `low` reasoning and a short-answer developer prompt
+- `quick`: GPT-6.1 Sol with `low` reasoning and a short-answer developer prompt
   for focused, low-risk requests that clearly prioritize fast turnaround.
   Straightforward reads or lookups can use tools; urgency does not justify
   less reasoning for complex or consequential work.
@@ -127,7 +127,7 @@ JSON file. The file can also be edited directly:
 
 ```json
 {
-  "quick": { "model": "gpt-6-astra", "effort": "low" },
+  "quick": { "model": "gpt-6.1-sol", "effort": "low" },
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
   "quality": { "model": "gpt-6-astra", "effort": "xhigh" },
   "balanced": { "model": "gpt-6-astra", "effort": "medium" },

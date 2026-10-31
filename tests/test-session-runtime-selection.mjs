@@ -104,7 +104,7 @@ try {
       { executionProfile: 'quick', tool: 'claude', model: 'opus', effort: 'high', thinking: true },
       { tool: 'pi', model: 'provider/model', effort: 'max', thinking: true },
     ),
-    { tool: 'codex', model: 'gpt-6-astra', effort: 'low', thinking: false },
+    { tool: 'codex', model: 'gpt-6.1-sol', effort: 'low', thinking: false },
     'Quick Sessions ignore every per-message and persisted runtime override',
   );
   const pinned = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };
