@@ -13,6 +13,9 @@ import { createRecurringSchedule, getRecurringSchedule, updateRecurringSchedule,
 import { getAutomationTask } from './automation-tasks.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { appendEvent } from './history.mjs';
+import { normalizeGate } from '../lib/automation-script.mjs';
+import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
+import { resolveRuntimeProfile } from '../lib/runtime-profile.mjs';
 
 // Confirmation is a receipt for an existing native task, not a second scheduler.
 // The core is the sole writer; connectors submit verified provider callbacks.
@@ -55,12 +58,17 @@ async function publish(record, surface) {
 }
 
 function taskDefinition(input) {
+  const hasRuntime = ['runtimePolicy', 'tool', 'model', 'effort', 'thinking'].some(field => Object.hasOwn(input, field));
+  if (Object.hasOwn(input, 'thinking') && typeof input.thinking !== 'boolean') throw Error('thinking must be a boolean');
+  if (input.kind !== 'recurring' && Object.hasOwn(input, 'gate')) throw Error('gate requires a recurring task');
   const definition = {
     kind: trim(input.kind), title: trim(input.title), text: trim(input.text),
     output: trim(input.output), cost: trim(input.cost) || '暂无实测', details: trim(input.details),
     ...(input.kind === 'recurring' ? (input.cron
       ? { cron: trim(input.cron), timezone: trim(input.timezone) || 'Asia/Shanghai' }
       : { everySeconds: input.everySeconds }) : { scheduledAt: trim(input.scheduledAt) }),
+    ...(hasRuntime ? scheduledRuntimeIntent(input) : {}),
+    ...(Object.hasOwn(input, 'gate') ? { gate: normalizeGate(input.gate, { strict: true }) } : {}),
   };
   if (!['recurring', 'one_time'].includes(definition.kind) || !definition.title || !definition.text || !definition.output) {
     throw Error('kind、title、text 和 output 必填。');
@@ -88,6 +96,12 @@ export async function proposeAutomationConfirmation(input) {
     || owner.identity.realm !== plan.sourceRouteId) throw Error('需要原交办人的已核飞书输入和消息目标。');
   const session = await getSession(sourceSessionId);
   if (!session || session.archived) throw Error('原交办会话不可用。');
+  // Explicit task choices are independent of the discussion model. Preserve
+  // legacy callers that did not supply a runtime selection.
+  const runtime = definition.runtimePolicy === 'auto'
+    ? { tool: session.tool, model: 'auto', effort: '', thinking: false }
+    : { ...resolveRuntimeProfile(session, definition),
+      thinking: definition.runtimePolicy ? definition.thinking : session.thinking };
   const key = hash([sourceSessionId, sourceRequestId, input.key]);
   return queue(key, async () => {
     let record = await readRecord(pathFor(key));
@@ -102,9 +116,9 @@ export async function proposeAutomationConfirmation(input) {
     if (!record.executionSessionId) {
       const externalTriggerId = `automation-fixed:${key}`;
       const existing = await findSessionByExternalTriggerId(externalTriggerId);
-      const dedicated = existing || await createSession(session.folder, session.tool, definition.title, {
+      const dedicated = existing || await createSession(session.folder, runtime.tool, definition.title, {
         externalTriggerId, initiatedByIdentityId: record.identityId, viewPersonId: record.personId,
-        model: session.model, effort: session.effort, thinking: session.thinking,
+        model: runtime.model, effort: runtime.effort, thinking: runtime.thinking,
         group: '自动化任务', internalRole: 'scheduled_execution', sessionCollection: 'automations',
         description: `自动化 ${record.taskId}；来源 ${sourceSessionId}`,
         systemPrompt: `这条固定会话承接同一自动化的执行、纠正和故障修复。\n任务：${definition.title}\n${definition.text}\n输出：${definition.output}\n${definition.details}\n原交办：${automationTopicUrl(plan.target)}\n任务 ID：${record.taskId}\n来源会话：${sourceSessionId}；来源输入：${sourceRequestId}\n未来规则的纠正须写回任务定义或现行资料；不要只作口头承诺。上下文由 Harness 原生压缩，旧日志按需读取。`,
@@ -113,11 +127,11 @@ export async function proposeAutomationConfirmation(input) {
       await save(record);
     }
     if (!await rawTask(record)) {
-      const template = { folder: session.folder, tool: session.tool, reuse: 'fixed_session',
+      const template = { folder: session.folder, tool: runtime.tool, reuse: 'fixed_session',
         sessionId: record.executionSessionId, sessionCollection: 'automations' };
       const create = definition.kind === 'recurring' ? createRecurringSchedule : createTrigger;
       const task = await create({ ...definition, sourceSessionId, createdByIdentityId: record.identityId,
-        sessionTemplate: template, tool: session.tool, model: session.model, effort: session.effort, thinking: session.thinking },
+        sessionTemplate: template, ...runtime },
       { id: record.taskId, paused: true });
       record.definitionHash = definitionHash(task);
       await save(record);

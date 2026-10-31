@@ -11,7 +11,8 @@ try {
   const { CONFIG_DIR } = await import('../lib/config.mjs');
   await mkdir(CONFIG_DIR, { recursive: true });
   await writeFile(join(CONFIG_DIR, 'tools.json'), JSON.stringify([{ id: 'codex', name: 'Fixture', command: process.execPath,
-    runtimeFamily: 'codex-json', models: [{ id: 'auto' }], reasoning: { kind: 'none' } }]));
+    runtimeFamily: 'codex-json', models: [{ id: 'auto' }, { id: 'gpt-6-astra' }, { id: 'gpt-6.1-sol' }],
+    reasoning: { kind: 'enum', levels: ['low', 'medium', 'xhigh'], default: 'medium' } }]));
   const { updateAuthDocument } = await import('../lib/auth-config.mjs');
   await updateAuthDocument(doc => {
     doc.people = [{ id: 'person_alice', name: 'Alice', credentials: [],
@@ -21,12 +22,13 @@ try {
   const { createSession, getSession } = await import('../chat/session-manager.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const { listSourceDeliveries } = await import('../chat/source-deliveries.mjs');
-  const { getRecurringSchedule, updateRecurringSchedule } = await import('../chat/recurring-schedules.mjs');
+  const { getRecurringSchedule, updateRecurringSchedule, materializeDueRecurringSchedulesNow } = await import('../chat/recurring-schedules.mjs');
   const { getTrigger, createTrigger, ensureExecutionSession, updateTrigger } = await import('../chat/triggers.mjs');
   const { handleAutomationConfirmationRoutes } = await import('../chat/router-automation-confirmations.mjs');
   const { sendAutomationCard, handleAutomationCardAction, buildAutomationCard } = await import('../connectors/feishu/automation-cards.mjs');
   const { readAutomationConfirmation } = await import('../chat/automation-confirmations.mjs');
-  const session = await createSession(home, 'codex', 'Original discussion', { initiatedByIdentityId: 'identity_alice', viewPersonId: 'person_alice' });
+  const session = await createSession(home, 'codex', 'Original discussion', { initiatedByIdentityId: 'identity_alice', viewPersonId: 'person_alice',
+    model: 'gpt-6-astra', effort: 'xhigh' });
   const plan = { connector: 'feishu', sourceRouteId: 'fixture', target: { chatId: 'chat', tenantKey: 'tenant',
     chatType: 'group', messageId: 'human-message', threadId: 'original-thread', conversationKind: 'thread', replyInThread: true } };
   await requests.accept({ sessionId: session.id, requestId: 'human', text: '请建立自动化', deliveryPlan: plan,
@@ -40,10 +42,15 @@ try {
       writeJson: (_res, status, json) => { result = { response: { ok: status < 300, status }, json }; } });
     assert(handled); return result;
   };
+  const gateState = join(home, 'gate-state.json');
+  await writeFile(gateState, JSON.stringify({ trigger: false, reason: 'unchanged' }));
   const input = { key: 'ordinary', sourceSessionId: session.id, sourceRequestId: 'human', kind: 'recurring',
-    title: 'Fixture automation', text: 'Inspect fixture and report.', output: '任务话题', everySeconds: 3600 };
+    title: 'Fixture automation', text: 'Inspect fixture and report.', output: '任务话题', everySeconds: 3600,
+    runtimePolicy: 'fixed', tool: 'codex', model: 'gpt-6.1-sol', effort: 'medium',
+    gate: { mode: 'script', runtime: 'node', source: `require('node:fs/promises').readFile(${JSON.stringify(gateState)}, 'utf8').then(text => process.stdout.write(text));` } };
   assert.equal((await request('/api/automation-confirmations', { method: 'POST', body: input }, 'web')).response.status, 403);
   assert.equal((await request('/api/automation-confirmations', { method: 'POST', body: { ...input, sourceRequestId: 'forged' } })).response.status, 400);
+  assert.equal((await request('/api/automation-confirmations', { method: 'POST', body: { ...input, gate: { mode: 'script' } } })).response.status, 400);
   const propose = async body => {
     const result = await request('/api/automation-confirmations', { method: 'POST', body });
     assert.equal(result.response.status, 201, JSON.stringify(result.json)); return result.json.confirmation;
@@ -53,8 +60,13 @@ try {
   assert.equal((await getRecurringSchedule(record.taskId)).enabled, false);
   assert.notEqual(record.executionSessionId, session.id);
   assert.equal((await getSession(record.executionSessionId)).internalRole, 'scheduled_execution');
+  assert.equal((await getSession(record.executionSessionId)).model, 'gpt-6.1-sol');
+  assert.equal((await getSession(record.executionSessionId)).effort, 'medium');
   assert.equal((await propose(input)).executionSessionId, record.executionSessionId);
   assert.equal((await request('/api/automation-confirmations', { method: 'POST', body: { ...input, text: 'changed' } })).response.status, 400);
+  for (const patch of [{ model: 'gpt-6-astra' }, { gate: { mode: 'direct' } }]) {
+    assert.equal((await request('/api/automation-confirmations', { method: 'POST', body: { ...input, ...patch } })).response.status, 400);
+  }
   const deliveries = async (r, surface) => (await listSourceDeliveries({ sessionId: surface === 'source' ? r.sourceSessionId : r.executionSessionId }))
     .filter(d => d.automationControl?.key === r.key && d.automationControl.surface === surface);
   let created = 0, patched = 0;
@@ -98,6 +110,25 @@ try {
   assert.equal(schedule.enabled, true);
   assert.equal(schedule.sessionTemplate.sessionId, record.executionSessionId);
   assert.equal(schedule.sessionTemplate.conversation.target.threadId, entryCard.thread_id);
+  // The confirmed script runs without a model; only changed state admits the
+  // chosen task runtime, independently of the original discussion's model.
+  const admitted = [];
+  const tick = async () => materializeDueRecurringSchedulesNow({ now: (await getRecurringSchedule(schedule.id)).nextRunAt,
+    createScheduledTrigger: async data => { const trigger = await createTrigger(data); admitted.push(trigger); return trigger; } });
+  assert.equal((await tick()).materialized, 0);
+  assert.equal(admitted.length, 0);
+  await writeFile(gateState, 'unavailable');
+  assert.equal((await tick()).failed, 1);
+  assert.equal((await getRecurringSchedule(schedule.id)).lastGateReason, 'gate_error');
+  assert.equal(admitted.length, 0, 'a failed observation is not an unchanged-state success or a model admission');
+  await writeFile(gateState, JSON.stringify({ trigger: true, reason: 'resource_ready', dedupeKey: 'resource-v1' }));
+  assert.equal((await tick()).materialized, 1);
+  const resolved = await ensureExecutionSession(admitted[0]);
+  assert.equal(resolved.session.id, record.executionSessionId);
+  assert.equal(resolved.trigger.executionRuntime.model, 'gpt-6.1-sol');
+  assert.equal(resolved.trigger.executionRuntime.effort, 'medium');
+  assert.equal((await getSession(session.id)).model, 'gpt-6-astra');
+  assert.equal((await getSession(session.id)).effort, 'xhigh');
   await sendAutomationCard(runtime, entryDelivery, { request });
   assert.equal(created, 2, 'confirmation and delivery retries reuse both real messages');
   const activeReceipt = await readAutomationConfirmation(record.key);
@@ -158,8 +189,10 @@ try {
   assert.equal((await getRecurringSchedule(changed.taskId)).enabled, false);
   // One-time tasks bind only via their internal confirmation operation. Public
   // trigger PATCH still cannot redirect an existing trigger.
-  const once = await propose({ ...input, key: 'once', kind: 'one_time', scheduledAt: new Date(Date.now() + 3600000).toISOString() });
+  const { gate: _gate, ...onceInput } = input;
+  const once = await propose({ ...onceInput, key: 'once', kind: 'one_time', scheduledAt: new Date(Date.now() + 3600000).toISOString() });
   assert.equal((await getTrigger(once.taskId)).status, 'paused');
+  assert.equal((await getTrigger(once.taskId)).model, 'gpt-6.1-sol');
   await assert.rejects(updateTrigger(once.taskId, { sessionTemplate: schedule.sessionTemplate }), /immutable/);
   const onceCard = await sendAutomationCard(runtime, (await deliveries(once, 'source'))[0], { request });
   await action(once, 'confirm', { messageId: onceCard.messageId });
@@ -172,6 +205,11 @@ try {
   assert.equal((await getRun(onceRun.id)).cancelRequested, true);
   assert.equal((await getTrigger(once.taskId)).status, 'delivered');
   assert.equal((await readAutomationConfirmation(once.key)).phase, 'stopped');
+  const automatic = await propose({ ...onceInput, key: 'auto-runtime', runtimePolicy: 'auto' });
+  assert.equal((await getSession(automatic.executionSessionId)).model, 'auto', 'explicit Auto does not inherit Astra');
+  const { runtimePolicy: _policy, tool: _tool, model: _model, effort: _effort, ...legacyInput } = onceInput;
+  const legacy = await propose({ ...legacyInput, key: 'legacy-runtime' });
+  assert.equal((await getSession(legacy.executionSessionId)).model, 'gpt-6-astra', 'legacy callers retain their prior behavior');
   // Recovery after activation committed but before its receipt was saved.
   const activeRecord = { ...record, phase: 'confirming' };
   await writeFile(join(CONFIG_DIR, 'automation-confirmations', `${record.key}.json`), JSON.stringify(activeRecord));
