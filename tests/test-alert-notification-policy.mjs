@@ -7,6 +7,7 @@ import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitor
 import { mergeServiceCycles, serviceIncidentAttention } from '../chat/service-incidents.mjs';
 import { observePersistentAlert } from '../lib/alert-notification-policy.mjs';
 import { metricAlertBundles, metricBundleCard } from '../lib/metric-alert-bundle.mjs';
+import { processSessionDiagnostics } from '../chat/session-diagnostics.mjs';
 
 const start = Date.parse('2026-10-31T01:00:00Z');
 const disk = { kind: 'disk', id: '/', subject: 'Disk', severity: 'critical', availableBytes: 1024 ** 3, usedPercent: 99 };
@@ -156,4 +157,28 @@ test('private metric persistence is visible in the existing three-hour bundle', 
   const next = metricAlertBundles(state, config, start + 10 * 60_000)[0];
   assert.equal(next.delivery.messageId, 'om_private');
   assert.match(JSON.stringify(metricBundleCard(next, config)), /连续10分钟未见改善/);
+});
+
+test('private diagnosis requires a new sample before adding its ten-minute warning in place', async () => {
+  const rows = Array.from({ length: 90 }, (_, i) => ({ runId: `base-${i}`, sessionId: `s${i % 6}`,
+    responseAt: start - (2 + i % 10) * 86400_000, state: 'completed', model: 'm', tool: 'codex', metrics: { injectionChars: 10000 } }));
+  rows.push(...Array.from({ length: 12 }, (_, i) => ({ runId: `bad-${i}`, sessionId: `s${i % 6}`,
+    responseAt: start - i * 1000, state: 'completed', model: 'm', tool: 'codex', metrics: { injectionChars: 18000 } })));
+  const delivered = [];
+  const options = { stateFile: join(CONFIG_DIR, 'private-persistence.json'),
+    config: { enabled: true, metricPolicy: { enabled: true, notifyOnRegression: true },
+      notification: { enabled: true, profile: 'bot', feishuAppId: 'cli_test', openId: 'ou_test', noisePolicy: { mode: 'risk_only' } } },
+    readSessions: async () => ({ sessions: [], coverage: {} }), readMetrics: async () => ({ samples: rows, coverage: {} }),
+    readAccounts: async () => null,
+    deliver: async item => { delivered.push(structuredClone(item)); return { messageId: 'om_private', chatId: 'oc_dm', recipientKey: item.delivery.recipientKey }; } };
+  await processSessionDiagnostics({ ...options, now: start });
+  await processSessionDiagnostics({ ...options, now: start + 10 * 60_000 });
+  assert.equal(delivered.length, 1, 'old samples alone do not assert continued regression');
+  rows.push({ ...rows.at(-1), runId: 'new-bad', responseAt: start + 14 * 60_000 });
+  await processSessionDiagnostics({ ...options, now: start + 15 * 60_000 });
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered[1].delivery.messageId, 'om_private');
+  assert.match(JSON.stringify(metricBundleCard(delivered[1], {})), /连续10分钟未见改善/);
+  await processSessionDiagnostics({ ...options, now: start + 20 * 60_000 });
+  assert.equal(delivered.length, 2);
 });
