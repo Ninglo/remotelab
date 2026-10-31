@@ -128,6 +128,15 @@ detached runner -> raw spool/status/result -> normalized Session events
 WebSocket only announces that clients should refetch. Detached execution survives
 control-plane restarts through durable Request/Run state and reconciliation.
 
+Small whole-document state uses `chat/fs-utils.mjs`: `readJson` returns its
+default only for `ENOENT`; malformed JSON, permission and other I/O errors
+propagate, stopping read/modify/write before replacement. Core startup removes
+only recognized `.tmp-<pid>-<uuid>` files in its direct config directory whose
+owning process has exited. Live or unverifiable PIDs, foreign file owners,
+symlinks and nested history directories remain untouched. Connector startup
+applies the same helper to its own direct state directory; there is no extra
+cleanup process. Keyed state follows [the engineering principles](engineering-principles.md).
+
 ## Execution ownership and asynchronous progress
 
 Runs use `storageVersion: 2`. Their files have separate writers:

@@ -24,7 +24,7 @@ import { setTimeout as delay } from 'timers/promises';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
-import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
+import { cleanupAtomicTemps, createKeyedTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 import { feishuReadRetryPolicy } from '../lib/feishu-retry-policy.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -533,15 +533,6 @@ async function ensureDir(pathname) {
 async function appendJsonl(pathname, value) {
   await ensureDir(dirname(pathname));
   await appendFile(pathname, `${JSON.stringify(value)}\n`, 'utf8');
-}
-
-async function readJson(pathname, fallback) {
-  try {
-    const raw = await readFile(pathname, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
 }
 
 async function writeJson(pathname, value) {
@@ -2273,6 +2264,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = await loadConfig(options.configPath);
   const connectorPidLock = await claimConnectorPidLock(config.storageDir);
+  await cleanupAtomicTemps(config.storageDir);
   let pidLockReleased = false;
   const releasePidLock = async () => {
     if (pidLockReleased) return;

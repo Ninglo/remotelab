@@ -9,7 +9,7 @@ const http = await import('http');
 // remaining dynamic imports. Node 18 can strand this import when they overlap.
 const embeddedMailWorker = await import('./lib/embedded-mail-worker.mjs');
 const [
-  { CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR },
+  { CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR, CONFIG_DIR },
   { handleRequest },
   apiRequestLog,
   usageLedger,
@@ -22,7 +22,7 @@ const [
   sessionAutoArchive,
   groupFeedReview,
   tools,
-  { ensureDir },
+  { ensureDir, cleanupAtomicTemps },
   guestWeChatConnectorStartup,
   codexAccountMonitor,
 ] = await Promise.all([
@@ -67,6 +67,7 @@ await new Promise((resolve, reject) => {
 });
 const stopRuntimeHealth = startRuntimeHealth();
 const cacheRelease = startCacheRelease();
+await cleanupAtomicTemps(CONFIG_DIR);
 // Old immutable catalog bodies retain a full day for in-flight readers.
 const catalogCleanup = setInterval(() => { void pruneSessionCatalog().catch(error => console.error('[session-catalog]', error.message)); }, 3600_000);
 catalogCleanup.unref();

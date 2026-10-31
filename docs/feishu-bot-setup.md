@@ -1196,6 +1196,12 @@ avoid enlarging a tightly cropped glyph in clients; total size is bounded to
 
 ### Inbox retry limits
 
+Connector JSON reads use the common state helper: only a missing file returns
+a default. Invalid JSON and other read failures stop the write path. Startup
+cleans recognized atomic temporary files in the connector's direct state
+directory only when the file owner matches and the recorded process has exited.
+It does not scan historical directories or remove live-process temporary files.
+
 The ingress Inbox persists an attempt before handling an input. An unfinished
 attempt after restart counts as a process interruption; two interruptions stop
 automatic replay. Ordinary retryable errors use the shared Feishu backoff and
