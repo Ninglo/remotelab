@@ -23,6 +23,7 @@ Read these first when you need the current truth:
 8. `../notes/current/session-first-workflow-surfaces.md` — internal workflow-organization contract for session list / grouping / task-like views
 9. `../notes/current/model-sovereign-control-architecture.md` — current ownership model for manager, prompt, memory, and durable work-state boundaries
 10. `../notes/current/session-control-state-phase1.md` — current carrier-to-object mapping and first code landing for manager/work-state projection
+11. `engineering-principles.md` — accepted engineering rules for state storage, input retries, retention, resource limits, incident alerts and fix scope
 
 ## Documentation delivery
 
