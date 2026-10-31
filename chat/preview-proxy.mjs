@@ -37,6 +37,7 @@ async function routeFor(slug) {
       access: route.access || 'basic',
       reuseIdentity: route.reuseIdentity === true || identity.reuseIdentity === true,
       recognizeIdentity: route.recognizeIdentity === true || identity.recognizeIdentity === true,
+      employeeLogin: identity.employeeLogin === true,
       postPaths: Array.isArray(route.postPaths) ? route.postPaths.filter(validPreviewPostPath) : [],
       requestHeaders: Array.isArray(route.requestHeaders) ? route.requestHeaders.filter(validPreviewRequestHeader) : [],
     };
@@ -57,7 +58,8 @@ export async function handlePreviewProxy(req, res, pathname) {
     return true;
   }
   let person;
-  if (route.access === 'employee') {
+  const mappedLogin = route.employeeLogin && !req.headers.authorization;
+  if (route.access === 'employee' || mappedLogin) {
     person = await requireEmployeeSite(req, res);
     if (!person) return true;
     if (!['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
@@ -86,7 +88,14 @@ export async function handlePreviewProxy(req, res, pathname) {
   }
   if (person) headers['x-remotelab-person-id'] = person.id;
   let replayedAuthorization = false;
-  if (route.access === 'basic' && route.reuseIdentity && person) {
+  if (mappedLogin) {
+    try { headers.authorization = await legacySiteLogin.lookup(match[1], person.id, route.port); } catch {}
+    if (!headers.authorization) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
+      res.end('飞书身份已核验；此网站仅向原获授权人员开放。'); return true;
+    }
+    replayedAuthorization = true;
+  } else if (route.access === 'basic' && route.reuseIdentity && person) {
     // Keep the browser's original credential authoritative when it is present.
     if (typeof req.headers.authorization === 'string') headers.authorization = req.headers.authorization;
     else try {
@@ -99,6 +108,11 @@ export async function handlePreviewProxy(req, res, pathname) {
     }
   }
   const upstream = http.request({ hostname: '127.0.0.1', port: route.port, path: `${suffix}${search}`, method: req.method, headers, timeout: 5000 }, async (response) => {
+    if ((mappedLogin || route.access === 'employee') && response.statusCode === 401 && response.headers['www-authenticate']) {
+      response.resume();
+      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'private, no-store' });
+      res.end('网站原有身份映射已失效，需要维护端更新；无需重新输入网站密码。'); return;
+    }
     if (route.access === 'basic' && route.reuseIdentity && person && req.method === 'GET'
       && suffix === '/' && response.statusCode >= 200 && response.statusCode < 300
       && req.headers.authorization?.startsWith('Basic ')) {

@@ -29,12 +29,22 @@ See [employee site login](../employee-site-login.md).
 
 Existing Basic Auth routes retain their authentication on replacement. Instances
 without employee identity configuration retain the Basic Auth default; explicitly
-select it with `--access basic`. The command checks its upstream Basic challenge.
+select it with `--access basic`. Configured instances reject Basic for new internal
+routes. Employee publication checks the actual GET page for another challenge,
+login redirect or password form, rather than relying on a HEAD health check.
 Switching a known route to `--access employee` requires removing the redundant
 upstream login; no passwords are automatically migrated or deleted.
 
 For a gradual migration that preserves existing Basic logins and registered
-operations, use `preview reuse-identity --slug <existing-name>`. The upstream must
+operations while removing the first password prompt, use
+`preview migrate-login --slug <existing-name> --credential-file <private-json>`.
+The private file supplies the upstream credential and the original employee/person
+scope; the gateway checks Feishu and reuses that scoped credential on the first visit.
+Hash-only servers can retain their verifier and add the port-scoped upstream adapter.
+See the employee-login guide for scope, roles, validation and private credential handling.
+
+`preview reuse-identity --slug <existing-name>` only caches an original successful
+password login and does not complete this migration. The upstream must
 still challenge anonymous root access. Only a verified employee who also
 successfully uses the original site's Basic login receives a reusable mapping;
 other employees gain no access. `preview recognize-identity --slug <existing-name>`

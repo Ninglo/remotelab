@@ -39,7 +39,7 @@ export async function resolveSiteUsageSite(req, { publicPagesDir = PUBLIC_PAGES_
     if (!Number.isInteger(route?.port) || route.port < 1 || route.port > 65535) return null;
     route = { ...route, ...await previewIdentityPolicy(slug, route.port, configDir) };
     if (route.access === 'employee' || route.recognizeIdentity === true) return site;
-    return route.reuseIdentity === true && personId && await legacySiteLogin.lookup(slug, personId, route.port) ? site : null;
+    return (route.reuseIdentity === true || route.employeeLogin === true) && personId && await legacySiteLogin.lookup(slug, personId, route.port) ? site : null;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error; // Invalid/unreadable policy is unavailable, never public.

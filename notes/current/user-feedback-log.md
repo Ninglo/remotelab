@@ -2212,3 +2212,15 @@ device authorization from its own card and exchanges the verified identity
 inline. Original account input, Token login, explicit logout and existing
 control-console admission remain intact. Browser fixtures cover the complete
 flow and blocked popups; real employee authorization still happens in Feishu.
+
+## 2026-10-31 — Password caching is not shared employee sign-in
+
+A user found that old sites still required passwords and reported the same on a
+new site. Read-only inspection reproduced 25 legacy Basic challenges even with
+an existing employee cookie. Prior acceptance preserved anonymous responses and
+tested optional credential caching; it did not establish first-visit Feishu entry.
+The migration now maps server-side upstream credentials within each site's original
+scope, preserves private-account roles and original callers, and tests a fresh
+employee browser with no previous Basic login. New publications check GET content,
+not only HEAD health, and reject a second password boundary. The reported new URL
+was unavailable; inspect publication records rather than requiring the user to find it.

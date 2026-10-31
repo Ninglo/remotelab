@@ -760,7 +760,7 @@
           "name": "网站统一员工登录",
           "purpose": "内部站点复用飞书员工登录，已有账号与旧站逐步兼容接入。",
           "entry": "沿托管网站入口接入；员工网站设备授权走 /site-login；控制台直接在原登录卡片完成飞书确认和原账号映射。公司 SSO 由已登记的网关完成登录和回调。",
-          "condition": "复用有效网页登录、员工和旧前沿身份；控制台飞书入口仅映射已有个人凭据的原账号，员工身份不直接授予控制台使用权。旧 Basic 保留原验证，按人按站复用；公开入口保持原访问方式。公司 SSO 暂停；主动退出暂停控制台自动重入，其他网站登录保留。",
+          "condition": "复用有效网页登录、员工和旧前沿身份；控制台飞书入口仅映射已有个人凭据的原账号，员工身份不直接授予控制台使用权。旧 Basic 可映射原站服务端凭据，首次飞书进入无需旧密码；私人账号保留原人员与角色，原凭据调用继续有效；公开入口保持原访问方式。公司 SSO 暂停；主动退出暂停控制台自动重入，其他网站登录保留。",
           "example": "发布一个内部网站，公司员工均可访问，由本次创建人负责。",
           "sources": [
             "lib/employee-site-identity.mjs",
@@ -777,6 +777,8 @@
             "examples/employee-site-login/README.md",
             "chat/workbench-site-login.mjs",
             "lib/legacy-site-login.mjs",
+            "lib/preview-upstream-auth.mjs",
+            "tests/test-site-login-migration.mjs",
             "chat/preview-proxy.mjs",
             "lib/preview-command.mjs",
             "tests/test-workbench-site-login.mjs",

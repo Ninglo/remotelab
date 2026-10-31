@@ -93,8 +93,8 @@ service preserves sessions. Logout removes the server-side session.
 
 This is same-domain reuse, not cross-domain SSO. A different browser, browser
 profile or independent domain has a different cookie context. No broad parent-
-domain cookie is issued. Existing independently hosted sites and Basic Auth
-passwords are not automatically migrated. Employee status synchronization and
+domain cookie is issued. Independently hosted sites require their own ingress integration.
+Existing Basic Auth sites use the explicit migration below. Employee status synchronization and
 offboarding remain outside this login-only scope.
 
 ## Authentication boundary
@@ -126,9 +126,46 @@ login form remains visible until the person chooses Feishu or successfully uses
 the original credential again. Employee website sessions are retained, so signing
 out of the console does not interrupt other websites.
 
-## Existing websites without interrupting their original login
+## Existing websites: Feishu entry without a first password login
 
-Ask the agent to enable compatible identity reuse for selected existing Basic
+Ask the agent to migrate the existing website's entry to Feishu, preserve its
+original people/roles and direct authenticated callers, and verify the first
+employee visit without supplying any website password. Use
+`preview migrate-login --slug <existing-name> --credential-file <private-json>`.
+The private JSON contains an upstream `authorization` and either `employees: true`
+for an authorized shared employee site or `personIds` for its original private
+users. Verify scope from the existing application; an employee identity does not
+grant access to another person's account-binding service or a control console.
+
+The gateway checks employee identity, selects the site's scoped credential and
+forwards it only to the registered loopback port. Anonymous HTML goes to Feishu;
+an already verified browser enters directly on its first visit. A private site's
+other employees receive 403 without a password dialog. Original callers that
+send their own Authorization continue through the original verifier. Registered
+write paths, application roles, video ranges, owners and data remain unchanged.
+If the upstream credential expires, return a mapping error without presenting
+another password login. The migration keeps the original route intact and pins
+the overlay and credential to the same port.
+
+For an upstream with only a password hash, `lib/preview-upstream-auth.mjs` is a
+small optional server adapter. Keep its original verifier, and also accept a
+separate random `Bearer` capability marked `upstreamToken: true` in the private
+binding. The adapter checks the capability against its own local port; the ingress
+owns employee/person admission. This key is independent of user credentials and
+is never placed in HTML, telemetry or the site directory. Applications with
+different roles must map to the original role or a read-only role, never choose
+an administrator implicitly. Keep the application loopback-only.
+
+`tests/test-site-login-migration.mjs` covers first-visit entry, private/shared
+scope, original calls, forged identity, cross-origin writes, video seek, expired
+mapping and the port-scoped upstream adapter. A new employee publication checks
+the actual GET entry: a second Basic challenge, login redirect or password form
+rejects publication. Configured instances reject new `--access basic` routes.
+
+### Optional credential caching for sites not yet migrated
+
+Credential caching is not a completed Feishu migration. For a site intentionally
+retaining its first password login, enable compatible identity reuse for existing Basic
 websites, preserve the original URLs and allowed operations, and verify both the
 old login and the exact person's reused login. Use `preview reuse-identity --slug
 <existing-slug>` only after the original root still returns a Basic challenge.
