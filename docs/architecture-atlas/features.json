@@ -85,7 +85,7 @@
           "name": "真实机器上的对话与执行",
           "purpose": "处理文件、调查问题、修改项目、运行程序，并在原会话继续补充要求。",
           "entry": "会话 → 新建会话 → 发送消息。",
-          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。 群主线回复进入新话题时，升级后启动且尚未结束的原生执行会接收话题里的追加消息；停止后不把已绑定的追加消息当作新开工。原执行结束后按正常话题接续，实际群聊体验另行验收。 新运行分别保存控制意图、执行事实和恢复推断；读取状态不推进任务，异步推进与兼容边界见架构说明。 消息索引使用 Node.js 24 内置 SQLite，由独立存储 worker 保持异步接口；首次流式迁移保留只读 JSON 备份，单条查询不随历史总量加载全文件。",
+          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。 群主线回复进入新话题时，升级后启动且尚未结束的原生执行会接收话题里的追加消息；停止后不把已绑定的追加消息当作新开工。原执行结束后按正常话题接续，实际群聊体验另行验收。 新运行分别保存控制意图、执行事实和恢复推断；读取状态不推进任务，异步推进与兼容边界见架构说明。 消息索引使用 Node.js 24 内置 SQLite，由独立存储 worker 保持异步接口；首次流式迁移保留只读 JSON 备份，单条查询不随历史总量加载全文件。 事件日志按天保留30天，启动只读当天与前一天；inbox归档保留90天；会议材料、投递及已读回执永久保留。",
           "example": "把这份表里的重复项清掉，保留原件，给我可下载的新表。",
           "sources": [
             "chat/session-manager.mjs",
@@ -118,7 +118,15 @@
             "lib/connector-message-index.mjs",
             "lib/sqlite-state.mjs",
             "lib/sqlite-state-worker.mjs",
-            "lib/json-record-stream.mjs"
+            "lib/json-record-stream.mjs",
+            "docs/feishu-bot-setup.md",
+            "lib/feishu-event-log.mjs",
+            "lib/durable-records.mjs",
+            "scripts/feishu-check.mjs",
+            "scripts/feishu-ops.mjs",
+            "lib/feishu-replay.mjs",
+            "connectors/feishu/linked-project-context.mjs",
+            "connectors/feishu/quick-participation.mjs"
           ],
           "commands": [],
           "sourceRevision": "0ddae66c9b7fc239234be0b529a1c5deaa14272c"
@@ -674,7 +682,7 @@
           "name": "会后原文自动进入指定群",
           "purpose": "按实例指定的来源群或发起人范围收取会后全文，保存成功与失败来源，并交给指定群的现有分析流程。",
           "entry": "实例 Connector 的 meeting-ingest-policy.json；状态与恢复使用 feishu-meeting-ingest 脚本。",
-          "condition": "默认停用。需已有会议发现、明确目标群与增量起点。来源群或发起人模式核对原生群成员关系或精确发起人；旧参与模式仅按实例原配置保留。统一索引、一体式纪要用户全文读取与现有日报补收分别显式配置；未知来源不读取正文，分析接纳不等于完成。",
+          "condition": "默认停用。需已有会议发现、明确目标群与增量起点。来源群或发起人模式核对原生群成员关系或精确发起人；旧参与模式仅按实例原配置保留。统一索引、一体式纪要用户全文读取与现有日报补收分别显式配置；未知来源不读取正文，分析接纳不等于完成。 会议数据永久保留；启动仅恢复未完成标记与任务，历史材料按ID读取。旧布局部署前通过同一Connector维护入口迁移。",
           "example": "会议结束后取回可读逐字稿，向授权录音群投递原链接，随后在同一话题提供独立总结和待人工确认的拟行动。",
           "sources": [
             "docs/feishu-meeting-observer.md",

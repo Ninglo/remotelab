@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFeishuEventWindow } from '../lib/feishu-event-log.mjs';
 
 import { readFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -148,30 +149,9 @@ async function readConnectorStatus(pidPath) {
   }
 }
 
-function parseJsonLines(raw) {
-  if (!raw) {
-    return { records: [], invalidLines: 0 };
-  }
-
-  const lines = raw.split('\n').map((line) => line.trim()).filter(Boolean);
-  const records = [];
-  let invalidLines = 0;
-
-  for (const line of lines) {
-    try {
-      records.push(JSON.parse(line));
-    } catch {
-      invalidLines += 1;
-    }
-  }
-
-  return { records, invalidLines };
-}
-
 async function readEventRecords(eventLogPath) {
-  const raw = await readTextIfExists(eventLogPath);
-  const exists = raw !== null;
-  const { records, invalidLines } = parseJsonLines(raw);
+  let exists = false, invalidLines = 0;
+  const records = await readFeishuEventWindow(eventLogPath, { onFile: () => { exists = true; }, onInvalidLine: () => { invalidLines++; } });
   return { exists, records, invalidLines };
 }
 

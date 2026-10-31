@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, open, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createKeyedTaskQueue, writeJsonAtomic } from '../../chat/fs-utils.mjs';
 
@@ -12,6 +12,8 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 // same-app WebSocket (which would compete for ordinary chat events).
 export function createFeishuMeetingObserver(runtime, options = {}) {
   const root = join(runtime.config.storageDir, 'meeting-observer');
+  const activeRoot = join(root, 'active');
+  const layoutPath = join(root, 'active-layout.json');
   const policyPath = join(runtime.config.storageDir, 'meeting-observer-policy.json');
   const queue = createKeyedTaskQueue();
   const workers = new Map();
@@ -34,12 +36,43 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
   }
   const statePath = id => join(root, `${id}.json`);
   async function readState(id) {
-    try { return JSON.parse(await readFile(statePath(id), 'utf8')); }
+    try { options.onRead?.(id); return JSON.parse(await readFile(statePath(id), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   }
+  let initialization;
+  function initialize() {
+    return initialization ||= initializeLayout().catch(error => { initialization = null; throw error; });
+  }
+  async function initializeLayout() {
+    try { await stat(layoutPath); return; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    try { await stat(root); }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      await mkdir(activeRoot, { recursive: true, mode: 0o700 });
+      await writeJsonAtomic(layoutPath, { version: 1 }); return;
+    }
+    throw new Error('Migrate legacy meeting observer state before starting the connector');
+  }
+  async function markActive(id) {
+    const file = await open(join(activeRoot, `${id}.json`), 'a', 0o600);
+    try { await file.sync(); } finally { await file.close(); }
+  }
+  async function clearActive(id) {
+    await unlink(join(activeRoot, `${id}.json`)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  }
   async function save(state) {
+    // The recovery marker precedes the state write; an interrupted handoff
+    // remains recoverable without enumerating permanent meeting history.
+    await markActive(state.meetingId);
     state.updatedAt = new Date(now()).toISOString();
     await writeJsonAtomic(statePath(state.meetingId), state, { mode: 0o600 });
+  }
+  async function deliverEnd(state) {
+    if (!state?.endedAt || state.endDeliveredAt || !options.onEnded) return;
+    await options.onEnded(state);
+    state.endDeliveredAt = new Date(now()).toISOString();
+    await save(state);
   }
   function targetFor(p, state) {
     const start = /^\d+$/.test(state.startedAt || '')
@@ -78,9 +111,11 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
     let again = false;
     let wait = 2000;
     await queue(id, async () => {
+      const step = async () => {
       const p = await policy();
       const state = await readState(id);
       if (!state || !p || state.appId !== p.appId || state.tenantKey !== p.tenantKey) return;
+      await deliverEnd(state);
       const target = targetFor(p, state);
       if (!target || stopped) {
         if (state.joinAttempted && !state.captureStatus) {
@@ -156,6 +191,9 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
         await save(state);
         again = !state.captureStatus;
       }
+      };
+      await step();
+      if (!again && !stopped) await clearActive(id);
     });
     if (again) next(id, wait);
   }
@@ -169,6 +207,7 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
     const meeting = event?.meeting;
     const id = str(meeting?.id);
     if (!/^\d{10,30}$/.test(id)) return {};
+    await initialize();
     await queue(id, async () => {
       const old = await readState(id);
       const state = old || { appId: p.appId, tenantKey: p.tenantKey, meetingId: id,
@@ -184,31 +223,44 @@ export function createFeishuMeetingObserver(runtime, options = {}) {
       if (type === START) state.startedAt ||= str(meeting.start_time) || new Date(now()).toISOString();
       if (type === END) state.endedAt ||= str(meeting.end_time) || new Date(now()).toISOString();
       await save(state);
+      if (type === END) await deliverEnd(state);
     });
     // Discovery is independent of the opt-in attendance pilot. The consumer
     // persists its own admission before this event is acknowledged.
-    if (type === END && options.onEnded) await options.onEnded(await readState(id));
     launch(id);
     return {};
   }
   async function restore() {
     const p = await policy();
     if (!p) return false;
-    await mkdir(root, { recursive: true, mode: 0o700 });
-    for (const file of await readdir(root)) {
-      if (/^\d{10,30}\.json$/.test(file)) {
-        const id = file.slice(0, -5);
-        const state = await readState(id);
-        if (state?.endedAt && options.onEnded) await options.onEnded(state);
-        launch(id);
-      }
+    await initialize();
+    for (const file of await readdir(activeRoot)) {
+      if (/^\d{10,30}\.json$/.test(file)) launch(file.slice(0, -5));
     }
     console.log('[feishu-meeting] enterprise discovery enabled; automatic attendance requires an explicit target');
     return true;
   }
+  // Explicit offline upgrade, with the connector PID lock held. Historical
+  // discovery is admitted once through its existing consumer, then retained.
+  async function migrate() {
+    try { await stat(layoutPath); return { migrated: false }; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await mkdir(activeRoot, { recursive: true, mode: 0o700 });
+    const p = await policy();
+    let historical = 0, active = 0;
+    for (const file of await readdir(root)) {
+      if (!/^\d{10,30}\.json$/.test(file)) continue;
+      const id = file.slice(0, -5), state = await readState(id); historical++;
+      if (p) await deliverEnd(state);
+      if (p && targetFor(p, state) && !state.captureStatus) { await markActive(id); active++; }
+      else await clearActive(id);
+    }
+    await writeJsonAtomic(layoutPath, { version: 1 });
+    return { migrated: true, historical, active };
+  }
   function stop() { stopped = true; for (const timer of timers.values()) cancel(timer); timers.clear(); }
   async function idle() { await Promise.all([...workers.values()]); }
-  return { handle, restore, stop, idle, handlers: {
+  return { handle, restore, migrate, stop, idle, handlers: {
     [START]: raw => handle(START, raw), [END]: raw => handle(END, raw),
   } };
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFeishuEventWindow } from '../lib/feishu-event-log.mjs';
 
 import { execFile as execFileCallback } from 'child_process';
 import { access, readFile, writeFile } from 'fs/promises';
@@ -470,9 +471,9 @@ async function loadSnapshot(options = {}) {
   const config = await loadConfig(paths.configPath);
   const accessState = await loadPersistedAccessState(config.accessPolicy);
   const connector = await readConnectorStatus(paths.pidPath);
-  const eventsRaw = await readTextIfExists(paths.eventLogPath);
+  let invalidLines = 0;
+  const eventRecords = await readFeishuEventWindow(paths.eventLogPath, { onInvalidLine: () => { invalidLines++; } });
   const handledJson = await readJsonIfExists(paths.handledMessagesPath, { messages: {} });
-  const { records: eventRecords, invalidLines } = parseJsonLines(eventsRaw);
   const records = buildMessageRecords(eventRecords, handledJson?.messages || {});
   return {
     paths,

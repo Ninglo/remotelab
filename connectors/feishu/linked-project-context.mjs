@@ -1,3 +1,4 @@
+import { readFeishuEventWindow } from '../../lib/feishu-event-log.mjs';
 import { createHash } from 'node:crypto';
 import { appendFile, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -198,7 +199,9 @@ export async function loadLinkedFeishuProjectContext(runtime, summary) {
   if (!link) return null;
   const source = linkedSource(link, summary.chatId);
   const [legacyEvents, projectEvents] = await Promise.all([
-    readEventTail(runtime?.storagePaths?.eventsLogPath),
+    runtime?.storagePaths?.eventsLogPath ? readFeishuEventWindow(runtime.storagePaths.eventsLogPath, { now: parseTime(summary.createTime) || Date.now(),
+      since: (parseTime(summary.createTime) || Date.now()) - MAX_CONTEXT_AGE_MS })
+      .then(records => records.map(record => JSON.stringify(record)).join('\n')) : '',
     readEventTail(projectStreamPath(runtime, link.projectId)),
   ]);
   const events = `${legacyEvents}\n${projectEvents}`;

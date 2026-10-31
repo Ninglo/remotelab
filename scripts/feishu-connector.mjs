@@ -38,6 +38,7 @@ import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.m
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { getFeishuConversationSettings, handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
 import { startFeishuPrivateConversation, filterPrivateConversationContext } from '../connectors/feishu/private-conversations.mjs';
+import { initializeFeishuEventLog, migrateFeishuEventLog, appendFeishuEvent, readFeishuEvents } from '../lib/feishu-event-log.mjs';
 import { findConnectorMessageIndexRecord, initializeConnectorMessageIndex } from '../lib/connector-message-index.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
@@ -190,6 +191,7 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === '--migrate-state') { options.migrateState = true; continue; }
     if (arg === '--replay-last') {
       options.replayLast = true;
       continue;
@@ -234,6 +236,7 @@ function printUsage(exitCode) {
 Options:
   --config <path>        Config file path (default: ${DEFAULT_CONFIG_PATH})
   --duration-ms <ms>     Optional smoke-test duration before exit
+  --migrate-state       Offline event/meeting state upgrade; exits before connecting
   --replay-last          Reprocess the latest stored inbound message once
   --replay-message-id    Reprocess one stored inbound message by ID (repeatable)
   -h, --help             Show this help
@@ -530,11 +533,6 @@ async function ensureDir(pathname) {
   await mkdir(pathname, { recursive: true });
 }
 
-async function appendJsonl(pathname, value) {
-  await ensureDir(dirname(pathname));
-  await appendFile(pathname, `${JSON.stringify(value)}\n`, 'utf8');
-}
-
 async function writeJson(pathname, value) {
   await ensureDir(dirname(pathname));
   await writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -656,7 +654,7 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
     summary,
     raw: runtime.config.storeRawEvents ? raw : undefined,
   };
-  await appendJsonl(runtime.storagePaths.eventsLogPath, record);
+  await appendFeishuEvent(runtime.storagePaths.eventsLogPath, record);
   await appendLinkedFeishuProjectEvent(runtime, record);
   console.log(`[feishu-connector] inbound event ${sourceLabel} (${allowed ? 'allowed' : 'blocked'})`, JSON.stringify(summarizeEventForLog(summary)));
   return allowed;
@@ -728,21 +726,9 @@ function isMainModule() {
 }
 
 async function loadLatestReplayableSummary(eventsLogPath) {
-  try {
-    const raw = await readFile(eventsLogPath, 'utf8');
-    const lines = raw.split('\n').map((line) => line.trim()).filter(Boolean).reverse();
-    for (const line of lines) {
-      let parsed = null;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      if (parsed?.allowed === false) continue;
-      if (!parsed?.summary?.messageId || !parsed?.summary?.chatId) continue;
-      return parsed.summary;
-    }
-  } catch {}
+  for await (const record of readFeishuEvents(eventsLogPath)) {
+    if (record?.allowed !== false && record?.summary?.messageId && record?.summary?.chatId) return record.summary;
+  }
   return null;
 }
 
@@ -2157,6 +2143,7 @@ async function notifyFeishuAdmissionFailure(runtime, entry) {
 
 function initializeInbox(runtime) {
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
+    archiveRetentionDays: 90,
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
     retryPolicy: (error, record) => ({ ...feishuReadRetryPolicy(error, record), maxCrashAttempts: 2 }),
     onRetryExhausted: async entry => {
@@ -2291,6 +2278,17 @@ async function main() {
   };
   await initializeConnectorMessageIndex(storagePaths.messageIndexPath);
   const runtime = createRuntimeContext(config, storagePaths);
+  if (options.migrateState) {
+    const ingest = createFeishuMeetingIngest(runtime);
+    const observer = createFeishuMeetingObserver(runtime, { onEnded: ingest.accept });
+    try {
+      const events = await migrateFeishuEventLog(storagePaths.eventsLogPath);
+      const meetings = await observer.migrate();
+      console.log(JSON.stringify({ events, meetings }));
+    } finally { observer.stop(); ingest.stop(); await releasePidLock(); }
+    return;
+  }
+  await initializeFeishuEventLog(storagePaths.eventsLogPath);
   runtime.cardReadSampler = createFeishuCardReadSampler(runtime);
   runtime.personalSettings = createPersonalSettingsController(runtime, { authorize: summary => isAllowedByPolicy(config.accessPolicy, summary) });
   if (config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
@@ -2538,6 +2536,7 @@ async function main() {
     'im.message.reaction.created_v1': persistReactionFeedback,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
+  await meetingObserver.restore();
   inbox.start();
   await meetingIngest.start();
   await wsClient.start({ eventDispatcher });
@@ -2564,8 +2563,6 @@ async function main() {
       }
     },
   });
-  void meetingObserver.restore().catch(error =>
-    console.warn(`[feishu-meeting] restore failed: ${error.message}`));
   void runtime.projectSurface?.restore().catch(error =>
     console.warn(`[feishu-project] restore failed: ${error.message}`));
   void discussionHandoff.restore().catch(error =>

@@ -1267,3 +1267,12 @@ The explicitly enrolled `reviewCardPersonIds` trial in `learning-policy.json` us
 运行环境要求 Node.js 24+。消息索引由共用 SQLite worker 按 key 读写，启用 WAL；调用方仍传入原 `messageIndexPath`，实际数据库位于该路径加 `.sqlite`。首次启动流式导入旧 JSON，核对数量与样本后将 JSON 改名为 `.readonly-backup`，权限设为只读并长期保留。迁移错误阻断启动，不创建空索引继续工作。部署时先停止旧版索引写入进程，再启动新版本；不要同时运行旧 JSON 写入器和 SQLite 写入器。
 
 内存验收位于存储边界：`tests/test-connector-index-memory.mjs` 在 64 MB 堆限制下运行，可传入线上索引的只读副本；测试只在临时目录迁移和回放。删除原有私聊调用方批量查询与 96 MB 专项绕行测试。
+
+
+### 事件日志与永久归档
+
+部署此存储布局时，让 Agent 先停止目标 connector，使用同一配置运行 `node scripts/feishu-connector.mjs --config <path> --migrate-state`，核对日志保留条数、会议历史与未完成数量，再启动 connector 并验证连接。该维护入口持有现有 PID 锁，运行后退出，不开第二条长连接。中断后重跑；未经迁移的旧布局拒绝启动。
+
+事件按 UTC 日写入 `events.YYYY-MM-DD.jsonl`，旧日志迁移分片带 `.legacy`，运行中保留 30 天。启动只读当天、前一天，快速参与限最近两小时；显式消息回放可查保留的 30 天。日志迁移流式写入并同步保留分片，确认源文件没有并发变化后才移除旧日志。无日期或破损行保存在当天分片作为原始证据。
+
+普通消息 inbox 的归档保留 90 天，由现有归档路径运行中清理；会议 inbox 不启用该删除策略。会议材料、投递回执与已读回执永久保留原存储位置，启动仅恢复 active 未完成工作，不扫描历史归档。会议历史按 ID 的恢复仍沿现有会议 retry 入口。保留期限和各目录责任见 [工程原则](engineering-principles.md#c-保留期限与启动开销原则-4)。

@@ -314,3 +314,10 @@ root; delayed generation and permanent denial; ambiguous send readback; a later
 new meeting through the real event subscription. Synthetic subsequent events in
 isolated tests prove the handler path, not live provider subscription coverage.
 Record a still-pending natural meeting separately from a passed replay test.
+
+
+### Permanent history and bounded restart recovery
+
+Meeting discovery, captured text, ingestion evidence and receipts are retained permanently in their existing paths. `meeting-observer/active/` holds only recovery markers; a marker precedes the state write and is removed after the existing ingestion handoff or attendance work completes. `endDeliveredAt` prevents completed handoffs being repeated on restart. Startup reads these unfinished meetings and the existing ingestion inbox's active jobs, never all historical meeting files.
+
+For the legacy layout, stop the connector and run its existing entry with `--config <path> --migrate-state`. This one-time maintenance operation scans historical discovery and hands it to the existing policy-checked ingestion admission, without starting another consumer or opening a second connection. The layout receipt is written only after migration completes. An interrupted migration remains retryable; original meeting data stays in place. Later policy changes do not automatically replay old meetings: use the existing explicit ID-based retry commands for retained material.

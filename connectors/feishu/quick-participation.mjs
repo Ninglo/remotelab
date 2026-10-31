@@ -1,4 +1,5 @@
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile } from 'node:fs/promises';
+import { readFeishuEventWindow } from '../../lib/feishu-event-log.mjs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { CONFIG_DIR } from '../../lib/config.mjs';
@@ -176,13 +177,11 @@ export function createFeishuQuickParticipationPilot(runtime, {
   }
 
   async function restore(eventsPath, { shouldRemember = async () => true } = {}) {
-    const content = await readFile(eventsPath, 'utf8').catch(() => '');
     const now = Date.now();
+    const records = await readFeishuEventWindow(eventsPath, { now, since: now - MAX_AGE_MS });
     const active = new Map();
-    for (const line of content.split('\n')) {
-      if (!line) continue;
+    for (const event of records) {
       try {
-        const event = JSON.parse(line);
         if (event.allowed && now - messageTime(event.summary) <= MAX_AGE_MS
           && await shouldRemember(event.summary)
           && remember(event.summary)) active.set(conversationKey(event.summary), event.summary);
