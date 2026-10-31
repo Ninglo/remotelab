@@ -1194,6 +1194,22 @@ The image helper remains available for explicitly requested image output via
 avoid enlarging a tightly cropped glyph in clients; total size is bounded to
 1600 × 1200 pixels. Rendering or upload failures preserve the complete source.
 
+### Inbox retry limits
+
+The ingress Inbox persists an attempt before handling an input. An unfinished
+attempt after restart counts as a process interruption; two interruptions stop
+automatic replay. Ordinary retryable errors use the shared Feishu backoff and
+five-attempt budget. Permanent admission failures keep their existing notice path.
+
+Exhausted inputs retain the original envelope and `retryExhausted` receipt in
+`storageDir/inbox/archive`. One notice to the original conversation and one alert
+to the configured `monitoring.json` alert recipient use the existing durable
+outbox with stable IDs. Lost enqueue acknowledgements cannot duplicate delivery
+or re-execute the input. A paused/unconfigured alert destination stays paused and
+is recorded as suppressed in the receipt. No separate quarantine queue is used.
+After repairing the cause, an operator may replay the retained input with a new
+explicit event ID; do not remove the original receipt or reset its attempt count.
+
 ## Success state
 
 - the connector log contains `persistent connection ready`

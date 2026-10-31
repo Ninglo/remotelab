@@ -26,6 +26,8 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { feishuReadRetryPolicy } from '../lib/feishu-retry-policy.mjs';
+import { readRecord } from '../lib/durable-records.mjs';
 import { createFeishuDisplayEventWriter } from '../lib/feishu-display-events.mjs';
 import {
   handleFeishuRuntimeCommands,
@@ -2165,6 +2167,22 @@ async function notifyFeishuAdmissionFailure(runtime, entry) {
 function initializeInbox(runtime) {
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
+    retryPolicy: (error, record) => ({ ...feishuReadRetryPolicy(error, record), maxCrashAttempts: 2 }),
+    onRetryExhausted: async entry => {
+      const summary = applyFeishuReplyRouting(runtime.config, entry.summary);
+      const notice = await queueFeishuReply(runtime, summary,
+        '这条输入处理失败，已停止自动重试。原始输入已保留，修复后可人工恢复。',
+        { responseId: `feishu-inbox-exhausted:${entry.id}` });
+      const config = (await readRecord(join(CONFIG_DIR, 'monitoring.json')))?.alertDelivery;
+      let alert = { suppressed: true, reason: 'monitoring_alert_delivery_disabled' };
+      if (config?.enabled && config.chatId && config.profile) {
+        alert = await queueFeishuReply({ ...runtime, config: { ...runtime.config, sourceRouteId: config.profile } },
+          { chatId: config.chatId, chatType: 'group', conversationKind: 'main' },
+          `飞书输入已停止自动重试：${runtime.config.sourceRouteId || 'default'} / ${entry.id}；尝试 ${entry.attempts} 次，进程中断 ${entry.crashAttempts || 0} 次。原始输入保留在 inbox 归档中。`,
+          { responseId: `feishu-inbox-alert:${runtime.config.sourceRouteId || 'default'}:${entry.id}` });
+      }
+      return { notificationDeliveryId: notice.deliveryId, alert };
+    },
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       if (!allowed) return { blocked: true };

@@ -175,6 +175,14 @@ A connector has two independently recoverable jobs, not one long-lived function 
 5. An independent sender claims ready deliveries, formats and sends them, durably records the upstream receipt, then acknowledges the lease. It never waits for an individual AI run.
 6. After a restart, inbox processing and receipt/outbox processing resume from disk.
 
+An Inbox retry policy persists `attempts` and `attemptInFlight` before invoking
+the handler. Restart recovery counts an unfinished attempt in `crashAttempts`;
+`maxCrashAttempts` bounds interruptions separately from ordinary retry backoff.
+On exhaustion, the retained `retryExhausted` receipt prevents any further input
+execution. An optional `onRetryExhausted` callback queues notices using stable
+outbox IDs; only notice completion retries after a lost acknowledgement. The
+original envelope and terminal receipt remain in the existing Inbox archive.
+
 Progress is driven by admission, execution-output and completion notifications,
 with bounded recovery checks for missed notifications. GET routes observe state;
 they do not finalize Runs or retry terminal hooks. The connector Inbox schedules
