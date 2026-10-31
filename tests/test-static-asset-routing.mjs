@@ -125,11 +125,13 @@ async function main() {
   const publicHtmlPath = join(publicProbeDir, 'index.html');
   const publicHtmlAliasPath = join(publicProbeDir, 'index.page.css');
   const publicAudioPath = join(publicProbeDir, 'sample.mp3');
+  const publicVideoPath = join(publicProbeDir, 'sample.mp4');
   writeFileSync(probePath, 'window.__REMOTELAB_STATIC_PROBE__ = true;\n', 'utf8');
   mkdirSync(publicProbeDir, { recursive: true });
   writeFileSync(publicHtmlPath, '<!doctype html><title>Public probe</title>\n', 'utf8');
   writeFileSync(publicHtmlAliasPath, '<!doctype html><title>Cached public probe</title>\n', 'utf8');
   writeFileSync(publicAudioPath, Buffer.from('ID3'));
+  writeFileSync(publicVideoPath, Buffer.from('0000ftypfixture'));
 
   const server = await startServer({ home, port });
   try {
@@ -195,6 +197,15 @@ async function main() {
     assert.equal(publicAudioRange.headers['content-length'], '2');
     assert.equal(publicAudioRange.text, 'ID');
 
+    const videoPath = `/public-pages/${basename(publicProbeDir)}/sample.mp4`;
+    const publicVideo = await request(port, videoPath, { Cookie: '' });
+    assert.equal(publicVideo.headers['content-type'], 'video/mp4');
+    const videoRange = await request(port, videoPath, { Range: 'bytes=4-7', Cookie: '' });
+    assert.equal(videoRange.status, 206);
+    assert.equal(videoRange.text, 'ftyp');
+    assert.equal(videoRange.headers['content-range'], 'bytes 4-7/15');
+    assert.equal((await request(port, videoPath, { Range: 'bytes=100-', Cookie: '' })).status, 416);
+
     const publicHtmlAlias = await request(
       port,
       `/public-pages/${basename(publicProbeDir)}/index.page.css?v=test-build`,
@@ -210,6 +221,21 @@ async function main() {
       'public, max-age=31536000, immutable',
       'versioned cacheable public HTML aliases should remain immutable',
     );
+
+    writeFileSync(join(home, '.config', 'remotelab', 'site-login.json'), JSON.stringify({
+      realm: 'fixture', tenantKey: 'fixture', feishuConfigPath: join(home, 'unused-app.json'), personIds: ['person_default'],
+    }));
+    const privateDir = join(home, '.config', 'remotelab', 'public-pages', 'private-media-fixture');
+    mkdirSync(privateDir);
+    writeFileSync(join(privateDir, 'sample.mp4'), Buffer.from('0000ftypfixture'));
+    writeFileSync(join(privateDir, '_remote_publish.json'), JSON.stringify({ access: 'employee', ownerPersonId: 'person_default' }));
+    const privatePath = '/public-pages/private-media-fixture/sample.mp4';
+    assert.equal((await request(port, privatePath, { Cookie: '', Range: 'bytes=4-7' })).status, 401, 'ranges cannot bypass employee access');
+    const privateRange = await request(port, privatePath, { Range: 'bytes=4-7' });
+    assert.equal(privateRange.status, 206);
+    assert.equal(privateRange.text, 'ftyp');
+    assert.equal(privateRange.headers['cache-control'], 'private, no-store');
+    assert.equal(privateRange.headers.vary, 'Cookie');
 
     const probe304 = await request(port, `/chat/${probeName}`, {
       'If-None-Match': probe.headers.etag,

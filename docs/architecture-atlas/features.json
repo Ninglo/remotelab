@@ -779,6 +779,8 @@
             "lib/legacy-site-login.mjs",
             "lib/preview-upstream-auth.mjs",
             "tests/test-site-login-migration.mjs",
+            "tests/test-static-asset-routing.mjs",
+            "chat/router.mjs",
             "chat/preview-proxy.mjs",
             "lib/preview-command.mjs",
             "tests/test-workbench-site-login.mjs",

@@ -191,6 +191,10 @@ function createClientSessionDetail(session) {
 }
 
 const staticMimeTypesByExtension = {
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
   '.html': 'text/html; charset=utf-8',
@@ -1370,7 +1374,7 @@ export async function handleRequest(req, res) {
       if (req.employeeStaticPage && req.method === 'GET' && !req.headers.range && /^text\/html/.test(staticAsset.contentType)) {
         content = injectSiteUsageHtml(content);
       }
-      if (staticAsset.contentType.startsWith('audio/')) {
+      if (/^(?:audio|video)\//.test(staticAsset.contentType)) {
         writeRangedStaticResponse(req, res, staticAsset, content);
         return;
       }
