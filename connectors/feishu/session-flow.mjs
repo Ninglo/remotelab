@@ -1,5 +1,6 @@
 import {
   findConnectorMessageIndexRecord,
+  findConnectorMessageIndexRecords,
   upsertConnectorMessageIndexRecord,
 } from '../../lib/connector-message-index.mjs';
 import {
@@ -128,8 +129,8 @@ export async function resolveFeishuReferencedTopic(runtime, summary) {
   if (buildFeishuTopicId(summary) || !runtime.storagePaths?.messageIndexPath) return summary;
   const refs = [...new Set([summary.parentId, summary.rootId].filter(Boolean))];
   if (!refs.length) return summary;
-  const records = await Promise.all(refs.map(messageId => findConnectorMessageIndexRecord(
-    runtime.storagePaths.messageIndexPath, { connector: FEISHU_CONNECTOR_ID, messageId,
+  const records = await findConnectorMessageIndexRecords(runtime.storagePaths.messageIndexPath,
+    refs.map(messageId => ({ connector: FEISHU_CONNECTOR_ID, messageId,
       accountId: getFeishuAccountId(summary), chatId: summary.chatId })));
   const topics = records.filter(record => record?.direction === 'outbound' && record.conversationKind === 'thread'
     && record.chatId === summary.chatId && (record.accountId || '') === getFeishuAccountId(summary));

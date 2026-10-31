@@ -6,6 +6,7 @@ import { join } from 'path';
 
 import {
   findConnectorMessageIndexRecord,
+  findConnectorMessageIndexRecords,
   upsertConnectorMessageIndexRecord,
 } from '../lib/connector-message-index.mjs';
 
@@ -37,6 +38,27 @@ try {
     chatId: 'chat-2',
   });
   assert.equal(wrongChat, null);
+
+  await upsertConnectorMessageIndexRecord(indexPath, {
+    connector: 'feishu', messageId: 'legacy', sessionId: 'legacy-session',
+    chatId: 'chat-1', conversationId: 'topic-1',
+  });
+  const batch = await findConnectorMessageIndexRecords(indexPath, [
+    { connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1', chatId: 'chat-1' },
+    { connector: 'feishu', accountId: 'tenant-2', messageId: 'message-1' },
+    { connector: 'feishu', accountId: 'tenant-1', messageId: 'legacy', conversationId: 'topic-1' },
+    { connector: 'feishu', messageId: 'legacy', conversationId: 'other-topic' },
+    { connector: 'other', messageId: 'message-1' },
+    {},
+  ]);
+  assert.deepEqual(batch.map(record => record?.sessionId || null),
+    ['session-1', null, 'legacy-session', null, null, null], 'batch lookup preserves scope, legacy fallback and query order');
+  await upsertConnectorMessageIndexRecord(indexPath, {
+    connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1', sessionId: 'updated-session',
+  });
+  assert.equal((await findConnectorMessageIndexRecords(indexPath, [
+    { connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1' },
+  ]))[0].sessionId, 'updated-session', 'later batches read newly committed bindings');
 
   await Promise.all(Array.from({ length: 12 }, (_, index) => upsertConnectorMessageIndexRecord(indexPath, {
     connector: 'feishu', accountId: 'tenant-1', messageId: `parallel-${index}`,

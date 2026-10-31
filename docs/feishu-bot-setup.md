@@ -501,6 +501,11 @@ IDs and old transcripts are not copied. Explicitly required references can
 still be retrieved, and current identity/preferences/capability pointers remain
 available. Unknown message ownership is not a private-memory access guarantee.
 
+History ownership checks read the connector message index once per batch and
+reuse that snapshot for all messages. This keeps startup replay memory from
+growing with the number of Bot replies in a private conversation; later batches
+read the current index, including newly recorded replies.
+
 Private-chat runtime context carries only a short pointer to the scoped history
 search above. It does not run a search or attach old excerpts/continuation
 summaries automatically. When the new question refers to earlier discussion,

@@ -84,7 +84,7 @@ try {
     messages: [{ messageId: 'old-finish', senderType: 'app', text: 'OLD_RESULT' },
       { messageId: 'new-answer', senderType: 'app', text: 'NEW_RESULT' },
       { messageId: 'human', senderType: 'user', text: 'NEW_QUESTION' }],
-  }, { lookup: async (_path, key) => ({ sessionId: key.messageId === 'old-finish' ? old.id : freshSession.id }) });
+  }, { lookup: async (_path, keys) => keys.map(key => ({ sessionId: key.messageId === 'old-finish' ? old.id : freshSession.id })) });
   assert.deepEqual(filtered.messages.map(m => m.text), ['NEW_RESULT', 'NEW_QUESTION'],
     'a late old-task result is delivered but does not contaminate the new model context');
   const replies = [];

@@ -2,22 +2,24 @@ import { createConnectorSession } from '../../lib/connector-turn-flow.mjs';
 import { buildFeishuTopicId, buildSessionSourceContext } from './index.mjs';
 import { buildFeishuSessionConversationTarget, buildFeishuSessionExternalTriggerId } from './reply-routing.mjs';
 import { parseFeishuMessageTime } from './conversation-context.mjs';
-import { findConnectorMessageIndexRecord } from '../../lib/connector-message-index.mjs';
+import { findConnectorMessageIndexRecords } from '../../lib/connector-message-index.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../../lib/session-navigation.mjs';
 
 export async function filterPrivateConversationContext(runtime, summary, session, context, {
-  lookup = findConnectorMessageIndexRecord,
+  lookup = findConnectorMessageIndexRecords,
 } = {}) {
   if (!session.privateConversationStart || !context?.messages?.length) return context;
-  const messages = await Promise.all(context.messages.map(async message => {
-    if (Number.isFinite(message.timestamp) && message.timestamp <= session.privateConversationStart.at) return null;
-    if (message.senderType !== 'app' || !runtime.storagePaths?.messageIndexPath) return message;
-    const indexed = await lookup(runtime.storagePaths.messageIndexPath, { connector: 'feishu',
+  const recent = context.messages.filter(message => !Number.isFinite(message.timestamp)
+    || message.timestamp > session.privateConversationStart.at);
+  const botMessages = runtime.storagePaths?.messageIndexPath
+    ? recent.filter(message => message.senderType === 'app') : [];
+  const records = botMessages.length ? await lookup(runtime.storagePaths.messageIndexPath,
+    botMessages.map(message => ({ connector: 'feishu',
       accountId: summary.tenantKey || summary.sender?.tenantKey || '', chatId: summary.chatId,
-      messageId: message.messageId });
-    return indexed?.sessionId && indexed.sessionId !== session.id ? null : message;
-  }));
-  return { ...context, messages: messages.filter(Boolean) };
+      messageId: message.messageId }))) : [];
+  const excluded = new Set(botMessages.filter((_, index) => records[index]?.sessionId
+    && records[index].sessionId !== session.id));
+  return { ...context, messages: recent.filter(message => !excluded.has(message)) };
 }
 
 export async function startFeishuPrivateConversation(runtime, summary, { request, resolveDefault, systemPrompt = '' } = {}) {
