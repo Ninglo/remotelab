@@ -586,6 +586,12 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
   if (shouldReattach) {
     clearMessages();
     dispatchAction({ action: "attach", sessionId: id });
+    if (typeof renderCachedSessionEvents === "function") {
+      renderCachedSessionEvents(id, {
+        runState: typeof getSessionRunState === "function" ? getSessionRunState(attachedSession) : "idle",
+        viewportIntent: "session_entry",
+      });
+    }
   }
   applyAttachedSessionState(id, attachedSession);
   if (typeof stageSessionReviewedForAttachedSession === "function") {

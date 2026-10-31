@@ -1433,18 +1433,34 @@ function applySessionViewportAfterRender({
   restoreSessionMessageViewport(snapshot, reason);
 }
 
-async function fetchSessionEvents(
+const SESSION_EVENT_SNAPSHOT_LIMIT = 8;
+const sessionEventSnapshots = new Map();
+
+function rememberSessionEventSnapshot(sessionId, events) {
+  if (!sessionId || !Array.isArray(events)) return;
+  sessionEventSnapshots.delete(sessionId);
+  sessionEventSnapshots.set(sessionId, events);
+  while (sessionEventSnapshots.size > SESSION_EVENT_SNAPSHOT_LIMIT) {
+    sessionEventSnapshots.delete(sessionEventSnapshots.keys().next().value);
+  }
+}
+
+function renderCachedSessionEvents(sessionId, {
+  runState = "idle", viewportIntent = "session_entry",
+} = {}) {
+  if (isShareSnapshotReadOnlyMode() || !sessionEventSnapshots.has(sessionId)) return false;
+  const events = sessionEventSnapshots.get(sessionId);
+  rememberSessionEventSnapshot(sessionId, events);
+  renderSessionEventSnapshot(sessionId, events, { runState, viewportIntent });
+  return true;
+}
+
+function renderSessionEventSnapshot(
   sessionId,
-  { runState = "idle", viewportIntent = "preserve", forceFresh = false } = {},
+  sourceEvents,
+  { runState = "idle", viewportIntent = "preserve" } = {},
 ) {
   const normalizedViewportIntent = normalizeSessionViewportIntent(viewportIntent);
-  const data = isShareSnapshotReadOnlyMode()
-    ? { events: getShareSnapshotDisplayEvents() }
-    : await fetchJsonOrRedirect(
-      `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
-      buildSessionRefreshRequestOptions(forceFresh),
-    );
-  const sourceEvents = data.events || [];
   if (currentSessionId !== sessionId) return sourceEvents;
   const stableSourceEvents = typeof updateSessionWorkboardEvents === "function"
     ? updateSessionWorkboardEvents(sessionId, sourceEvents) : sourceEvents;
@@ -1511,6 +1527,22 @@ async function fetchSessionEvents(
 
   updateRenderedEventState(sessionId, events, { runState });
   return events;
+}
+
+async function fetchSessionEvents(
+  sessionId,
+  { runState = "idle", viewportIntent = "preserve", forceFresh = false } = {},
+) {
+  const shareSnapshot = isShareSnapshotReadOnlyMode();
+  const data = shareSnapshot
+    ? { events: getShareSnapshotDisplayEvents() }
+    : await fetchJsonOrRedirect(
+      `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
+      buildSessionRefreshRequestOptions(forceFresh),
+    );
+  const sourceEvents = data.events || [];
+  if (!shareSnapshot) rememberSessionEventSnapshot(sessionId, sourceEvents);
+  return renderSessionEventSnapshot(sessionId, sourceEvents, { runState, viewportIntent });
 }
 
 async function runCurrentSessionRefresh(
