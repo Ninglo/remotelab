@@ -1,8 +1,9 @@
 import './isolate-test-environment.mjs';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { CONFIG_DIR } from '../lib/config.mjs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 import { mergeServiceCycles, serviceIncidentAttention } from '../chat/service-incidents.mjs';
 import { observePersistentAlert } from '../lib/alert-notification-policy.mjs';
@@ -10,12 +11,14 @@ import { metricAlertBundles, metricBundleCard } from '../lib/metric-alert-bundle
 import { processSessionDiagnostics } from '../chat/session-diagnostics.mjs';
 
 const start = Date.parse('2026-10-31T01:00:00Z');
+const stateDir = await mkdtemp(join(tmpdir(), 'alert-notification-policy-'));
+after(() => rm(stateDir, { recursive: true, force: true }));
 const disk = { kind: 'disk', id: '/', subject: 'Disk', severity: 'critical', availableBytes: 1024 ** 3, usedPercent: 99 };
 let serial = 0;
 function fixture() {
   let state;
   const sends = [], edits = [];
-  const options = { config: {}, stateFile: join(CONFIG_DIR, `alerts-${serial++}.json`),
+  const options = { config: {}, stateFile: join(stateDir, `alerts-${serial++}.json`),
     load: async () => structuredClone(state), save: async (_, value) => { state = structuredClone(value); },
     send: async events => { sends.push(structuredClone(events)); return `om_${sends.length}`; },
     update: async (events, _, id) => { edits.push({ events: structuredClone(events), id }); return id; } };
@@ -122,6 +125,10 @@ test('500 crashes across bounded journal windows keep one cycle and one card; st
   assert.equal(cycles[0].id, 'crash_0');
   assert.equal(f.sends.length, 1);
   assert.equal(f.edits.at(-1).events.length, 1);
+  await f.run(111, serviceIncidentAttention(cycles, services, { now: start + 111 * 60_000 }), { services });
+  assert.equal(f.edits.at(-1).events[0].persistentWarningAt, null, 'ten healthy minutes clear the active persistence line');
+  assert.ok(f.edits.at(-1).events[0].history.some(e => e.label === '持续告警'));
+  assert.equal(f.edits.at(-1).events[0].recovered, false, 'full service recovery still requires thirty minutes');
   const recovered = serviceIncidentAttention(cycles, services, { now: start + 131 * 60_000 });
   assert.equal(recovered[0].recovered, true);
   await f.run(131, recovered, { services });
@@ -165,7 +172,7 @@ test('private diagnosis requires a new sample before adding its ten-minute warni
   rows.push(...Array.from({ length: 12 }, (_, i) => ({ runId: `bad-${i}`, sessionId: `s${i % 6}`,
     responseAt: start - i * 1000, state: 'completed', model: 'm', tool: 'codex', metrics: { injectionChars: 18000 } })));
   const delivered = [];
-  const options = { stateFile: join(CONFIG_DIR, 'private-persistence.json'),
+  const options = { stateFile: join(stateDir, 'private-persistence.json'),
     config: { enabled: true, metricPolicy: { enabled: true, notifyOnRegression: true },
       notification: { enabled: true, profile: 'bot', feishuAppId: 'cli_test', openId: 'ou_test', noisePolicy: { mode: 'risk_only' } } },
     readSessions: async () => ({ sessions: [], coverage: {} }), readMetrics: async () => ({ samples: rows, coverage: {} }),

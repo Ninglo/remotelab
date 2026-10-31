@@ -185,7 +185,9 @@ async function dispatchAlerts({ config, snapshot, stateFile,
     if (!incident.history?.length) appendAlertHistory(incident, { at: incident.triggeredAt, label: '触发预警', summary: incident.triggerReason });
     if (reuse) appendAlertHistory(incident, { at, label: '三小时内再次预警', summary: monitoringProblem(item) });
     if (incident.messageId) observePersistentAlert(incident, item, { now, since: reuse ? at : existingBatch?.startedAt,
-      fresh: !snapshot.generatedAt || now >= Date.parse(snapshot.generatedAt) && now - Date.parse(snapshot.generatedAt) <= 180_000 });
+      fresh: (!snapshot.generatedAt || now >= Date.parse(snapshot.generatedAt) && now - Date.parse(snapshot.generatedAt) <= 180_000)
+        && !(item.kind === 'serviceCrash' && snapshot.coverage.gaps.some(g => g.source === 'serviceIncidents'
+          || g.source === `serviceJournal:${item.unit}`)) });
     version = hash(`${version}:${incident.persistentWarningAt || ''}`);
     if (incident.version !== version) appendAlertHistory(incident, { at, label: '分析与处理',
       summary: `${monitoringProgress(item, repair)}；${monitoringNextStep({ ...item, recovery: repair }, config).summary}`, status: repair?.status || 'observing', runId: repair?.runId || null });
