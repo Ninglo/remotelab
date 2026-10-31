@@ -2,24 +2,23 @@ import { createConnectorSession } from '../../lib/connector-turn-flow.mjs';
 import { buildFeishuTopicId, buildSessionSourceContext } from './index.mjs';
 import { buildFeishuSessionConversationTarget, buildFeishuSessionExternalTriggerId } from './reply-routing.mjs';
 import { parseFeishuMessageTime } from './conversation-context.mjs';
-import { findConnectorMessageIndexRecords } from '../../lib/connector-message-index.mjs';
+import { findConnectorMessageIndexRecord } from '../../lib/connector-message-index.mjs';
 import { appendSessionEntryFooter, buildSessionEntry } from '../../lib/session-navigation.mjs';
 
 export async function filterPrivateConversationContext(runtime, summary, session, context, {
-  lookup = findConnectorMessageIndexRecords,
+  lookup = findConnectorMessageIndexRecord,
 } = {}) {
   if (!session.privateConversationStart || !context?.messages?.length) return context;
   const recent = context.messages.filter(message => !Number.isFinite(message.timestamp)
     || message.timestamp > session.privateConversationStart.at);
-  const botMessages = runtime.storagePaths?.messageIndexPath
-    ? recent.filter(message => message.senderType === 'app') : [];
-  const records = botMessages.length ? await lookup(runtime.storagePaths.messageIndexPath,
-    botMessages.map(message => ({ connector: 'feishu',
+  const messages = await Promise.all(recent.map(async message => {
+    if (message.senderType !== 'app' || !runtime.storagePaths?.messageIndexPath) return message;
+    const record = await lookup(runtime.storagePaths.messageIndexPath, { connector: 'feishu',
       accountId: summary.tenantKey || summary.sender?.tenantKey || '', chatId: summary.chatId,
-      messageId: message.messageId }))) : [];
-  const excluded = new Set(botMessages.filter((_, index) => records[index]?.sessionId
-    && records[index].sessionId !== session.id));
-  return { ...context, messages: recent.filter(message => !excluded.has(message)) };
+      messageId: message.messageId });
+    return record?.sessionId && record.sessionId !== session.id ? null : message;
+  }));
+  return { ...context, messages: messages.filter(Boolean) };
 }
 
 export async function startFeishuPrivateConversation(runtime, summary, { request, resolveDefault, systemPrompt = '' } = {}) {

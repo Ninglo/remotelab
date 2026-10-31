@@ -85,7 +85,7 @@
           "name": "真实机器上的对话与执行",
           "purpose": "处理文件、调查问题、修改项目、运行程序，并在原会话继续补充要求。",
           "entry": "会话 → 新建会话 → 发送消息。",
-          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。 群主线回复进入新话题时，升级后启动且尚未结束的原生执行会接收话题里的追加消息；停止后不把已绑定的追加消息当作新开工。原执行结束后按正常话题接续，实际群聊体验另行验收。 新运行分别保存控制意图、执行事实和恢复推断；读取状态不推进任务，异步推进与兼容边界见架构说明。",
+          "condition": "需要可用的执行工具及相应机器权限。浏览器关闭不等于任务停止；执行结果仍需验收。 群主线回复进入新话题时，升级后启动且尚未结束的原生执行会接收话题里的追加消息；停止后不把已绑定的追加消息当作新开工。原执行结束后按正常话题接续，实际群聊体验另行验收。 新运行分别保存控制意图、执行事实和恢复推断；读取状态不推进任务，异步推进与兼容边界见架构说明。 消息索引使用 Node.js 24 内置 SQLite，由独立存储 worker 保持异步接口；首次流式迁移保留只读 JSON 备份，单条查询不随历史总量加载全文件。",
           "example": "把这份表里的重复项清掉，保留原件，给我可下载的新表。",
           "sources": [
             "chat/session-manager.mjs",
@@ -113,7 +113,12 @@
             "chat/fs-utils.mjs",
             "chat-server.mjs",
             "chat/history.mjs",
-            "chat/session-turn-context.mjs"
+            "chat/session-turn-context.mjs",
+            "docs/engineering-principles.md",
+            "lib/connector-message-index.mjs",
+            "lib/sqlite-state.mjs",
+            "lib/sqlite-state-worker.mjs",
+            "lib/json-record-stream.mjs"
           ],
           "commands": [],
           "sourceRevision": "0ddae66c9b7fc239234be0b529a1c5deaa14272c"

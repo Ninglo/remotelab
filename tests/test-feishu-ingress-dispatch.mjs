@@ -1,3 +1,4 @@
+import { loadConnectorMessageIndex } from '../lib/connector-message-index.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -171,7 +172,7 @@ try {
     assert.equal((await inbox.store.active()).length, 0);
     const known = JSON.parse(await readFile(httpRuntime.storagePaths.knownSendersPath, 'utf8'));
     assert.equal(Object.keys(known.senders).length, 9, 'concurrent ingress preserves every sender index update');
-    const index = JSON.parse(await readFile(httpRuntime.storagePaths.messageIndexPath, 'utf8'));
+    const index = await loadConnectorMessageIndex(httpRuntime.storagePaths.messageIndexPath);
     assert.equal(Object.keys(index.records).length, 18, 'all inbound and thread bindings survive concurrent handoffs');
     inbox.stop(); await inbox.idle();
     const uncertain = await inbox.accept('retry-prepared', { summary: {

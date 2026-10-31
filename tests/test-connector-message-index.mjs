@@ -6,7 +6,6 @@ import { join } from 'path';
 
 import {
   findConnectorMessageIndexRecord,
-  findConnectorMessageIndexRecords,
   upsertConnectorMessageIndexRecord,
 } from '../lib/connector-message-index.mjs';
 
@@ -43,22 +42,22 @@ try {
     connector: 'feishu', messageId: 'legacy', sessionId: 'legacy-session',
     chatId: 'chat-1', conversationId: 'topic-1',
   });
-  const batch = await findConnectorMessageIndexRecords(indexPath, [
+  const batch = await Promise.all([
     { connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1', chatId: 'chat-1' },
     { connector: 'feishu', accountId: 'tenant-2', messageId: 'message-1' },
     { connector: 'feishu', accountId: 'tenant-1', messageId: 'legacy', conversationId: 'topic-1' },
     { connector: 'feishu', messageId: 'legacy', conversationId: 'other-topic' },
     { connector: 'other', messageId: 'message-1' },
     {},
-  ]);
+  ].map(query => findConnectorMessageIndexRecord(indexPath, query)));
   assert.deepEqual(batch.map(record => record?.sessionId || null),
-    ['session-1', null, 'legacy-session', null, null, null], 'batch lookup preserves scope, legacy fallback and query order');
+    ['session-1', null, 'legacy-session', null, null, null], 'individual lookup preserves scope, legacy fallback and query order');
   await upsertConnectorMessageIndexRecord(indexPath, {
     connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1', sessionId: 'updated-session',
   });
-  assert.equal((await findConnectorMessageIndexRecords(indexPath, [
+  assert.equal((await Promise.all([
     { connector: 'feishu', accountId: 'tenant-1', messageId: 'message-1' },
-  ]))[0].sessionId, 'updated-session', 'later batches read newly committed bindings');
+  ].map(query => findConnectorMessageIndexRecord(indexPath, query))))[0].sessionId, 'updated-session', 'later lookups read newly committed bindings');
 
   await Promise.all(Array.from({ length: 12 }, (_, index) => upsertConnectorMessageIndexRecord(indexPath, {
     connector: 'feishu', accountId: 'tenant-1', messageId: `parallel-${index}`,

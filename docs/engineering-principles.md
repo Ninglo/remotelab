@@ -52,9 +52,9 @@
 
 ### A. 状态存储层（原则 1、2）
 
-- 新增一个共用的状态存储模块，封装 `node:sqlite`：每个 connector 实例对应一个数据库文件，开启 WAL；写入保持串行，读取不受影响。
+- 共用状态存储模块 `lib/sqlite-state.mjs` 以异步消息调用 `sqlite-state-worker.mjs`，仅 worker 内使用 `node:sqlite` 同步 API（已确认的 AGENTS 第 11 条例外）：每个 connector 实例对应一个数据库文件，开启 WAL；写入保持串行，读取不受影响。
 - 首先迁移消息索引。主键沿用 `connector:accountId:messageId`，另对 `(connector, messageId)` 和 `chatId` 建二级索引。`findConnectorMessageIndexRecord` 和 `upsertConnectorMessageIndexRecord` 的签名保持不变，调用方无需修改；迁移完成后删除 `findConnectorMessageIndexRecords` 及调用方的批量绕行代码。
-- 迁移在启动时一次性执行：导入现有 JSON，核对记录数和抽样内容一致后，将原文件改名保留为只读备份，不删除。
+- 迁移在启动时一次性执行：流式导入现有 JSON，事务内核对记录数和抽样内容一致后，将原文件改名为 `.readonly-backup` 并设为只读，不删除；数据库保存在原路径加 `.sqlite`。迁移失败回滚；重启可从原文件或只读备份重试。上线前停止使用旧 JSON 的写入进程，再启动新版本，避免旧、新存储并行写入。
 - `readJson` 拆成两种语义：文件不存在时返回默认值，其他错误一律抛出。写路径在读取失败时中止。启动时只清理所属进程已退出的 `.tmp-<pid>-*` 文件。
 - 其余整文件 JSON 状态按大小和读写频率排序，逐个评估。不追求一次全部迁完，优先处理超过 1 MB 或会在单次请求中多次读取的。
 

@@ -155,7 +155,7 @@ The AI should minimize how often it interrupts the human for these checkpoints a
 
 The AI should do the rest inside the conversation:
 
-- verify prerequisites: Node.js 18+, `cloudflared` for Cloudflare mode, `cpolar` for cpolar mode, `tailscale` for Tailscale mode, and at least one supported AI CLI
+- verify prerequisites: Node.js 24+ (built-in `node:sqlite`), `cloudflared` for Cloudflare mode, `cpolar` for cpolar mode, `tailscale` for Tailscale mode, and at least one supported AI CLI
 - gather the full context packet before starting execution, so the human is not repeatedly re-interrupted for small missing details
 - do not require the human to pre-clone the repo; if `~/code/remotelab` is missing, fetch this contract from its canonical URL, clone `https://github.com/Ninglo/remotelab.git` into `~/code/remotelab`, otherwise update the existing repo, then run `npm install` and expose the CLI with `npm link` if needed
 - prefer `remotelab setup` when it cleanly fits the environment; for cpolar or Tailscale mode, configure the service directly when the current setup flow is still Cloudflare-oriented

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadConnectorMessageIndex } from '../lib/connector-message-index.mjs';
 import assert from 'assert/strict';
 import http from 'http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -823,7 +824,7 @@ await processSourceDeliveryOnce(quoteWorker, {
       target: { chatId: 'quote-chat', chatType: 'group', conversationKind: 'main', messageId: 'quote-source' }, text: 'quoted result' } } }
     : { delivery: { state: 'delivered' } } }),
 });
-const quoteIndex = Object.values(JSON.parse(await readFile(quoteIndexPath, 'utf8')).records);
+const quoteIndex = Object.values((await loadConnectorMessageIndex(quoteIndexPath)).records);
 assert.equal(quoteIndex.length, 1, 'a provider thread hint cannot bind the mainline Session as a Thread');
 assert.equal(quoteIndex[0].direction, 'outbound');
 assert.equal(quoteIndex[0].conversationKind, 'main');

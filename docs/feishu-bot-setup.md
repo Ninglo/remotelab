@@ -1261,3 +1261,9 @@ for identity checks, delivery recovery and separate live acceptance.
 ### Independent personal memory review cards
 
 The explicitly enrolled `reviewCardPersonIds` trial in `learning-policy.json` uses the same connector/outbox and `card.action.trigger` callback. New personal memories and foreground proposals can show keep/edit/discard controls in the originating conversation. These callbacks mutate only the versioned memory; they never submit user input or a native question to the original task. Enable only for the person who requested it, with personal learning enabled. See [memory learning](memory-learning.md#独立记忆卡片试点飞书) for privacy deferral, identity/version checks, retry behavior and rollout limits.
+
+### 消息索引存储
+
+运行环境要求 Node.js 24+。消息索引由共用 SQLite worker 按 key 读写，启用 WAL；调用方仍传入原 `messageIndexPath`，实际数据库位于该路径加 `.sqlite`。首次启动流式导入旧 JSON，核对数量与样本后将 JSON 改名为 `.readonly-backup`，权限设为只读并长期保留。迁移错误阻断启动，不创建空索引继续工作。部署时先停止旧版索引写入进程，再启动新版本；不要同时运行旧 JSON 写入器和 SQLite 写入器。
+
+内存验收位于存储边界：`tests/test-connector-index-memory.mjs` 在 64 MB 堆限制下运行，可传入线上索引的只读副本；测试只在临时目录迁移和回放。删除原有私聊调用方批量查询与 96 MB 专项绕行测试。

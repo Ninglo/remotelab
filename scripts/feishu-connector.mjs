@@ -38,7 +38,7 @@ import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.m
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { getFeishuConversationSettings, handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
 import { startFeishuPrivateConversation, filterPrivateConversationContext } from '../connectors/feishu/private-conversations.mjs';
-import { findConnectorMessageIndexRecord } from '../lib/connector-message-index.mjs';
+import { findConnectorMessageIndexRecord, initializeConnectorMessageIndex } from '../lib/connector-message-index.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
@@ -2289,6 +2289,7 @@ async function main() {
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
+  await initializeConnectorMessageIndex(storagePaths.messageIndexPath);
   const runtime = createRuntimeContext(config, storagePaths);
   runtime.cardReadSampler = createFeishuCardReadSampler(runtime);
   runtime.personalSettings = createPersonalSettingsController(runtime, { authorize: summary => isAllowedByPolicy(config.accessPolicy, summary) });

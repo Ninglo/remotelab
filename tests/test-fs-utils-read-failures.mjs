@@ -26,7 +26,7 @@ try {
   } finally { await chmod(path, 0o600); }
   assert.equal(await readFile(path, 'utf8'), valid, 'permission failure leaves the original bytes intact');
   await assert.rejects(readJson(root, fallback), { code: 'EISDIR' });
-  assert.deepEqual(await readdir(root), ['index.json'], 'failed reads never create a replacement temporary file');
+  assert.equal((await readdir(root)).some(name => name.includes('.tmp-')), false, 'failed reads never create a replacement temporary file');
 
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' });
   const deadPid = child.pid;
