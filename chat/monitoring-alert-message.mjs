@@ -65,6 +65,7 @@ export function monitoringProblem(item) {
     : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
 export function monitoringProgress(item, recovery) {
+  if (item.kind === 'serviceCrash' && item.state === 'fixed') return item.recoveryObservation + '。';
   if (item.kind === 'serviceCrash' && item.recovered) return '已连续稳定运行30分钟，根因修复待确认。';
   if (item.kind === 'diskGrowth') return item.recovered ? '最新有效观测不再满足增长预警条件，容量继续独立监测。' : '已保存实际增长窗口与基线，容量继续独立监测。';
   const inFlight = ['pending', 'waiting', 'admitting', 'running'].includes(recovery?.status);
@@ -79,7 +80,7 @@ export function monitoringTitle(item) {
   if (item.continuity?.lastAccountWarning?.state === 'low') return `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}${item.recovered ? ' · 已恢复' : ''}`;
   const issue = { disk: '磁盘空间不足', diskGrowth: '磁盘短期快速增长', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
     accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
-  return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : ' · 已解决') : ''}`;
+  return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : item.kind === 'serviceCrash' ? (item.state === 'fixed' ? ' · 已修复' : ' · 已恢复') : ' · 已解决') : ''}`;
 }
 export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {
   return events.map(item => {

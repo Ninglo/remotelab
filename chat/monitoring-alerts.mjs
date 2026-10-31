@@ -223,13 +223,25 @@ async function dispatchAlerts({ config, snapshot, stateFile,
         : stopped ? '原任务已暂停或取消' : '独立观测已确认恢复');
       if (!incident.history?.length) appendAlertHistory(incident, { at: incident.event.observedAt,
         label: '既有预警记录', summary: monitoringProblem(incident.event) });
-      appendAlertHistory(incident, { at, label: stopped ? '任务已停止' : '复查确认恢复',
+      appendAlertHistory(incident, { at, label: stopped ? '任务已停止' : recoveredCrashes.get(key)?.state === 'fixed' ? '修复上线已核验' : '复查确认恢复',
         summary: `${observation}；${monitoringProgress(incident.event, repair)}` });
       incident.event = { ...incident.event, ...recoveredCrashes.get(key), recovered: true, recoveredAt: at, observedAt: at, persistentWarningAt: null,
         recovery: repair, recoveryStopped: stopped, recoveryObservation: observation, history: structuredClone(incident.history) };
-      incident.version = hash('recovered'); edits.add(incident.messageId);
+      incident.version = hash(`recovered:${incident.event.state || ''}:${incident.event.repair?.commit || ''}`); edits.add(incident.messageId);
     }
     incident.active = false; delete incident.persistence; delete incident.persistentWarningAt;
+  }
+  // Stability may close the outage before its root-cause deployment is verified.
+  // Update that same receipt when confirmation arrives, including while muted.
+  for (const [key, item] of recoveredCrashes) {
+    const incident = state.incidents[key];
+    if (!incident || incident.active || incident.status !== 'sent' || !incident.messageId
+      || item.state !== 'fixed' || incident.event?.state === 'fixed' && incident.event.repair?.commit === item.repair.commit) continue;
+    appendAlertHistory(incident, { at: snapshot.generatedAt || new Date(now).toISOString(),
+      label: '修复上线已核验', summary: item.recoveryObservation });
+    incident.event = { ...incident.event, ...item, history: structuredClone(incident.history) };
+    incident.version = hash(`fixed:${item.repair.commit}:${item.repair.deployment.commit}`);
+    edits.add(incident.messageId);
   }
   // Operational recovery can precede a final repair receipt. Keep the same card
   // current when that receipt or the verified attribution arrives later.
@@ -329,7 +341,7 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   if (!dryRun && snapshot.runtimeHealth) await recordRuntimeSample(snapshot.runtimeHealth);
   snapshot.attention = snapshot.attention.filter(a => a.kind !== 'serviceCrash');
   snapshot.attention.push(...serviceIncidentAttention(incidents.cycles || incidents.events, snapshot.services,
-    { now: Date.parse(snapshot.generatedAt) || Date.now(), gaps: [...snapshot.coverage.gaps, ...incidents.gaps] }));
+    { now: Date.parse(snapshot.generatedAt) || Date.now(), repairs: config.serviceIncidents?.repairs, gaps: [...snapshot.coverage.gaps, ...incidents.gaps] }));
   snapshot.coverage.gaps.push(...incidents.gaps);
   if (snapshot.apiHealth && !dryRun) await writeDurableJson(join(CONFIG_DIR, 'feishu-api-health.json'), snapshot.apiHealth);
   // Notification and recovery have separate receipts. A reported/baselined
