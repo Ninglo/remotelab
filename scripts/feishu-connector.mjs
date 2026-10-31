@@ -42,6 +42,7 @@ import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
 import { readServiceToken } from '../lib/auth-config.mjs';
 import {
+  normalizeExternalRuntimeOverride,
   normalizeExternalRuntimeSelectionMode,
   resolveExternalRuntimeSelection,
 } from '../lib/external-runtime-selection.mjs';
@@ -427,6 +428,7 @@ async function loadConfig(pathname) {
     chatBaseUrl: normalizeBaseUrl(parsed?.chatBaseUrl || DEFAULT_CHAT_BASE_URL),
     sessionFolder: trimString(parsed?.sessionFolder) || homedir(),
     runtimeSelectionMode: normalizeExternalRuntimeSelectionMode(parsed?.runtimeSelectionMode, DEFAULT_RUNTIME_SELECTION_MODE),
+    groupMainlineRuntimeSelection: normalizeExternalRuntimeOverride(parsed?.groupMainlineRuntimeSelection ?? null),
     sessionTool: trimString(parsed?.sessionTool) || DEFAULT_SESSION_TOOL,
     model: trimString(parsed?.model),
     effort: trimString(parsed?.effort),
@@ -1009,7 +1011,11 @@ async function loadRemoteLabReplyAttachment(runtime, attachment) {
   return loadRemoteLabReplyAttachmentImpl(runtime, attachment, { ensureAuthCookie });
 }
 
-async function resolveFeishuRuntimeSelection(runtime) {
+async function resolveFeishuRuntimeSelection(runtime, summary = {}) {
+  if (summary.chatType === 'group' && summary.conversationKind === 'main'
+      && runtime?.config?.groupMainlineRuntimeSelection) {
+    return { mode: 'pinned', ...runtime.config.groupMainlineRuntimeSelection };
+  }
   const uiSelection = getAutoRuntimeSelection();
   return resolveExternalRuntimeSelection({
     uiSelection,
@@ -1089,7 +1095,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     runtime.config.sourceRouteId || 'default', effectiveSummary.chatId);
   if (groupFeed) await mkdir(groupFeedFolder, { recursive: true, mode: 0o700 });
   const runtimeSelection = effectiveSummary.runtimeSelectionOverride
-    || await resolveFeishuRuntimeSelection(runtime);
+    || await resolveFeishuRuntimeSelection(runtime, effectiveSummary);
   const sessionPayload = {
     folder: groupFeed ? groupFeedFolder : runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
@@ -1822,7 +1828,7 @@ function groupConfigurationController(runtime, helpers = {}) {
   if (runtime.groupConfiguration) return runtime.groupConfiguration;
   runtime.groupConfiguration = createGroupConfigurationController(runtime, {
     request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
-    resolveDefault: () => resolveFeishuRuntimeSelection(runtime),
+    resolveDefault: () => resolveFeishuRuntimeSelection(runtime, { chatType: 'group', conversationKind: 'main' }),
     participation: () => participationController(runtime, helpers),
     authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
   });
@@ -1849,7 +1855,8 @@ async function onboardFeishuGroup(runtime, summary, helpers = {}) {
   const folder = groupFeed ? join(homedir(), '.remotelab', 'workspace', 'group-feed',
     runtime.config.sourceRouteId || 'default', summary.chatId) : runtime.config.sessionFolder;
   if (groupFeed) await mkdir(folder, { recursive: true, mode: 0o700 });
-  const selection = await (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime);
+  const selection = await (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime,
+    { ...summary, conversationKind: 'main' });
   const session = await createConnectorSession(requester, {
     folder, tool: selection.tool, model: selection.model || '', effort: selection.effort || '',
     thinking: selection.thinking === true, name: buildSessionName(summary), sourceId: FEISHU_CONNECTOR_ID,
@@ -2029,7 +2036,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       if (commandNames.length !== 1) return enqueue(runtime, summary, '/new 请单独使用。');
       const result = await startFeishuPrivateConversation(runtime, summary, {
         request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
-        resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
+        resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime, summary),
         systemPrompt: resolveFeishuGroupSettings(runtime.config, summary).systemPrompt,
       });
       if (result.superseded) return { receipt: { ignored: true, reason: 'new_conversation_superseded' } };
@@ -2046,7 +2053,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     }
     const text = await handleFeishuRuntimeCommands(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
-      resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
+      resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime, summary),
       prepared: helpers.preparedRuntimeCommand,
       savePlan: helpers.saveRuntimeCommand,
     });
@@ -2061,7 +2068,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command && command.body && command.commands.some(entry => ['harness', 'model', 'effort', 'tier', 'sota', 'claude'].includes(entry.name))) {
     const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
-      resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
+      resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime, summary),
       taskMode: true,
     });
     if (commandPlan.error) return enqueue(runtime, summary, commandPlan.text);
@@ -2230,6 +2237,7 @@ export {
   reconcileKnownFeishuPeople,
   recordFeishuThreadSessionBinding,
   resolveFeishuMessageAttachments,
+  resolveFeishuRuntimeSelection,
   resolveFeishuOutboundFileType,
   loadRemoteLabReplyAttachment,
   sendFeishuAttachment,

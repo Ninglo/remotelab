@@ -38,6 +38,7 @@ const {
   normalizeReplyText,
   releaseConnectorPidLock,
   resolveFeishuMessageAttachments,
+  resolveFeishuRuntimeSelection,
   resolveFeishuOutboundFileType,
   buildFeishuPostContent,
   buildExternalTriggerId,
@@ -1140,6 +1141,24 @@ await writeFile(derivedRouteConfigPath, `${JSON.stringify({
 assert.equal((await loadConfig(derivedRouteConfigPath)).sourceRouteId, 'connector-beta');
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
+assert.equal(loadedConfig.groupMainlineRuntimeSelection, null);
+const mainlineSelection = { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh', thinking: false };
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test',
+  groupMainlineRuntimeSelection: mainlineSelection }));
+const mainlineRuntime = { config: await loadConfig(candidateConfigPath) };
+assert.deepEqual(await resolveFeishuRuntimeSelection(mainlineRuntime,
+  { chatType: 'group', conversationKind: 'main' }), { mode: 'pinned', ...mainlineSelection });
+for (const summary of [
+  { chatType: 'p2p', conversationKind: 'main' },
+  { chatType: 'group', conversationKind: 'thread' },
+  { chatType: 'group', conversationKind: 'topic' },
+]) {
+  assert.equal((await resolveFeishuRuntimeSelection(mainlineRuntime, summary)).model, 'auto',
+    'group mainline defaults must not change private or topic defaults');
+}
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test',
+  groupMainlineRuntimeSelection: { model: 'gpt-6.1-sol' } }));
+await assert.rejects(loadConfig(candidateConfigPath), /tool, model, effort and thinking/);
 
 assert.equal(
   compileFeishuReplyText('@_user_1 这是一条消息。', mentionSummary.mentions),

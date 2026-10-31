@@ -195,7 +195,11 @@ try {
   const onboardRequests = [];
   let joinedSession = null;
   const onboardOptions = { enrichSummaryWithChatMetadata: async (_runtime, summary) => summary,
-    resolveFeishuRuntimeSelection: async () => session,
+    resolveFeishuRuntimeSelection: async (_runtime, summary) => {
+      assert.equal(summary.chatType, 'group');
+      assert.equal(summary.conversationKind, 'main', 'onboarding resolves the group mainline default');
+      return session;
+    },
     requestRemoteLab: async (path, options) => {
       if (path === '/api/session-conversations/resolve') {
         return { response: { ok: true }, json: { sessionId: joinedSession } };

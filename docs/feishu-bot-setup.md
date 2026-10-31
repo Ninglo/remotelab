@@ -232,6 +232,13 @@ Notes:
 - use `feishu-cn` for `open.feishu.cn`
 - use `lark-global` for `open.larksuite.com`
 - omit `sessionFolder` to use the operator's home directory by default
+- `groupMainlineRuntimeSelection` optionally pins the initial runtime for new
+  group mainline Sessions, for example `{ "tool": "codex", "model": "gpt-6.1-sol",
+  "effort": "xhigh", "thinking": false }`. Private chats and topic Sessions
+  retain their existing defaults. Omit it or set it to `null` to inherit the
+  connector default. Existing Sessions keep their saved runtime; update them
+  through `PATCH /api/sessions/:id`. Explicit model commands take precedence.
+  Restart the owning connector after changing this instance-local config.
 - `systemPrompt` is the Bot's lightweight profile. The matching Session stores
   it and passes it into the harness when the Session context is initialized;
   use it to name the Bot's role, activate relevant context, and guide behavior
