@@ -1208,7 +1208,9 @@ warm-up response never changes known capacity to zero.
 
 Sources unavailable for three minutes produce `poolSource` notices. A running
 Run needs 30 minutes of consecutive fresh samples without an accepted result and
-at least 10 additional infrastructure-failed episodes for a `poolTask` notice.
+either at least 10 additional infrastructure-failed episodes or a continuous
+30-minute absence of active Attempts while episodes remain pending for a
+`poolTask` notice.
 Queue waiting alone, source failures and long execution alone do not establish a
 stalled Run. Gaps and generation changes reset the comparison window. Only
 fresh progress, a new generation or an explicitly read terminal state resolves

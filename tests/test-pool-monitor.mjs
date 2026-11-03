@@ -69,3 +69,14 @@ test('Hub cold start preserves inventory and each source time without inventing 
   const expired = retainPoolEvidence(previous, current, start + 900000).machines[0];
   assert.equal(expired.cards[0].state, 'unknown'); assert.equal(expired.cards[0].reportedState, 'used');
 });
+
+
+test('silent execution loss requires persistent pending work and no active attempts', () => {
+  let prior;
+  for (let minute = 0; minute <= 31; minute++) {
+    const now = start + minute * 60000, value = sample(now);
+    value.queue.runs[0].activeAttemptCount = 0; value.queue.runs[0].progress.pending = 90;
+    prior = assessPool(prior, value, {now});
+  }
+  assert.ok(prior.attention.some(x => x.kind === 'poolTask' && x.detail.includes('没有活动 Attempt')));
+});

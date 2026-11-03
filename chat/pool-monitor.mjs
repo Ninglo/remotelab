@@ -38,12 +38,15 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
     const running = run.state === 'running';
     const continuous = running && old?.state === 'running' && old.generation === run.generation
       && old.accepted === accepted && fresh(old.observedAt, now) && Number.isFinite(accepted);
+    const workerless = running && run.activeAttemptCount === 0 && run.progress?.pending > 0;
     const row = { state: run.state, generation: run.generation, accepted, infra, observedAt: queue._readAt,
-      since: continuous ? old.since : time, infraBase: continuous ? old.infraBase : infra, alerted: false };
-    row.alerted = continuous && now - at(row.since) >= stallMs && infra - row.infraBase >= errorIncrease;
+      since: continuous ? old.since : time, infraBase: continuous ? old.infraBase : infra,
+      workerlessSince: workerless ? continuous && old.workerlessSince || time : null, alerted: false };
+    const stalledWithoutWorkers = row.workerlessSince && now - at(row.workerlessSince) >= stallMs;
+    row.alerted = !!(continuous && now - at(row.since) >= stallMs && (infra - row.infraBase >= errorIncrease || stalledWithoutWorkers));
     tasks[id] = row;
     if (row.alerted) attention.push({ kind: 'poolTask', id, subject: id, severity: 'warning', confirmed: true,
-      detail: `已接受结果 ${accepted}/${run.progress?.expected ?? '?'}，连续 ${Math.floor((now - at(row.since)) / 60000)} 分钟未增加，期间基础设施失败局数增加 ${infra - row.infraBase}；需检查是否停止或释放资源。`,
+      detail: `已接受结果 ${accepted}/${run.progress?.expected ?? '?'}，连续 ${Math.floor((now - at(row.since)) / 60000)} 分钟未增加，${stalledWithoutWorkers ? `仍有 ${run.progress.pending} 局待执行，连续 ${Math.floor((now - at(row.workerlessSince)) / 60000)} 分钟没有活动 Attempt` : `期间基础设施失败局数增加 ${infra - row.infraBase}`}；需检查任务和资源是否应恢复或释放。`,
       signals: { noProgressWithErrors: true } });
     else if (old?.alerted && (accepted > old.accepted || run.generation !== old.generation || !running)) recovered.push({ kind: 'poolTask', id });
     // An observation gap is not evidence that an incident recovered.
@@ -109,7 +112,7 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
       const value = await jsonFetch(fetchImpl, url);
       if (!valid(value)) throw Error('INVALID_SCHEMA');
       sample[key] = key === 'queue' ? { active: value.active, runs: value.runs.map(run => Object.fromEntries(
-        ['run_id', 'state', 'generation', 'progress', 'admission', 'priority', 'created_at', 'spec_sha256', 'submitter', 'project_metadata'].filter(key => key in run).map(key => [key, run[key]]))),
+        ['run_id', 'state', 'generation', 'progress', 'admission', 'priority', 'created_at', 'spec_sha256', 'submitter', 'project_metadata'].filter(key => key in run).map(key => [key, run[key]]).concat([['activeAttemptCount', Array.isArray(run.active_attempts) ? run.active_attempts.length : null]]))),
         _readAt: new Date(now).toISOString() } : retainPoolEvidence(previous?.resources, value, now);
     } catch { sample.errors.push(`${key}读取失败，保留上次成功时间`); }
   }));
