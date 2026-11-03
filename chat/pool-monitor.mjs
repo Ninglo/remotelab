@@ -105,16 +105,16 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
   if (!config?.enabled) return null;
   const previous = await load(file), sample = { resources: previous?.resources, queue: previous?.queue, errors: [], terminals: [] };
   await Promise.all([
-    ['resources', `${config.resourceUrl}${dryRun ? '' : '?refresh=1'}`, value => Array.isArray(value.machines)],
-    ['queue', config.queueUrl, value => Array.isArray(value.runs)],
-  ].map(async ([key, url, valid]) => {
+    ['resources', `${config.resourceUrl}${dryRun ? '' : '?refresh=1'}`, value => Array.isArray(value.machines), 6000],
+    ['queue', config.queueUrl, value => Array.isArray(value.runs), config.queueTimeoutMs ?? 6000],
+  ].map(async ([key, url, valid, timeoutMs]) => {
     try {
-      const value = await jsonFetch(fetchImpl, url);
+      const value = await jsonFetch(fetchImpl, url, timeoutMs);
       if (!valid(value)) throw Error('INVALID_SCHEMA');
       sample[key] = key === 'queue' ? { active: value.active, runs: value.runs.map(run => Object.fromEntries(
         ['run_id', 'state', 'generation', 'progress', 'admission', 'priority', 'created_at', 'spec_sha256', 'submitter', 'project_metadata'].filter(key => key in run).map(key => [key, run[key]]).concat([['activeAttemptCount', Array.isArray(run.active_attempts) ? run.active_attempts.length : null]]))),
         _readAt: new Date(now).toISOString() } : retainPoolEvidence(previous?.resources, value, now);
-    } catch { sample.errors.push(`${key}读取失败，保留上次成功时间`); }
+    } catch (error) { sample.errors.push(`${key}读取失败（${error.name}: ${String(error.message).slice(0, 200)}），保留上次成功时间`); }
   }));
   const absent = Object.entries(previous?.assessment?.tasks || {}).filter(([id, task]) => task.alerted
     && fresh(sample.queue?._readAt, now) && !sample.queue.runs.some(run => run.run_id === id));

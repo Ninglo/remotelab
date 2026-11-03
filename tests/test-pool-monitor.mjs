@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { assessPool, observePool, retainPoolEvidence } from '../chat/pool-monitor.mjs';
 const start = Date.parse('2026-11-03T07:00:00Z');
 const iso = ms => new Date(ms).toISOString();
@@ -51,6 +52,31 @@ test('one failed upstream does not suppress the other or forge a new success tim
   assert.equal(saved.resources.observedAt, iso(start));
   assert.equal(result.queue._readAt, iso(start + 60000));
   assert.equal(result.errors.length, 1);
+});
+
+test('a measured slow queue can use its own deadline and real timeouts retain old evidence', async t => {
+  // Scale the observed 11-second response and source budgets by 100, using real
+  // HTTP and AbortSignals so this exercises cancellation, parsing and recovery.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  t.mock.method(AbortSignal, 'timeout', ms => timeout(Math.ceil(ms / 100)));
+  const server = createServer((request, response) => {
+    const body = request.url.startsWith('/queue') ? { active: 1, runs: sample(start).queue.runs } : sample(start).resources;
+    const reply = () => { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(body)); };
+    if (request.url.startsWith('/queue')) setTimeout(reply, 110); else reply();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const config = { enabled: true, resourceUrl: `${base}/resources`, queueUrl: `${base}/queue` };
+  const options = { config, now: start + 60000, load: async () => sample(start), save: async () => {} };
+  const expired = await observePool(options);
+  assert.equal(expired.queue._readAt, iso(start));
+  assert.match(expired.errors.join('\n'), /queue读取失败（TimeoutError:/);
+  assert.equal(expired.assessment.sources.controller.ok, true);
+  const recovered = await observePool({ ...options, config: { ...config, queueTimeoutMs: 20000 } });
+  assert.equal(recovered.queue._readAt, iso(start + 60000));
+  assert.equal(recovered.queue.runs[0].progress.accepted, 10);
+  assert.deepEqual(recovered.errors, []);
 });
 
 

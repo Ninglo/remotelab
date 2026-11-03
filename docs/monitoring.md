@@ -1199,7 +1199,13 @@ The monitoring proxy allows the vertical GPU, account, usage-governance and empl
 Optional `poolMonitoring` reuses the existing minute resource-alert observer. It
 reads a loopback Results Hub `resourceUrl` (`/ui/resources.json?refresh=1`) and
 Controller `queueUrl` (`/v1/queue?view=status`) independently with six-second
-deadlines. Reconciliation of disappeared alerted Runs shares a six-second
+default deadlines. Set `queueTimeoutMs` from measured status-query latency when
+the queue needs more time; the resource deadline stays six seconds. A deployed
+queue returned valid progress in 11 seconds under load, so its observer uses
+20 seconds within the existing minute cycle. This mitigates sampling timeouts;
+reducing the Controller's status-query cost remains a Controller-owned follow-up.
+Failures record the error type/reason and retain the original successful sample
+time; a timeout does not prove an evaluation stopped. Reconciliation of disappeared alerted Runs shares a six-second
 cycle budget and rotates failed checks; one unreachable Run cannot consume
 the resource-alert service deadline. The Hub owns source TTL/single-flight collection; page readers consume
 `pool-observation.json` and never launch GPU, cloud quota or queue sampling.
