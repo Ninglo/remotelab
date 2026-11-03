@@ -222,6 +222,14 @@ export async function reconcileDocumentBinding(runtime, binding) {
         const liveBinding = await readBindingJson(join(bindingsDirectory(runtime.config.storageDir), `${bindingKey(binding.fileToken)}.binding.json`));
         if (!liveBinding?.enabled || liveBinding.generation !== binding.generation) throw new Error('Document binding disabled or changed before admission');
         const item = state.pending[0];
+        const policy = runtime.config.accessPolicy;
+        if (policy?.mode === 'roles' && (runtime.config.appId !== policy.roles.appId
+            || !policy.roles.hrOpenIds.includes(item.payload?.sourceContext?.sender?.openId))) {
+          state.seen[item.key] = item.revision;
+          state.pending.shift();
+          await writeBindingJson(statePath, state);
+          continue;
+        }
         await submitConnectorMessage(runtime.requestRemoteLab, binding.sessionId, item.payload);
         // A failed acknowledgement must never block or replay accepted work.
         void addFeishuCommentProcessingReaction(runtime, item.payload.sourceContext)

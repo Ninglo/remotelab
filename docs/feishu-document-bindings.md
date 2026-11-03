@@ -67,3 +67,9 @@ For recurring reviews, set `sessionTemplate.reuse` to `calendar_day` and `reuseT
 Verification should cover replay after lost admission acknowledgement, edits, own-reply suppression, full pagination, access failure, and actual human comments. Unit tests and a successful empty scan do not prove a human comment has completed an end-to-end reply.
 
 The Feishu event follows recipient notification semantics; explicit local binding does not grant notifications for every accessible document. The bound Bot must receive comment notifications for that document. This deployment has previously received non-mention comments for the report documents. Comment edits have no confirmed dedicated event; they are discovered on later comment-event reads or an explicitly requested review. A successful socket connection is not end-to-end validation of a new comment.
+
+When a Connector uses `accessPolicy.mode: "roles"`, document binding reconciliation
+admits only provider subjects in that policy's exact HR list. Interviewer and
+unknown comments, including previously queued comments, are marked seen without
+submitting them to the bound Session. Interviewer queries use the separate private
+message route described in [role-restricted queries](feishu-bot-setup.md#role-restricted-application-queries).

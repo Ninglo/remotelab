@@ -202,3 +202,7 @@ Employee SSH Codex memory: [authenticated account and file evidence](monitoring.
 - [会话元数据目录](session-catalog.md)：按记录访问、离线切换和保留最新数据的回退。
 
 [Employee site login](employee-site-login.md) shares Feishu login across managed static pages, previews and research pages on the same instance domain. New sites record their creator and reserve administrators without introducing role management.
+
+- [Feishu role-restricted application queries](feishu-bot-setup.md#role-restricted-application-queries):
+  exact HR/interviewer admission, signed data queries, and separation from the
+  general executor (`connectors/feishu/restricted-access.mjs`).

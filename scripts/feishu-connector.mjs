@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview } from '../connectors/feishu/restricted-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
@@ -333,7 +334,7 @@ function resolveOptionalPath(value, baseDir, fallbackPath) {
 
 function normalizeAccessPolicy(value, options = {}) {
   const mode = trimString(value?.mode || 'all').toLowerCase();
-  if (!['all', 'whitelist'].includes(mode)) {
+  if (!['all', 'whitelist', 'roles'].includes(mode)) {
     throw new Error(`Unsupported accessPolicy.mode: ${value?.mode || '(missing)'}`);
   }
 
@@ -341,6 +342,7 @@ function normalizeAccessPolicy(value, options = {}) {
   const defaultAllowedSendersPath = options.defaultAllowedSendersPath || join(baseDir, DEFAULT_ALLOWED_SENDERS_FILENAME);
   return {
     mode,
+    ...(mode === 'roles' ? { roles: normalizeRoleAccess(value.roles) } : {}),
     allowedSendersPath: resolveOptionalPath(value?.allowedSendersPath, baseDir, defaultAllowedSendersPath),
     allowedSenders: normalizeAllowedSenders(value?.allowedSenders),
   };
@@ -636,6 +638,7 @@ async function updateKnownSenders(pathname, summary) {
 }
 
 async function isAllowedByPolicy(policy, summary) {
+  if (policy.mode === 'roles') return feishuAccessRole(policy, summary) === 'hr';
   if (policy.mode !== 'whitelist') return true;
   const sender = summary.sender || {};
   const allowed = await loadEffectiveAllowedSenders(policy);
@@ -662,7 +665,8 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 }
 
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
-  const allowed = await isAllowedByPolicy(runtime.config.accessPolicy, summary);
+  const role = feishuAccessRole(runtime.config.accessPolicy, summary);
+  const allowed = role === 'interviewer' || await isAllowedByPolicy(runtime.config.accessPolicy, summary);
   const linkedHumanMessage = allowed
     && trimString(summary?.sender?.senderType).toLowerCase() === 'user'
     && runtime.config.projectLinks?.some(link => link.discussionChatId === summary.chatId
@@ -1015,6 +1019,7 @@ async function submitRemoteLabRequest(runtime, summary, {
   observedSessionId = null,
   observedAttachments = null,
 } = {}) {
+  requireFullFeishuAccess(runtime.config.accessPolicy, summary);
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (prepared?.mode) observeOnly = prepared.mode === 'observe';
   if (observeOnly) return { ignored: true, reason: 'listening_retired' };
@@ -1516,6 +1521,24 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const claim = json?.claim;
   if (!claim) return null;
   const delivery = claim.delivery;
+  if (runtime.config.accessPolicy?.mode === 'roles') {
+    const policy = runtime.config.accessPolicy;
+    const senderId = delivery.target?.sender?.openId;
+    const full = runtime.config.appId === policy.roles.appId && policy.roles.hrOpenIds.includes(senderId);
+    if (!full) {
+      if (delivery.sessionId || delivery.attachment || !delivery.target?.restrictedInterview
+          || feishuAccessRole(policy, delivery.target) !== 'interviewer') {
+        const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+          body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Role policy rejects unrestricted delivery' } });
+        if (!resolved.response.ok) throw new Error('Unable to suppress unauthorized delivery');
+        return resolved.json?.delivery;
+      }
+      // Requery immediately before publication: a queued answer cannot retain a
+      // revoked assignment or an expired resume URL. No old Session output is used.
+      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, delivery.target); }
+      catch { delivery.text = '面试查询暂时不可用，请联系 HR。'; }
+    }
+  }
   const summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
     chatType: 'group', ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
     ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) });
@@ -1877,6 +1900,18 @@ async function handleFeishuReactionFeedback(runtime, summary, helpers = {}) {
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
+  const role = feishuAccessRole(runtime.config.accessPolicy, summary);
+  if (role === 'deny') return { blocked: true };
+  if (role === 'interviewer') {
+    const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+    try {
+      const text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(runtime.config.accessPolicy, summary);
+      return await enqueue(runtime, { ...summary, restrictedInterview: true }, text);
+    } catch (error) {
+      console.error('[feishu-restricted] query unavailable:', error.message);
+      return enqueue(runtime, { ...summary, restrictedInterview: true }, '面试查询暂时不可用，请联系 HR。');
+    }
+  }
   if (helpers.preparedSubmission) {
     if (helpers.preparedSubmission.mode === 'observe') return { ignored: true, reason: 'listening_retired' };
     // Retry the saved ownership, body and mode. New settings or another
@@ -2172,6 +2207,8 @@ function initializeInbox(runtime) {
       if (entry.admissionFailure) return notifyFeishuAdmissionFailure(runtime, entry);
       if (entry.summary.sourceKind === 'personal_chat_entered') return runtime.personalSettings.publish(entry.summary, { automatic: true });
       if (entry.summary.sourceKind === 'bot_added') return onboardFeishuGroup(runtime, entry.summary);
+      if (feishuAccessRole(runtime.config.accessPolicy, entry.summary) === 'interviewer'
+          && entry.summary.eventType !== 'im.message.receive_v1') return { blocked: true };
       if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
         return handleFeishuReactionFeedback(runtime, entry.summary);
       }

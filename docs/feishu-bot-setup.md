@@ -1276,3 +1276,32 @@ The explicitly enrolled `reviewCardPersonIds` trial in `learning-policy.json` us
 事件按 UTC 日写入 `events.YYYY-MM-DD.jsonl`，旧日志迁移分片带 `.legacy`，运行中保留 30 天。启动只读当天、前一天，快速参与限最近两小时；显式消息回放可查保留的 30 天。日志迁移流式写入并同步保留分片，确认源文件没有并发变化后才移除旧日志。无日期或破损行保存在当天分片作为原始证据。
 
 普通消息 inbox 的归档保留 90 天，由现有归档路径运行中清理；会议 inbox 不启用该删除策略。会议材料、投递回执与已读回执永久保留原存储位置，启动仅恢复 active 未完成工作，不扫描历史归档。会议历史按 ID 的恢复仍沿现有会议 retry 入口。保留期限和各目录责任见 [工程原则](engineering-principles.md#c-保留期限与启动开销原则-4)。
+
+## Role-restricted application queries
+
+`accessPolicy.mode: "roles"` replaces the flat whitelist for an instance that
+needs a separate interviewer query capability. Configure `roles.appId`,
+`roles.tenantKey`, exact non-overlapping `hrOpenIds` and `interviewerOpenIds`,
+an HTTPS `endpoint`, and an absolute `credentialsPath`. The private credentials
+JSON contains `apiKey` and `signingKey`; neither belongs in the repository.
+No role is inferred from names, user text, tenant-wide admission or old Sessions.
+
+HR messages retain the normal executor. Interviewers use only their own private
+text messages and the signed read-only endpoint, supporting `我的候选人`,
+`查询 姓名或候选人ID`, and `简历 姓名或候选人ID`. Other inputs get an explanation;
+other identities are rejected. No interviewer message, command, retry or document
+comment is submitted to the general executor. Document binding polls admit only
+exact HR provider subjects. Old unrestricted pending deliveries to non-HR users
+are cancelled; restricted replies recheck assignments immediately before sending.
+Backend errors never fall back to a general Session.
+
+The endpoint must verify the gateway credential and HMAC over `JSON.stringify`
+of the request body, then validate timestamp, app, tenant and sender and filter
+records before returning data. The connector sends no HR history or files.
+The response is `{text}` (or `{data:{text}}`). Backend assignment, field selection,
+audit and revocation rules remain the application's responsibility.
+
+Run `node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-restricted-access.mjs`
+and the normal connector regressions. Stage the backend and policy together;
+verify unauthorized, stale, forged and unassigned queries before restarting the
+bot. A staged configuration is not evidence that the running connector loaded it.
