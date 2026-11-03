@@ -1,3 +1,5 @@
+import { registerEventAttachments } from './session-attachment-access.mjs';
+import { canReadSession, isSessionAdministrator, sessionAccessFilter } from './session-access.mjs';
 import { observeIntervention } from './usage-controls.mjs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
@@ -66,7 +68,7 @@ function createClientSessionDetail(session) {
 
 async function listSessionListItemsForClient(options = {}) {
   const sessions = await listSessions(options);
-  return sessions.map(createSessionListItem);
+  return sessions.filter(sessionAccessFilter(options.accessActor || { personId: options.viewPersonId })).map(createSessionListItem);
 }
 
 async function getSessionForClient(id, options = {}) {
@@ -77,10 +79,18 @@ async function getSessionListItemForClient(id, options = {}) {
   return createSessionListItem(await getSession(id, options));
 }
 
+function listActor(key) {
+  const [kind, personId] = key.split(':');
+  return { personId, ...(kind === 'service' ? { authKind: 'service' } : {}) };
+}
 const sessionListCache = createSessionListCache({
   loadVersions: loadSessionMetaVersionIndex,
-  loadAll: personId => listSessionListItemsForClient({ includeArchived: true, viewPersonId: personId }),
-  loadOne: (id, personId) => getSessionListItemForClient(id, { viewPersonId: personId, forList: true }),
+  loadAll: key => listSessionListItemsForClient({ includeArchived: true, viewPersonId: listActor(key).personId, accessActor: listActor(key) }),
+  loadOne: async (id, key) => {
+    const actor = listActor(key);
+    const session = await getSession(id, { viewPersonId: actor.personId, forList: true });
+    return canReadSession(actor, session) ? createSessionListItem(session) : null;
+  },
 });
 onSessionInvalidation(sessionListCache.invalidate);
 export const sweepIdleSessionListViews = (maxIdleMs, now) => sessionListCache.sweepIdle(maxIdleMs, now);
@@ -90,6 +100,7 @@ function trimString(value) {
 }
 
 async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
+  if (authSession?.authKind !== 'service') return { identityId: authSession.identityId, personId: authSession.personId };
   const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {};
   const sender = context.sender && typeof context.sender === 'object' ? context.sender : {};
   const kind = trimString(context.connector || sourceId).toLowerCase();
@@ -171,7 +182,7 @@ export async function handleSessionMainRoutes({
       const query = typeof parsedUrl.query.q === 'string' ? parsedUrl.query.q : '';
       const scope = parsedUrl.query.scope ?? 'all';
       const sessionId = parsedUrl.query.sessionId ?? '';
-      writeJson(res, 200, await searchSessionLogs(query, { scope, sessionId }));
+      writeJson(res, 200, await searchSessionLogs(query, { scope, sessionId, authSession }));
     } catch (error) {
       writeJson(res, error.statusCode === 400 ? 400 : 503, { error: error.statusCode === 400
         ? error.message : 'Session search is temporarily unavailable' });
@@ -183,7 +194,7 @@ export async function handleSessionMainRoutes({
       ? String(parsedUrl.query.view || '').trim().toLowerCase()
       : '';
     const prepared = await sessionListCache.read({
-      personId: authSession?.personId || '',
+      personId: `${authSession?.authKind === 'service' ? 'service' : isSessionAdministrator(authSession) ? 'admin' : 'member'}:${authSession?.personId || ''}`,
       sourceId: normalizeSessionSourceId(parsedUrl.query.sourceId),
       folder: typeof parsedUrl.query.folder === 'string' ? parsedUrl.query.folder : '',
       archived: sessionGetRoute.kind === 'archived-list', refs: view === 'refs',
@@ -232,6 +243,7 @@ export async function handleSessionMainRoutes({
       const events = await getSessionEventsAfter(sessionId, afterSeq, { limit,
         toSeq: readThrough,
         includeBodies: parsedUrl.query.includeBodies !== 'false', cacheRead: parsedUrl.query.cacheRead !== 'false' });
+      await registerEventAttachments(sessionId, events);
       writeJsonCached(req, res, { sessionId, filter: 'all', events,
         ...(snapshot ? { headSeq: snapshot.latestSeq, nextAfterSeq: Math.max(afterSeq, readThrough),
           hasMore: snapshot.latestSeq > afterSeq + limit } : {}) });
@@ -243,6 +255,7 @@ export async function handleSessionMainRoutes({
       return true;
     }
     const timeline = await getSessionTimelineEvents(sessionId);
+    await registerEventAttachments(sessionId, timeline);
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
       exposeWorkboard: session?.workboardPilot === true,
@@ -337,6 +350,7 @@ export async function handleSessionMainRoutes({
       return true;
     }
     const timeline = await getSessionTimelineEvents(sessionId);
+    await registerEventAttachments(sessionId, timeline);
     const events = buildEventBlockEvents(timeline, startSeq, endSeq);
     if (events.length === 0) {
       writeJson(res, 404, { error: 'Event block not found' });
@@ -524,6 +538,9 @@ export async function handleSessionMainRoutes({
             ? { recordUserMessage: false } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };
+        if (authSession?.authKind !== 'service' && (payload.sourceContext || payload.sourceDelivery)) {
+          writeJson(res, 403, { error: 'Connector source requires service authentication' }); return true;
+        }
         const initiator = await resolveSessionInitiator(authSession, payload.sourceId, payload.sourceContext);
         messageOptions.initiatedByIdentityId = initiator.identityId;
         messageOptions.viewPersonId = initiator.personId;
@@ -672,6 +689,9 @@ export async function handleSessionMainRoutes({
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Folder does not exist' }));
         return true;
+      }
+      if (authSession?.authKind !== 'service' && (groupFeed || externalTriggerId || sourceContext || payload.conversation || payload.internalRole)) {
+        writeJson(res, 403, { error: 'Connector metadata requires service authentication' }); return true;
       }
       const createOptions = {
         sourceId: typeof sourceId === 'string' ? sourceId : '',

@@ -1,3 +1,4 @@
+import { sessionAccessFilter } from './session-access.mjs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -153,14 +154,14 @@ export function createSessionLogSearch({
     return { docs: docs.filter(Boolean), incomplete };
   }
 
-  return async function search(query, { scope = 'all', sessionId = '' } = {}) {
+  return async function search(query, { scope = 'all', sessionId = '', authSession = null } = {}) {
     const text = String(query || '').trim();
     if (!text || text.length > 1000) {
       const error = new Error('Search query must contain 1–1000 characters');
       error.statusCode = 400;
       throw error;
     }
-    const all = await list();
+    const all = (await list()).filter(authSession ? sessionAccessFilter(authSession) : () => true);
     let selected = all.filter(session => /^[0-9a-f]{32}$/.test(session.id)
       && (!session.internalRole?.trim() || session.internalRole.trim() === 'scheduled_execution'));
     const ids = new Set(all.map(session => session.id));

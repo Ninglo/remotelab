@@ -150,21 +150,15 @@ async function main() {
     const secondPerson = await request(port, 'GET', '/api/automation-tasks', null, secondPersonCookie);
     assert.equal(secondPerson.status, 200, 'Task Center must be available to every authenticated Person');
     const resources = await request(port, 'GET', '/api/automation/resources', null, secondPersonCookie);
-    assert.equal(resources.status, 200, resources.text);
-    assert.equal(resources.json.resources.status, 'ready');
-    assert.deepEqual(resources.json.resources.sessions, []);
+    assert.equal(resources.status, 403, resources.text);
     assert.equal((await request(port, 'GET', '/api/automation/resources', null, '')).status, 401);
-
     const overview = await request(port, 'GET', '/api/monitoring/overview?days=1', null, secondPersonCookie);
-    assert.equal(overview.status, 200, overview.text);
-    assert.equal(overview.json.windowDays, 1);
-    assert.ok(Array.isArray(overview.json.disks));
-    assert.ok(Array.isArray(overview.json.attention));
-    assert.equal((await request(port, 'GET', '/api/monitoring/overview', null, '')).status, 401,
-      'Monitoring must retain the same authentication boundary as automation controls');
+    assert.equal(overview.status, 403, overview.text);
 
     const fixedSession = await createSession(port, 'Fixed automation home');
-    const templateSession = await createSession(port, 'Independent execution template');
+    const templateResponse = await request(port, 'POST', '/api/sessions', { folder: repoRoot, tool: 'task-center-tool', name: 'Independent execution template' }, secondPersonCookie);
+    assert.equal(templateResponse.status, 201, templateResponse.text);
+    const templateSession = templateResponse.json.session;
     const bind = await request(port, 'PATCH', `/api/sessions/${fixedSession.id}`, {
       conversation: {
         connector: 'feishu',

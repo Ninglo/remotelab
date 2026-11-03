@@ -1,3 +1,4 @@
+import { canReadSession } from './session-access.mjs';
 import webpush from 'web-push';
 import { dirname } from 'path';
 import { VAPID_KEYS_FILE, PUSH_SUBSCRIPTIONS_FILE } from '../lib/config.mjs';
@@ -177,7 +178,7 @@ export async function sendCompletionPush(session) {
   let changed = false;
   const nextSubs = [...subs];
   await Promise.allSettled(subs.map(async (sub, i) => {
-    if (isInBackoff(sub)) return;
+    if (isInBackoff(sub) || !canReadSession({ personId: sub.personId }, session)) return;
     try {
       await webpush.sendNotification(sub, payload, resolvePushSendOptions());
       if ((sub?.__meta?.failureCount || 0) > 0 || (sub?.__meta?.disabledUntil || 0) > 0 || sub?.__meta?.lastError) {

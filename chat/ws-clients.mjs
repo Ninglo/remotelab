@@ -1,3 +1,4 @@
+import { canAccessSession, canReadAutomation, isSessionAdministrator } from './session-access.mjs';
 /**
  * Shared global WebSocket broadcast.
  * Decoupled from ws.mjs to avoid circular imports.
@@ -29,13 +30,26 @@ export function getClientsMatching(predicate = () => true) {
   return matches;
 }
 
-export function broadcastMatching(msg, predicate = () => true) {
+export async function broadcastMatching(msg, predicate = () => true) {
   if (!wss) return;
+  let task = null;
+  if (msg.type === 'automation_tasks_updated' && msg.taskId) {
+    try {
+      task = msg.taskId.startsWith('sch_')
+        ? await (await import('./recurring-schedules.mjs')).getRecurringSchedule(msg.taskId)
+        : await (await import('./triggers.mjs')).getTrigger(msg.taskId);
+    } catch { return; }
+  }
   const data = JSON.stringify(msg);
   for (const client of wss.clients) {
     if (client.readyState !== 1) continue;
     if (!predicate(client)) continue;
-    try { client.send(data); } catch {}
+    try {
+      if (msg.sessionId) { if (!await canAccessSession(client._authSession, msg.sessionId)) continue; }
+      else if (msg.type === 'automation_tasks_updated') { if (!canReadAutomation(client._authSession, task)) continue; }
+      else if (!isSessionAdministrator(client._authSession) && !['sessions_invalidated', 'people_updated', 'instance_settings_updated', 'build_info'].includes(msg.type)) continue;
+      client.send(data);
+    } catch {}
   }
 }
 

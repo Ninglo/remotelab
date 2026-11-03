@@ -365,6 +365,8 @@ async function initApp() {
 
   const authInfo = await resolveInitialAuthInfo();
   currentPerson = authInfo?.person ? { ...authInfo.person } : currentPerson;
+  const addPersonButton = document.getElementById('settingsPersonCreateToggle');
+  if (addPersonButton) addPersonButton.hidden = !currentPerson?.administrator;
   window.remotelabRefreshMobileVoiceUi?.({ preferences: true });
 
   syncAddToolModal();

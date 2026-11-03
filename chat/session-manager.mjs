@@ -1049,7 +1049,7 @@ async function appendAssistantMessageUnlocked(sessionId, text = '', images = [],
   }
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeRequestAttachments(options.preSavedAttachments)
-    : await saveAttachments(images);
+    : await saveAttachments(images, { sessionId });
   let progressPolicy;
   if (options.progressMode !== undefined) {
     progressPolicy = await chooseRunProgressPolicy(sessionId, options.runId, options.progressMode);
@@ -2544,6 +2544,7 @@ export async function createSession(folder, tool, name, extra = {}) {
       autoRenamePending: initialNaming.autoRenamePending,
       created: now,
       updatedAt: now,
+      creatorIdentityId: requestedInitiatedByIdentityId,
     };
     if (requestedExecutionProfile) session.executionProfile = requestedExecutionProfile;
     if (!initialNaming.autoRenamePending) session.titleLocked = true;
@@ -3525,7 +3526,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
   options = applyQuickSessionRuntime(session, options);
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
-  const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
+  const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images, { sessionId });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
   const recordingInput = await applyRecordingIntakePolicy({ text, requestId: options.requestId,
     nativeQuestionId: options.nativeQuestionId, sourceContext: options.sourceContext }, session, { priorRequest });
@@ -3859,7 +3860,7 @@ async function prepareRequestRunOnce(record) {
     : normalizedText;
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeRequestAttachments(options.preSavedAttachments)
-    : await saveAttachments(images);
+    : await saveAttachments(images, { sessionId });
   const isFirstRecordedUserMessage =
     options.recordUserMessage !== false
     && (snapshot.userMessageCount || 0) === 0;

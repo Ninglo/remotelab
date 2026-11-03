@@ -13,8 +13,8 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 
 **Not** a terminal emulator, a traditional editor-first IDE, or a chatbot. It's an **AI workbench / control console for human-AI collaboration** — the user does not need a perfect spec up front; RemoteLab should help discover the right problem, propose a workable workflow, and keep execution plus context coherent.
 
-- Multiple authenticated People may share one instance; identity is for attribution and frontend views, never Session authorization
-- Every authenticated Person has full access to every Session; unauthenticated requests cannot enter the workbench
+- Multiple People may share one instance; established identity determines Session ownership
+- Ordinary People can access only their own Sessions; configured administrators can access all Sessions; unauthenticated requests cannot enter the workbench
 - First wedge: repetitive digital work that can be automated quickly
 - Phone + desktop are both first-class control surfaces
 - Node.js, no external frameworks (only `ws` for WebSocket)
@@ -208,10 +208,10 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 Deployment and data-isolation boundary. One host may run several guest instances; each instance owns separate config, memory, workspace, auth, Connectors, and runtime permissions. Multiple authenticated People can collaborate inside one instance.
 
 ### Sessions
-The one durable product object for a work thread. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Session title, transcript, runtime, workflow state and lifecycle are shared by all authenticated People.
+The one durable product object for a work thread. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Session title, transcript, runtime, workflow state and lifecycle require creator or administrator access. See `docs/session-access.md`.
 
 ### People and identities
-A Person is a human-facing profile with one readable `handle`. Person profiles exist independently from sign-in credentials, so creating a Person does not need to issue a token or password. The handle is the Web username and the automatic connector-binding key. Feishu identities retain the route-scoped sender ID (preferring `openId`) as the durable provider identity, while the connector resolves the sender profile and the server auto-links by handle or one unambiguous name match. Newly discovered people receive stable pinyin-style handles with a short collision suffix. Identity is used for attribution and frontend filtering only; it never hides or protects Sessions.
+A Person is a human-facing profile with one readable `handle`. Person profiles exist independently from sign-in credentials, so creating a Person does not need to issue a token or password. The handle is the Web username and the automatic connector-binding key. Feishu identities retain the route-scoped sender ID (preferring `openId`) as the durable provider identity, while established server-side identity mappings determine the Person; new subjects are not linked by display name or handle. Newly discovered people receive stable pinyin-style handles with a short collision suffix. The recorded creator identity grants Session access to that Person; `administratorPersonIds` grants global human access.
 
 ### Per-Person Session views
 Every Person may organize the same shared Sessions differently. `space`, `group`, and `sidebarOrder` live under `session.personViews[personId]` and are projected for the requesting Person. Automatic sorting/classification updates only the Person whose turn triggered it. Shared fields remain global.
@@ -257,7 +257,7 @@ Post-turn memory writeback review uses an independent `gpt-6-sol` / `low` select
 3. **Restart-safe recovery** — prefer durable restart/reload recovery over maintaining a permanent second chat plane
 4. **Vanilla JS frontend** — no build tools, no framework
 5. **Every change = new commit** — never use `--amend`, only new commits
-6. **Shared authenticated instance** — all authenticated People have complete use rights; Person identity only controls attribution, filters, and personal Session organization
+6. **Session ownership** — ordinary People access only Sessions they created; administrators access all Sessions. Enforce `chat/session-access.mjs` at browser/API/stream/attachment boundaries, preserve service authentication, and do not infer ownership from names or last speakers.
 7. **Session-only product model** — do not reintroduce interactive Agent/template or Visitor role objects; `ShareSnapshot` remains the only unauthenticated read-only publication
 8. **Conversation-driven first** — new features prefer conversation/Skill over dedicated UI
 9. **ES Modules** — `"type": "module"`, all `.mjs` files
@@ -317,6 +317,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Inline Flow Display | `docs/inline-flow-display.md` | Accepted message-native preview/expand strategy, authoring choices, relationship preservation and renderer limits |
 | Notes Map | `notes/README.md` | Note taxonomy: `current` vs `directional` vs `archive` vs `local` |
 | Engineering Principles | `docs/engineering-principles.md` | Accepted rules and design plan for state storage, read failures, input retry limits, retention, memory limits, incident alerts and fix scope |
+| Session Access | `docs/session-access.md` | Creator/admin policy, historical ownership, connectors, testing and recovery |
 | Project Architecture | `docs/project-architecture.md` | Top-down map of the shipped system, code locations, runtime flows, and current-vs-direction split |
 | Implementation Recipes | `docs/implementation-recipes.md` | Step-by-step guides for common modifications: add API endpoint, add runtime adapter, modify sidebar; includes key function signatures |
 | Product Mainline + Feedback Loop | `notes/current/product-mainline.md` | Current operating plan for prioritization, user feedback, and mainstream automation framing |

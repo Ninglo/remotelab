@@ -38,7 +38,7 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
       if (!actor.topicReadAck) throw Object.assign(Error('请重新连接状态同步，启用飞书已读同步。'), { status: 403 });
       const body = JSON.parse(await readBody(req, 2048));
       if (!body || Object.keys(body).some(k => !['webThreadId', 'resultAt'].includes(k)) || topicIds(body.webThreadId).length !== 1) throw Error('已读请求无效。');
-      writeJson(res, 200, await source.review(body.webThreadId, body.resultAt)); return true;
+      writeJson(res, 200, await source.review(body.webThreadId, body.resultAt, actor)); return true;
     }
     // Empty summaries let native v14 restore Feishu's latest-message preview.
     // Group-board and Web summaries retain their existing presentation.
@@ -46,7 +46,7 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
     const project = data => ({ ...data, ...(native ? { entries: (data.entries || []).map(e => ({ ...e, summary: '' })) } : {}), readSyncEnabled: actor.topicReadAck });
     if (!['snapshot', 'stream'].some(name => pathname === prefix + name) || req.method !== 'GET') { writeJson(res, 404, { error: 'Unknown topic operation' }); return true; }
     const ids = topicIds(url.searchParams.get('ids')), groups = topicIds(url.searchParams.get('groups'));
-    if (pathname.endsWith('/snapshot')) { writeJson(res, 200, project(await source.snapshot(ids, '', null, groups, actor.topicDetails))); return true; }
+    if (pathname.endsWith('/snapshot')) { writeJson(res, 200, project(await source.snapshot(ids, '', null, groups, actor.topicDetails, actor))); return true; }
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'X-Accel-Buffering': 'no' }); res.flushHeaders?.();
     let off, closed = false;
     const stop = () => { if (closed) return; closed = true; clearInterval(heartbeat); off?.(); res.end(); };
@@ -54,7 +54,7 @@ export async function handleFeishuWebTopics({ req, res, pathname, authSession, w
     const send = data => { if (!closed) { const frame = encode(project(data)); if (frame) res.write('data: ' + JSON.stringify(frame) + '\n\n'); } };
     const heartbeat = setInterval(() => { void authorize().then(() => { if (!closed) res.write(': heartbeat\n\n'); }).catch(() => stop()); }, 15000); heartbeat.unref?.();
     res.on('close', stop);
-    off = await source.subscribe(ids, send, error => { send({ sourceConnected: false, error: error.message }); stop(); }, groups, actor.topicDetails);
+    off = await source.subscribe(ids, send, error => { send({ sourceConnected: false, error: error.message }); stop(); }, groups, actor.topicDetails, actor);
     if (closed) off();
   } catch (error) { if (res.headersSent) res.end(); else writeJson(res, error.status || 400, { error: error.message }); }
   return true;

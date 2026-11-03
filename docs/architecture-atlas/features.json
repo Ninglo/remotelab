@@ -163,9 +163,9 @@
         {
           "id": "organization",
           "name": "会话搜索、筛选、置顶、重命名和分组",
-          "purpose": "从共享会话中找到自己的工作，并按个人视图组织 Space 和 Group。",
+          "purpose": "在有权访问的会话中找回自己的工作，并按个人视图组织 Space 和 Group。",
           "entry": "会话侧栏与会话菜单；设置 → 会话 → 我的视图。",
-          "condition": "个人筛选和分组影响视图，不形成会话访问隔离；共享会话内容和标题仍是共同数据。",
+          "condition": "普通账号只能访问自己创建的 Session；管理员可访问全部。个人筛选和分组只在有权范围内组织视图，不授予额外权限。",
           "example": "把这些相关会话放到我的同一个分组里。",
           "sources": [
             "static/chat/sidebar-ui.js",
@@ -727,7 +727,7 @@
           "name": "只读会话分享快照",
           "purpose": "把选定内容冻结为独立只读分享，方便别人查看当时的结果。",
           "entry": "会话的分享入口。",
-          "condition": "快照不会跟随后续工作自动更新。分享前要检查内容范围；共享实例中的会话不是个人私有空间。",
+          "condition": "只有创建者和管理员能发布会话快照。普通 Session 链接不授予访问权；明确发布的只读快照按公开分享规则访问，不随之后工作自动更新。",
           "example": "为这次结果生成只读分享，先核对会公开哪些内容。",
           "sources": [
             "chat/shares.mjs",
@@ -924,10 +924,13 @@
           "name": "人员与登录方式管理",
           "purpose": "添加人员档案、管理登录方式，并关联已核外部身份。",
           "entry": "设置 → 人员；部署者的登录配置入口。",
-          "condition": "同一实例所有已认证人员可使用全部会话。身份用于归因和视图，不提供会话权限隔离。",
+          "condition": "普通账号只访问自己创建的 Session；管理员按 administratorPersonIds 配置并访问全部。历史未知归属及系统群主线由管理员处理，服务认证继续承接连接器和后台执行。新外部身份不按显示名或用户名自动合并，已有身份映射保留；飞书登录仍需开通过的控制台账号。",
           "example": "检查我的网页与飞书身份是否对应同一个人员档案。",
           "sources": [
             "lib/auth-config.mjs",
+            "chat/session-access.mjs",
+            "chat/session-attachment-access.mjs",
+            "docs/session-access.md",
             "templates/chat.html",
             "README.zh.md"
           ],

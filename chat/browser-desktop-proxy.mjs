@@ -1,3 +1,4 @@
+import { isSessionAdministrator } from './session-access.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
@@ -22,7 +23,7 @@ export function isBrowserDesktopPath(pathname) {
 async function authStatus(req) {
   await authenticateBearerToken(req);
   const session = getAuthSession(req);
-  return session ? 200 : 401;
+  return session ? (isSessionAdministrator(session) ? 200 : 403) : 401;
 }
 
 async function loadDesktop() {
@@ -81,6 +82,7 @@ export async function handleBrowserDesktopRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (!isBrowserDesktopPath(url.pathname)) return false;
   const status = await authStatus(req);
+  if (status === 403) { respond(res, 403, 'Administrator access required'); return true; }
   if (status !== 200) {
     respond(res, 302, '', { Location: `/login?next=${encodeURIComponent(req.url)}` });
     return true;

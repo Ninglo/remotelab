@@ -1,3 +1,4 @@
+import { canAccessSession } from './session-access.mjs';
 import { readBody, escapeHtml } from '../lib/utils.mjs';
 import { observeIntervention } from './usage-controls.mjs';
 import { connectFeishuNative, connectFeishuWebSettings, authorizeFeishuWebSettings, disconnectFeishuWebSettings,
@@ -61,9 +62,11 @@ document.getElementById('connect').onclick=async()=>{const button=document.getEl
     } else if (pathname.endsWith('/replies') && req.method === 'POST') {
       writeJson(res, 200, { settings: await saveFeishuWebReplies(JSON.parse(await readBody(req, 32768)), actor) });
     } else if (pathname.endsWith('/runtime') && req.method === 'GET') {
+      if (!await canAccessSession(actor, url.searchParams.get('sessionId'))) throw Object.assign(new Error('Session access denied'), { status: 403 });
       writeJson(res, 200, { runtime: await readFeishuWebRuntime(url.searchParams.get('sessionId'), runtime) });
     } else if (pathname.endsWith('/runtime') && req.method === 'POST') {
       const input = JSON.parse(await readBody(req, 32768));
+      if (!await canAccessSession(actor, input.sessionId)) throw Object.assign(new Error('Session access denied'), { status: 403 });
       const saved = await saveFeishuWebRuntime(input, runtime);
       observeIntervention(input.sessionId, 'runtime_change', actor);
       writeJson(res, 200, { runtime: saved });

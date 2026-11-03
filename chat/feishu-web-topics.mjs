@@ -1,3 +1,4 @@
+import { canReadSession, sessionAccessFilter } from './session-access.mjs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { watch } from 'node:fs';
@@ -45,9 +46,9 @@ async function bindingsConfig() {
 export function createFeishuTopicSource(deps = {}) {
   const sessions = deps.sessions || loadSessionsMeta, session = deps.session || (id => getSession(id, { includeTransportSurfaces: false })), bindings = deps.bindings || bindingsConfig;
   const details=deps.details||topicDetails;
-  async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true) {
+  async function snapshot(ids, changedId = '', previous = null, groupIds = [], includeDetails = true, actor = null) {
     const config = await bindings(), wanted = new Set(ids), visibleGroups = new Set(groupIds);
-    const metadata = await sessions();
+    const metadata = (await sessions()).filter(actor ? sessionAccessFilter(actor) : () => true);
     config.bindings = await nativeTopicBindings(metadata, ids, config, deps.configDir || CONFIG_DIR);
     const parents = new Map();
     for (const s of metadata) if (eligible(s)) {
@@ -75,7 +76,7 @@ export function createFeishuTopicSource(deps = {}) {
     const records = relevantRecords.filter(s => incremental ? changed.has(s.id) || !cache.has(s.id)
       : !versioned || !sameVersion(cache.get(s.id), s));
     for (let i = 0; i < records.length; i += 4) await Promise.all(records.slice(i, i + 4).map(async record => {
-      const s = await session(record.id); if (relevant(s)) cache.set(s.id, s); else cache.delete(record.id);
+      const s = await session(record.id); if (relevant(s) && (!actor || canReadSession(actor, s))) cache.set(s.id, s); else cache.delete(record.id);
     }));
     const entries = new Map(), ambiguous = new Set(), safeBindings = { ...config.bindings };
     for (const s of cache.values()) {
@@ -92,7 +93,7 @@ export function createFeishuTopicSource(deps = {}) {
     if(includeDetails)Object.assign(data,await details(data.entries,config));
     Object.defineProperty(data, sourceRecords, { value: cache }); return data;
   }
-  async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true) {
+  async function subscribe(ids, emit, fail, groupIds = [], includeDetails = true, actor = null) {
     let alive = true, busy = false, pending = false, fullPending = false, last = null, healthy = false, deepAt = 0;
     const changedIds = new Set();
     let enrichment = null, enriching = false, detailsPending = false, detailsTimer, detailsAt = 0, lastDigest = '';
@@ -144,7 +145,7 @@ export function createFeishuTopicSource(deps = {}) {
       // change whose metadata version did not move.
       const deep = !id && Date.now() - deepAt >= 600000;
       if (deep) deepAt = Date.now();
-      void snapshot(ids, id, deep ? null : last, groupIds, false).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; lastDigest = ''; fail(error); } }).finally(() => {
+      void snapshot(ids, id, deep ? null : last, groupIds, false, actor).then(data => { if (alive) { last = data; healthy = true; publish(); enrich(); } }).catch(error => { if (alive) { healthy = false; lastDigest = ''; fail(error); } }).finally(() => {
         busy = false; if (pending && alive) {
           const next = fullPending ? '' : [...changedIds];
           pending = false; fullPending = false; changedIds.clear(); refresh(next);
@@ -161,8 +162,8 @@ export function createFeishuTopicSource(deps = {}) {
     refresh('');
     return () => { alive = false; clearInterval(refreshTimer); clearTimeout(detailsTimer); off(); watcher?.close(); };
   }
-  async function review(webThreadId, resultAt) {
-    const data = await snapshot([webThreadId], '', null, [], false);
+  async function review(webThreadId, resultAt, actor = null) {
+    const data = await snapshot([webThreadId], '', null, [], false, actor);
     const entry = data.entries.find(e => e.webThreadId === webThreadId);
     if (!entry || !resultAt || !Number.isFinite(Date.parse(resultAt)) || Date.parse(resultAt) > Date.parse(entry.resultAt || '')) throw Object.assign(Error('已读结果与话题不匹配。'), { status: 409 });
     return (deps.acknowledge || acknowledgeSessionResult)(entry.sessionId, resultAt);

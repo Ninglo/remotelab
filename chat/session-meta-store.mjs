@@ -168,11 +168,11 @@ function normalizeStoredSessionMeta(meta) {
   const identityId = typeof normalized.initiatedByIdentityId === 'string'
     ? normalized.initiatedByIdentityId.trim()
     : '';
-  const nextIdentityId = identityId || (
-    normalized.sourceId === DEFAULT_SESSION_SOURCE_ID
-      ? DEFAULT_WEB_IDENTITY_ID
-      : SYSTEM_IDENTITY_ID
-  );
+  if (!Object.hasOwn(normalized, 'creatorIdentityId')) {
+    normalized.creatorIdentityId = normalized.groupFeed ? SYSTEM_IDENTITY_ID : (identityId || SYSTEM_IDENTITY_ID);
+    changed = true;
+  }
+  const nextIdentityId = identityId || SYSTEM_IDENTITY_ID;
   if (normalized.initiatedByIdentityId !== nextIdentityId) {
     normalized.initiatedByIdentityId = nextIdentityId;
     changed = true;

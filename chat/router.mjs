@@ -1,3 +1,5 @@
+import { canAccessSession, canReadSession, isSessionAdministrator, memberRouteAllowed } from './session-access.mjs';
+import { requireAttachmentAccess } from './session-attachment-access.mjs';
 import { handleSiteLogin } from './router-site-login.mjs';
 import { handleSiteUsageRoutes } from './router-site-usage.mjs';
 import { injectSiteUsageHtml } from './site-usage-html.mjs';
@@ -430,7 +432,7 @@ async function resolveRequestedSessionAttachments(authSession, requestedAttachme
       error.statusCode = 400;
       throw error;
     }
-    if (!authSession) {
+    if (!await canAccessSession(authSession, asset.sessionId)) {
       const error = new Error('Forbidden');
       error.statusCode = 403;
       throw error;
@@ -462,8 +464,10 @@ async function resolveRequestedSessionAttachments(authSession, requestedAttachme
     });
   }
 
+  for (const attachment of existingAttachments) await requireAttachmentAccess(authSession, attachment.filename);
+
   const savedUploadedAttachments = uploadedAttachments.length > 0
-    ? await saveAttachments(uploadedAttachments)
+    ? await saveAttachments(uploadedAttachments, { sessionId })
     : [];
   const normalizedUploadedAttachments = await maybePublishSavedAttachmentsToFileAssets(savedUploadedAttachments, {
     sessionId,
@@ -647,7 +651,7 @@ function trimString(value) {
 }
 
 function isSessionVisibleToAuthSession(authSession, session) {
-  return !!(authSession && session);
+  return canReadSession(authSession, session);
 }
 
 function buildAuthInfo(authSession) {
@@ -657,6 +661,7 @@ function buildAuthInfo(authSession) {
       id: authSession.personId,
       name: authSession.personName,
       identityId: authSession.identityId,
+      administrator: isSessionAdministrator(authSession),
     },
   };
   if (typeof authSession.preferredLanguage === 'string' && authSession.preferredLanguage.trim()) {
@@ -676,7 +681,7 @@ async function buildChatPageBootstrap(authSession) {
     assetUploads: getFileAssetBootstrapConfig(),
     defaultSessionFolder: MANAGED_WORK_ROOT_DIR,
     monitoringPortal,
-    people,
+    people: people.filter(p => isSessionAdministrator(authSession) || p.id === authSession?.personId),
     settings,
   };
 }
@@ -1136,12 +1141,8 @@ function writeRangedStaticResponse(req, res, staticAsset, body) {
   res.end(req.method === 'HEAD' ? undefined : chunk);
 }
 
-const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, max-age=1296000, immutable';
+const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, no-store';
 const SHARE_RESOURCE_CACHE_CONTROL = 'public, no-cache, max-age=0, must-revalidate';
-
-async function canAccessSession(authSession, sessionId) {
-  return !!(authSession && sessionId);
-}
 
 async function requireSessionAccess(res, authSession, sessionId) {
   if (await canAccessSession(authSession, sessionId)) return true;
@@ -1477,6 +1478,15 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!isSessionAdministrator(authSession) && !memberRouteAllowed(req.method, pathname, authSession?.personId)) {
+    writeJson(res, 403, { error: 'Administrator access required' }); return;
+  }
+  const scopedSessionId = /^\/api\/sessions\/([^/]+)/.exec(pathname)?.[1];
+  if (scopedSessionId && !['archived', 'search'].includes(scopedSessionId)
+      && !await requireSessionAccess(res, authSession, scopedSessionId)) return;
+  const pageSessionId = pathname === '/' ? parsedUrl.query.session : '';
+  if (pageSessionId && !await requireSessionAccess(res, authSession, pageSessionId)) return;
   if (await handleSiteUsageRoutes({ req, res, pathname, authSession })) return;
 
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;

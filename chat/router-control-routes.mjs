@@ -1,3 +1,5 @@
+import { canAccessSession, canReadAutomation, isSessionAdministrator } from './session-access.mjs';
+import { requireAttachmentAccess } from './session-attachment-access.mjs';
 import { findActiveFeishuThreadExecution } from './feishu-thread-continuation.mjs';
 import { handleAutomationConfirmationRoutes } from './router-automation-confirmations.mjs';
 import { setAutomationDelivery } from './automation-delivery.mjs';
@@ -229,6 +231,8 @@ async function prepareScheduledTask(payload, { authSession = null } = {}) {
   const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : String(payload.sourceSessionId || '').trim();
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
+  if (!await canAccessSession(authSession, sourceSessionId)) throw Object.assign(new Error('Source session access denied'), { statusCode: 403 });
+  if (authSession?.authKind !== 'service' && (payload.conversation || payload.sourceDelivery || payload.sessionTemplate?.conversation)) throw new Error('External delivery requires service authentication');
   if (sourceSession.archived) throw new Error('Source session is archived');
   let input = await applyScheduledRuntimeProfile(payload, sourceSession, getAutoRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
@@ -241,15 +245,20 @@ async function prepareScheduledTask(payload, { authSession = null } = {}) {
     if (!conversation) throw new Error('Source Session has no external conversation');
     input = { ...input, conversation };
   }
+  const template = buildScheduledSessionTemplate(input, sourceSession);
+  if (template?.sessionId && !await canAccessSession(authSession, template.sessionId)) throw Object.assign(new Error('Target session access denied'), { statusCode: 403 });
   return {
     ...input,
     sourceSessionId,
     createdByIdentityId: resolveTaskCreatorIdentity(authSession, sourceSession),
-    sessionTemplate: buildScheduledSessionTemplate(input, sourceSession),
+    sessionTemplate: template,
   };
 }
 
-async function prepareScheduledRuntimePatch(current, payload) {
+async function prepareScheduledRuntimePatch(current, payload, authSession) {
+  if (!isSessionAdministrator(authSession) && ['sessionTemplate', 'sourceSessionId', 'sessionId', 'createdByIdentityId', 'conversation', 'sourceDelivery'].some(k => Object.hasOwn(payload, k))) {
+    throw Object.assign(new Error('Automation ownership and destination require an administrator'), { statusCode: 403 });
+  }
   const patch = patchScheduledRuntime(current, payload);
   if (!Object.keys(patch).length) return payload;
   const source = await getSession(current.sourceSessionId);
@@ -271,6 +280,8 @@ async function prepareAutomationTask(payload = {}, authSession = null) {
   if (!sourceSessionId) throw new Error('A target Session is required');
   const sourceSession = await getSession(sourceSessionId);
   if (!sourceSession) throw new Error('Target Session not found');
+  if (!await canAccessSession(authSession, sourceSessionId)) throw Object.assign(new Error('Target Session access denied'), { statusCode: 403 });
+  if (authSession?.authKind !== 'service' && payload.resultDelivery?.mode === 'conversation') throw new Error('External delivery requires service authentication');
   if (sourceSession.archived) throw new Error('Target Session is archived');
 
   const resultDelivery = payload.resultDelivery && typeof payload.resultDelivery === 'object'
@@ -346,6 +357,11 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  const taskId = /^\/api\/(?:automation-tasks|triggers|schedules)\/((?:trg|sch)_[a-f0-9]{24})/.exec(pathname)?.[1];
+  if (taskId && !isSessionAdministrator(authSession)) {
+    const task = await (taskId.startsWith('sch_') ? getRecurringSchedule(taskId) : getTrigger(taskId));
+    if (!canReadAutomation(authSession, task)) { writeJson(res, 403, { error: 'Automation access denied' }); return true; }
+  }
   if (await handleInflightTrialRoutes({ req, res, pathname, authSession, writeJson })) return true;
   if (await handleAutomationConfirmationRoutes({ req, res, pathname, authSession, writeJson })) return true;
   if (await handleMessageReplySettings({ req, res, pathname, parsedUrl, authSession, writeJson })) return true;
@@ -427,7 +443,7 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/people' && req.method === 'GET') {
-    writeJson(res, 200, { people: await listPeopleForClient() });
+    writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
     return true;
   }
 
@@ -487,6 +503,9 @@ export async function handleControlRoutes({
   if (personMatch && req.method === 'PATCH') {
     try {
       const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      if (!isSessionAdministrator(authSession) && Object.keys(payload).some(k => !['name', 'defaultSessionPersonFilter', 'voiceShortcut', 'mobileInputMode'].includes(k))) {
+        writeJson(res, 403, { error: 'Identity changes require an administrator' }); return true;
+      }
       if (['voiceShortcut', 'mobileInputMode'].some((key) => Object.prototype.hasOwnProperty.call(payload, key))
         && authSession?.personId !== personMatch[1]) {
         writeJson(res, 403, { error: 'Voice preferences can only be changed by their Person' });
@@ -500,7 +519,7 @@ export async function handleControlRoutes({
         writeJson(res, 404, { error: 'Person not found' });
         return true;
       }
-      writeJson(res, 200, { people: await listPeopleForClient() });
+      writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to update person' });
@@ -532,7 +551,7 @@ export async function handleControlRoutes({
       writeJson(res, 404, { error: 'Credential not found' });
       return true;
     }
-    writeJson(res, 200, { people: await listPeopleForClient() });
+    writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
     broadcastAll({ type: 'people_updated' });
     return true;
   }
@@ -552,7 +571,7 @@ export async function handleControlRoutes({
         return true;
       }
       await mergeSessionPersonViewOwnership(moved.sourcePersonId, moved.targetPersonId);
-      writeJson(res, 200, { people: await listPeopleForClient() });
+      writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to move identity' });
@@ -619,7 +638,9 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/automation-tasks' && req.method === 'GET') {
     try {
-      const [tasks, backgroundMechanisms] = await Promise.all([listAutomationTasks(), listAutomationBackground()]);
+      const [allTasks, allBackground] = await Promise.all([listAutomationTasks(), listAutomationBackground()]);
+      const tasks = allTasks.filter(t => canReadAutomation(authSession, t));
+      const backgroundMechanisms = isSessionAdministrator(authSession) ? allBackground : [];
       const automationFlows = await listAutomationFlows(tasks, { backgroundMechanisms });
       writeJson(res, 200, { tasks, backgroundMechanisms, automationFlows });
     } catch (error) {
@@ -659,6 +680,7 @@ export async function handleControlRoutes({
       const id = homeMatch[1];
       if (req.method === 'POST') {
         const payload = JSON.parse(await readBody(req, 32768) || '{}');
+        if (payload.replaceSessionId && !await canAccessSession(authSession, payload.replaceSessionId)) { writeJson(res, 403, { error: 'Session access denied' }); return true; }
         await ensureAutomationHome(id, { auth: authSession, brief: payload.brief, replaceSessionId: payload.replaceSessionId });
         broadcastAll({ type: 'sessions_invalidated' });
         broadcastAll({ type: 'automation_tasks_updated', taskId: id });
@@ -712,7 +734,7 @@ export async function handleControlRoutes({
       if (Object.keys(payload).some(key => !['runtimePolicy', 'tool', 'model', 'effort', 'thinking'].includes(key))) {
         throw new Error('Only runtime settings can be edited here');
       }
-      const patch = await prepareScheduledRuntimePatch(current, payload);
+      const patch = await prepareScheduledRuntimePatch(current, payload, authSession);
       await (recurring ? updateRecurringSchedule(id, patch) : updateTrigger(id, patch));
       const saved = await getAutomationTask(id);
       observeAutomationChange(await (recurring ? getRecurringSchedule(id) : getTrigger(id)), current, authSession);
@@ -748,7 +770,7 @@ export async function handleControlRoutes({
     const scheduleIdFilter = typeof parsedUrl?.query?.scheduleId === 'string'
       ? parsedUrl.query.scheduleId
       : '';
-    const triggers = await listTriggers({ sessionId, scheduleId: scheduleIdFilter });
+    const triggers = (await listTriggers({ sessionId, scheduleId: scheduleIdFilter })).filter(t => canReadAutomation(authSession, t));
     writeJson(res, 200, { triggers });
     return true;
   }
@@ -828,7 +850,7 @@ export async function handleControlRoutes({
         return true;
       }
       const current = await getTrigger(triggerId);
-      const trigger = current ? await updateTrigger(triggerId, await prepareScheduledRuntimePatch(current, payload || {})) : null;
+      const trigger = current ? await updateTrigger(triggerId, await prepareScheduledRuntimePatch(current, payload || {}, authSession)) : null;
       if (!trigger) {
         writeJson(res, 404, { error: 'Trigger not found' });
         return true;
@@ -858,7 +880,7 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/schedules' && req.method === 'GET') {
     const sessionId = typeof parsedUrl?.query?.sessionId === 'string' ? parsedUrl.query.sessionId : '';
-    writeJson(res, 200, { schedules: await listRecurringSchedules({ sessionId }) });
+    writeJson(res, 200, { schedules: (await listRecurringSchedules({ sessionId })).filter(t => canReadAutomation(authSession, t)) });
     return true;
   }
 
@@ -909,7 +931,7 @@ export async function handleControlRoutes({
         throw new Error('The source session is immutable; create a new schedule instead');
       }
       const current = await getRecurringSchedule(scheduleId);
-      const schedule = current ? await updateRecurringSchedule(scheduleId, await prepareScheduledRuntimePatch(current, payload)) : null;
+      const schedule = current ? await updateRecurringSchedule(scheduleId, await prepareScheduledRuntimePatch(current, payload, authSession)) : null;
       if (!schedule) {
         writeJson(res, 404, { error: 'Schedule not found' });
         return true;
@@ -1278,6 +1300,9 @@ export async function handleControlRoutes({
       return true;
     }
     const hasConversationPatch = Object.hasOwn(patch || {}, 'conversation');
+    if (hasConversationPatch && !isSessionAdministrator(authSession)) {
+      writeJson(res, 403, { error: 'Conversation binding requires an administrator' }); return true;
+    }
     if (hasConversationPatch) {
       try { requireConversation(patch.conversation); }
       catch (error) { writeJson(res, 400, { error: error.message }); return true; }
@@ -1565,7 +1590,7 @@ export async function handleControlRoutes({
         const requestedAttachments = Array.isArray(payload?.attachments) ? payload.attachments.filter(Boolean) : [];
         const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments, {
           sessionId,
-          allowLocalPaths: true,
+          allowLocalPaths: isSessionAdministrator(authSession),
           createdBy: 'assistant',
         });
         const outcome = await appendAssistantMessage(sessionId, payload.text || '', [], {
@@ -1623,6 +1648,9 @@ export async function handleControlRoutes({
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
         return true;
+      }
+      if (authSession?.authKind !== 'service' && payload.externalTriggerId) {
+        writeJson(res, 403, { error: 'External binding requires service authentication' }); return true;
       }
       const forkOptions = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
       const initiator = await resolveDerivedSessionCreatorIdentity(authSession, source);
@@ -1883,6 +1911,8 @@ export async function handleControlRoutes({
       res.end('Invalid filename');
       return true;
     }
+    try { await requireAttachmentAccess(authSession, filename); }
+    catch (error) { writeJson(res, error.statusCode || 503, { error: 'Attachment access denied' }); return true; }
     const filepath = join(CHAT_IMAGES_DIR, filename);
     if (!await pathExists(filepath)) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -1891,7 +1921,7 @@ export async function handleControlRoutes({
     }
     const ext = filename.split('.').pop()?.toLowerCase();
     writeFileCached(req, res, uploadedMediaMimeTypes[ext] || 'application/octet-stream', await readFile(filepath), {
-      cacheControl: 'public, max-age=31536000, immutable',
+      cacheControl: 'private, no-store',
     });
     return true;
   }
@@ -1911,7 +1941,7 @@ export async function handleControlRoutes({
     try {
       const sub = JSON.parse(body);
       if (!sub.endpoint) throw new Error('Missing endpoint');
-      await addSubscription(sub);
+      await addSubscription({ ...sub, personId: authSession.personId });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
     } catch {

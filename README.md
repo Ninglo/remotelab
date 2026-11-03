@@ -97,7 +97,7 @@ The [setup contract](docs/setup.md) and [Feishu guide](docs/feishu-bot-setup.md)
 
 ## Data and access boundaries
 
-RemoteLab supports a shared instance for a trusted team. **Every authenticated Person in an instance has full access to its Sessions.** Identity supports attribution, preferences, and personal views; it does not provide per-person or per-group Session isolation. Use separate instances with appropriate operating-system permissions for different trust boundaries. A Feishu direct-message entry is not a private space within the instance.
+RemoteLab supports a shared instance for a trusted team. **Ordinary accounts can access only Sessions they created; administrators can access all Sessions.** Established Web and external identities resolve to the same Person. Group membership and a normal Session link do not grant access. [Session access](docs/session-access.md) covers administrator configuration, historical/group/automation ownership, sharing and verification. These workbench rules do not isolate agent filesystem access; use separate instances and operating-system permissions across machine trust boundaries.
 
 Default persistent locations are below; isolated instances can override them:
 

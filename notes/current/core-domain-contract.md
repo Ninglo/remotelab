@@ -35,10 +35,10 @@ parallel task objects with competing work ownership.
 ## People and access
 
 People and external identities provide attribution, authentication and personal
-views. Every authenticated Person has full access to the instance's Sessions;
-Person identity does not impose Session ownership or authorization partitions.
+views. Ordinary People access only Sessions they created; configured administrators access all Sessions (see `docs/session-access.md`);
+Established identity and the recorded creator determine Session authorization.
 Space, Project group and sidebar ordering are per-Person projections. Session
-history, title, runtime and workflow state are shared.
+history, title, runtime and workflow state require creator or administrator access.
 
 Authentication, resource access, connector scope and backend tool authorization
 remain enforced by code. A prompt cannot grant access. Sharing an authenticated

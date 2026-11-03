@@ -1,3 +1,4 @@
+import { canReadSession } from './session-access.mjs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -106,7 +107,7 @@ export function createPersonalWorkspace(deps = {}) {
     return auth;
   }
   async function resolve(actor, surface, create = false) {
-    const auth = await verified(actor), sessions = await dependencies.sessions();
+    const auth = await verified(actor), sessions = (await dependencies.sessions()).filter(s => canReadSession(actor, s, auth));
     const key = `personal-${surface}:${actor.personId}`;
     let target = sessions.find(s => !s.archived && s.externalTriggerId === key && findIdentity(auth, s.initiatedByIdentityId)?.person.id === actor.personId);
     if (!target && surface === 'index') target = sessions.filter(s => !s.archived && !s.groupFeed && s.conversation?.connector === 'feishu'
@@ -125,7 +126,7 @@ export function createPersonalWorkspace(deps = {}) {
     return target;
   }
   async function context(actor) {
-    const auth = await verified(actor), sessions = await dependencies.sessions();
+    const auth = await verified(actor), sessions = (await dependencies.sessions()).filter(s => canReadSession(actor, s, auth));
     const result = { person: { id: actor.personId, name: findIdentity(auth, actor.identityId).person.name }, observedAt: new Date().toISOString(), projects: [], errors: {} };
     const [sources] = await Promise.allSettled([dependencies.sources()]);
     if (sources.status === 'fulfilled') {

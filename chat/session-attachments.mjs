@@ -1,3 +1,4 @@
+import { registerAttachmentSession } from './session-attachment-access.mjs';
 /**
  * Attachment processing: MIME detection, image resizing, save-to-disk.
  *
@@ -115,7 +116,7 @@ export async function resizeImageIfNeeded(filepath, mimeType) {
 
 // ── Save / resolve attachments ───────────────────────────────────────
 
-export async function saveAttachments(images) {
+export async function saveAttachments(images, { sessionId = '' } = {}) {
   if (!images || images.length === 0) return [];
   await ensureDir(CHAT_IMAGES_DIR);
   return Promise.all(images.map(async (img) => {
@@ -128,6 +129,7 @@ export async function saveAttachments(images) {
       ? img.buffer
       : Buffer.from(typeof img?.data === 'string' ? img.data : '', 'base64');
     await writeFile(filepath, fileBuffer);
+    await registerAttachmentSession(filename, sessionId);
     const resized = await resizeImageIfNeeded(filepath, mimeType);
     const finalSize = resized ? (await stat(filepath)).size : fileBuffer.length;
     const finalData = resized && typeof img?.data === 'string'
