@@ -22,6 +22,7 @@ const people = [{ id: 'person_fixture_a', name: '测试员工甲', identities: [
 const auth = await import('../lib/auth-config.mjs');
 await auth.updateAuthDocument(d => { d.people.push(...people); });
 const { createEmployeeSiteIdentity } = await import('../lib/employee-site-identity.mjs');
+const { createManagedSiteIdentity } = await import('../lib/managed-site-identity.mjs');
 const { createEmployeeSiteAccess } = await import('../chat/employee-site-auth.mjs');
 const { createSiteLoginHandler } = await import('../chat/router-site-login.mjs');
 const { checkEmployeeStaticAccess } = await import('../chat/employee-static-access.mjs');
@@ -29,16 +30,17 @@ const { handlePreviewProxy } = await import('../chat/preview-proxy.mjs');
 const { publishStaticSource } = await import('../lib/static-publish-command.mjs');
 const { runPreviewCommand } = await import('../lib/preview-command.mjs');
 const { isAuthenticated } = await import('../lib/auth.mjs');
-let now = Date.now(), calls = 0, tenant = config.tenantKey, tokenResponse;
-const makeIdentity = () => createEmployeeSiteIdentity({ configDir: root, now: () => now,
+let now = Date.now(), calls = 0, authorizations = 0, failStart = false, tenant = config.tenantKey, tokenResponse;
+const makeIdentity = () => createManagedSiteIdentity({ configDir: root, legacyIdentity: createEmployeeSiteIdentity({ configDir: root, now: () => now,
   authDocument: () => auth.loadAuthDocument({ persistMigration: false }), registerIdentity: async () => people[0],
   fetchImpl: async url => {
     calls++;
-    const value = url.includes('device_authorization') ? { device_code: 'fixture-device', verification_uri_complete: 'https://accounts.feishu.cn/fixture', expires_in: 600, interval: 5 }
+    if (url.includes('device_authorization') && failStart) throw new Error('Fixture provider unavailable');
+    const value = url.includes('device_authorization') ? { device_code: 'fixture-device-' + ++authorizations, verification_uri_complete: 'https://accounts.feishu.cn/fixture?attempt=' + authorizations, expires_in: 600, interval: 5 }
       : url.includes('/oauth/token') ? tokenResponse || { access_token: 'fixture-token' }
         : { code: 0, data: { open_id: 'fixture-open-a', tenant_key: tenant, name: people[0].name } };
     return { ok: !value.error, json: async () => value };
-  } });
+  } }) });
 let identity = makeIdentity();
 let login = createSiteLoginHandler({ identity, personFor: createEmployeeSiteAccess(identity, async () => null) });
 const source = join(root, 'source'); await mkdir(source);
@@ -101,6 +103,23 @@ try {
   assert.equal(calls, 1);
   await request('/api/site-login/start', { method: 'POST', headers: { Origin: base, Cookie: cookie } });
   assert.equal(calls, 1, 'refresh reuses pending authorization');
+  const oldCookie = cookie;
+  const other = await request('/api/site-login/start', { method: 'POST', headers: { Origin: base } });
+  const otherCookie = other.headers.getSetCookie()[0].split(';')[0];
+  const oldURL = (await start.json()).verification_url;
+  failStart = true;
+  assert.equal((await request('/api/site-login/start?restart=1', { method: 'POST', headers: { Origin: base, Cookie: cookie } })).status, 503);
+  assert.equal((await (await request('/api/site-login/start', { method: 'POST', headers: { Origin: base, Cookie: cookie } })).json()).verification_url, oldURL,
+    'a failed replacement preserves the prior attempt');
+  failStart = false;
+  const restarted = await request('/api/site-login/start?restart=1', { method: 'POST', headers: { Origin: base, Cookie: cookie } });
+  assert.equal(restarted.status, 200);
+  assert.notEqual((await restarted.json()).verification_url, oldURL, 'explicit retry gets a fresh provider link');
+  cookie = restarted.headers.getSetCookie()[0].split(';')[0];
+  assert.notEqual(cookie, oldCookie);
+  assert.equal((await (await request('/api/site-login/poll', { headers: { Cookie: oldCookie } })).json()).state, 'expired');
+  assert.equal((await (await request('/api/site-login/poll', { headers: { Cookie: otherCookie } })).json()).state, 'pending',
+    'retry leaves other browsers pending');
   assert.equal((await (await request('/api/site-login/poll', { headers: { Cookie: cookie } })).json()).state, 'pending');
   now += 5000;
   tokenResponse = { error: 'authorization_pending', error_description: 'The authorization request is still pending. Please retry later.', code: 20094 };
@@ -159,14 +178,45 @@ try {
       assert.equal(await page.locator('h1').textContent(), '隔离测试内容');
       assert.equal(calls, count, 'browser upgrades old scoped cookie and opens second site without reauthorization');
       const fresh = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await fresh.route('https://accounts.feishu.cn/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Feishu fixture</h1>' }));
       const first = await fresh.newPage(); first.on('pageerror', e => errors.push(e.message));
+      await first.clock.install();
       await first.goto(base + '/public-pages/one/index.html');
       await first.locator('#authorize').waitFor({ state: 'visible' });
       assert.equal(await first.locator('h1').textContent(), '员工登录');
       assert.equal(await first.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await first.setViewportSize({ width: 390, height: 844 });
       assert.equal(await first.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      await first.clock.install(); now += 5000; await first.clock.fastForward(5500);
+      const firstLink = await first.locator('#authorize').getAttribute('href');
+      assert.equal(await first.locator('#retry').isVisible(), true, 'provider-page failures can be retried while polling');
+      let delayedPoll;
+      const oldPollStarted = new Promise(resolve => {
+        fresh.route('**/api/site-login/poll', async route => {
+          if (!delayedPoll) { delayedPoll = route; resolve(); }
+          else await route.continue();
+        });
+      });
+      await first.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await oldPollStarted;
+      await first.locator('#retry').click();
+      await first.waitForFunction(old => !document.querySelector('#authorize').hidden && document.querySelector('#authorize').href !== old, firstLink);
+      const retriedLink = await first.locator('#authorize').getAttribute('href');
+      tokenResponse = { error: 'authorization_pending', code: 20094 };
+      now += 5000;
+      const newPoll = first.waitForResponse(response => new URL(response.url()).pathname === '/api/site-login/poll');
+      await first.clock.fastForward(5500);
+      assert.equal((await (await newPoll).json()).state, 'pending', 'a slow old poll cannot stall the replacement attempt');
+      await delayedPoll.fulfill({ contentType: 'application/json', body: '{"state":"expired"}' });
+      // Change wall time without running timers, as with a suspended background tab.
+      now += 601000;
+      await first.clock.setSystemTime(new Date(now));
+      const expiredPopup = first.waitForEvent('popup');
+      await first.locator('#authorize').click();
+      const replacement = await expiredPopup;
+      await replacement.waitForURL('https://accounts.feishu.cn/fixture?attempt=*');
+      assert.notEqual(replacement.url(), retriedLink, 'expired click opens a fresh link instead of the stale provider page');
+      tokenResponse = undefined;
+      now += 5000; await first.clock.fastForward(5500);
       await first.waitForURL('**/public-pages/one/index.html');
       assert.equal(await first.locator('h1').textContent(), '隔离测试内容');
       assert.deepEqual(errors, []);

@@ -3,7 +3,7 @@
 (() => {
   function create({ status, authorize, retry, onConnected, onBusy = () => {}, openAuthorization = false, messages = {} }) {
     const message = (key, fallback) => messages[key] || fallback;
-    let timer, deadline = 0, generation = 0, pending = false, polling = false, popup;
+    let timer, deadline = 0, generation = 0, pending = false, polling = null, popup;
     async function api(action, method = 'GET') {
       const response = await fetch(`/api/site-login/${action}`, { method, credentials: 'same-origin', cache: 'no-store' });
       const value = await response.json();
@@ -33,9 +33,9 @@
       timer = setTimeout(() => poll(id), Math.max(1, seconds || 5) * 1000);
     }
     async function poll(id) {
-      if (id !== generation || !pending || polling) return;
+      if (id !== generation || !pending || polling === id) return;
       if (Date.now() >= deadline) { failed(message('expired', '本次确认已过期，请重新连接。'), id); return; }
-      polling = true;
+      polling = id;
       try {
         const value = await api('poll');
         if (id !== generation) return;
@@ -45,15 +45,15 @@
         }
         schedule(value.interval, id);
       } catch (error) { failed(error.message, id); }
-      finally { polling = false; }
+      finally { if (polling === id) polling = null; }
     }
-    async function start() {
+    async function start({ restart = false, open = openAuthorization } = {}) {
       const id = ++generation; pending = false; clearTimeout(timer); closePopup();
       retry.hidden = true; authorize.hidden = true; status.hidden = false; onBusy(true);
       status.textContent = message('checking', '正在检查登录状态…');
       // Reserve the tab during the click, before awaiting network requests.
       // A blocked popup still leaves a normal link on the same login card.
-      if (openAuthorization) {
+      if (open) {
         try { popup = window.open('about:blank', '_blank'); } catch {}
       }
       try {
@@ -66,18 +66,26 @@
         }
         if (id !== generation) return;
         if (known) { await connected(id); return; }
-        const value = await api('start', 'POST');
+        const value = await api(restart ? 'start?restart=1' : 'start', 'POST');
         if (id !== generation) return;
         if (value.state === 'connected') { await connected(id); return; }
         const url = new URL(value.verification_url);
         if (url.origin !== 'https://accounts.feishu.cn') throw new Error('登录入口无效');
-        authorize.href = url.href; authorize.hidden = false; deadline = value.expires_at; pending = true;
+        authorize.href = url.href; authorize.hidden = false; retry.hidden = false; deadline = value.expires_at; pending = true;
         status.textContent = message('waiting', '确认身份后，回到此页会自动继续。');
         try { if (popup && !popup.closed) popup.location.replace(url.href); } catch {}
         schedule(value.interval, id);
       } catch (error) { failed(error.message, id); }
     }
-    retry.addEventListener('click', start);
+    retry.addEventListener('click', () => start({ restart: true }));
+    // Background tabs can suspend expiry timers. Never navigate a stale link
+    // when the person returns and clicks before the next poll has run.
+    authorize.addEventListener('click', event => {
+      if (!pending || Date.now() >= deadline) {
+        event.preventDefault();
+        start({ restart: true, open: true });
+      }
+    });
     // Returning from Feishu can complete immediately. The server still enforces
     // the provider's next-poll time and prevents overlapping provider requests.
     window.addEventListener('focus', () => poll(generation));

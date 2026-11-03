@@ -47,7 +47,8 @@ export function createSiteLoginHandler({ identity = employeeSiteIdentity, person
       const person = await personFor(req, res);
       if (person) { send(200, { state: 'connected', person }); return true; }
       if (action === 'me') { send(401, { error: '请使用飞书员工身份登录' }); return true; }
-      const value = action === 'start' ? await identity.begin(req) : await identity.poll(req);
+      const restart = new URL(req.url, 'http://localhost').searchParams.get('restart') === '1';
+      const value = action === 'start' ? await identity.begin(req, { restart }) : await identity.poll(req);
       if (value.cookies || value.cookie) res.setHeader('Set-Cookie', value.cookies || value.cookie);
       const { cookies, cookie, ...publicValue } = value;
       send(200, publicValue);

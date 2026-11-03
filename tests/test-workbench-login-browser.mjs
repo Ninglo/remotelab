@@ -148,7 +148,7 @@ try {
   await authConfig.updateAuthDocument(d => { d.people.find(p => p.id === person.id).credentials = []; });
   now += 5000;
   await deniedPage.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await deniedPage.locator('#feishu-retry').waitFor({ state: 'visible' });
+  await deniedPage.locator('#feishu-status').filter({ hasText: /尚未开通/ }).waitFor();
   assert.match(await deniedPage.locator('#feishu-status').textContent(), /尚未开通/);
   assert.equal(new URL(deniedPage.url()).pathname, '/login');
   assert.equal(await deniedPage.locator('#username-input').inputValue(), 'kept username');

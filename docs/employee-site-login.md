@@ -85,6 +85,11 @@ An anonymous navigation opens `/site-login`, then returns to the requested site.
 The page checks existing login first. The first visitor opens the Feishu identity
 confirmation; the page observes completion at the provider's interval and stops
 at its deadline. Refreshing an existing attempt reuses its pending authorization.
+The retry button remains available while waiting. Explicit retry requests a new
+Feishu link and replaces only that browser's pending attempt; it does not sign out
+existing sessions. If Feishu shows an invalid-request page, return to the original
+login tab and select “重新获取登录链接”. Clicking a link after its deadline also
+refreshes it before opening Feishu, even when background timers were suspended.
 No website password is issued.
 
 A valid RemoteLab browser session with an exact Feishu identity in the configured
