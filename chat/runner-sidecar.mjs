@@ -805,6 +805,7 @@ async function main() {
 
     if (initialInvocation.isCodexFamily) {
       codexAccount = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+        scheduleId: manifest.scheduleId || '',
         resumeThreadId: manifest.options?.codexThreadId || '',
         model: invocationOptions.model || '', isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       spawnEnv.CODEX_HOME = codexAccount.home;
@@ -987,6 +988,7 @@ async function main() {
       let next;
       try {
         next = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+          scheduleId: manifest.scheduleId || '',
           model: invocationOptions.model || '', resumeThreadId: threadId || '',
           excludedAccountIds: exhaustedAccounts,
           isCancelled: async () => (await getRun(runId))?.cancelRequested === true });

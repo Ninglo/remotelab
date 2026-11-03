@@ -15,6 +15,17 @@ turns on another saved subscription; balancing alone does not enable failover.
 
 ## Behavior
 
+- An operator may temporarily reserve a saved account for selected schedules via
+  `CodexAccounts.mutate`: `automationRouting: { accountId, scheduleIds, maxConcurrentRuns }`.
+  Only executions with an explicitly listed `manifest.scheduleId` prefer that account.
+  Selection and liveness registration share the metadata lock and enforce the chosen
+  temporary concurrency budget, including other live executions on the same subscription.
+  Ordinary turns, unlisted schedules and default switching leave the reserved account
+  out of their candidates. If it is busy, unavailable, cooling down, exhausted or already
+  excluded by failover, the selected schedule uses the existing remaining-account policy.
+  The preference never rewrites a human Session binding or interrupts a live execution.
+  The account list exposes `automationRouting`; removing it restores normal allocation.
+
 - The first model execution for a new Session (including its input-label helper) chooses the eligible account with the
   fewest executing or starting Sessions. Ties go to the least recently assigned account.
   Allocation is equal-weight; plan names do not imply concurrency ratios.
