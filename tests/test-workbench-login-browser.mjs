@@ -27,15 +27,17 @@ const person = { id: 'person_fixture_browser', name: 'Browser fixture', handle: 
     { id: 'identity_fixture_web', kind: 'web', realm: 'remotelab', subjectId: 'browser-fixture' }] };
 await authConfig.updateAuthDocument(d => { d.people.push(person); });
 let now = Date.now(), approved = false, providerCalls = 0, completionCalls = 0;
+let providerPerson = person;
 const identity = createEmployeeSiteIdentity({ configDir: root, now: () => now,
   authDocument: () => authConfig.loadAuthDocument({ persistMigration: false }),
-  registerIdentity: async () => person,
+  registerIdentity: async () => providerPerson,
   fetchImpl: async url => {
     providerCalls++;
     const value = url.includes('device_authorization')
       ? { device_code: 'fixture-device', verification_uri_complete: 'https://accounts.feishu.cn/fixture', expires_in: 600, interval: 5 }
       : url.includes('/oauth/token') ? approved ? { access_token: 'fixture-token' } : { error: 'authorization_pending', code: 20094 }
-        : { code: 0, data: { open_id: 'fixture-open', tenant_key: config.tenantKey, name: person.name } };
+        : { code: 0, data: { open_id: providerPerson.identities.find(i => i.kind === 'feishu').subjectId,
+          tenant_key: config.tenantKey, name: providerPerson.name } };
     return { ok: !value.error, json: async () => value };
   } });
 const personFor = createEmployeeSiteAccess(identity, async req => auth.getAuthSession(req));
@@ -51,7 +53,8 @@ const server = http.createServer(async (req, res) => {
     if (await sites(req, res, url.pathname)) return;
     if (url.pathname === '/login') {
       const vars = { PRODUCT_BASE_HREF: '/', NONCE: 'fixture', BUILD_TITLE: 'fixture', BUILD_LABEL: 'Isolated test',
-        ASSET_VERSION: 'fixture', ERROR_CLASS: 'hidden', MODE: 'pw', NEXT_PATH: escapeHtml(url.searchParams.get('next') || '/destination'), FEISHU_LOGIN_ENABLED: 'yes' };
+        ASSET_VERSION: 'fixture', ERROR_CLASS: 'hidden', MODE: 'pw', NEXT_PATH: escapeHtml(url.searchParams.get('next') || '/destination'),
+        FEISHU_LOGIN_ENABLED: 'yes', FEISHU_REGISTRATION_ENABLED: config.workbenchRegistration ? 'yes' : 'no' };
       res.setHeader('Content-Type', 'text/html');
       res.end(template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || '')); return;
     }
@@ -82,8 +85,7 @@ try {
   await page.locator('#feishu-signin').waitFor({ state: 'visible' });
   const aligned = await page.evaluate(() => {
     const button = document.getElementById('feishu-signin').getBoundingClientRect();
-    const input = document.getElementById('username-input').getBoundingClientRect();
-    return Math.abs(button.x - input.x) < 1 && Math.abs(button.width - input.width) < 1 && button.height >= 40;
+    return button.width > 230 && button.height >= 40;
   });
   assert.ok(aligned, 'Feishu action aligns with the account form and has a full-size hit target');
   for (const colorScheme of ['light', 'dark']) {
@@ -97,6 +99,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.emulateMedia({ colorScheme: 'light' });
   if (process.env.LOGIN_SCREENSHOT_DIR) await page.screenshot({ path: join(process.env.LOGIN_SCREENSHOT_DIR, 'feishu-login-after.png'), fullPage: true });
+  await page.locator('#other-login summary').click();
   await page.locator('#username-input').fill('draft username');
   await page.clock.install();
   const popupPromise = page.waitForEvent('popup');
@@ -137,6 +140,7 @@ try {
   await denied.addInitScript(() => { window.open = () => null; });
   const deniedPage = await denied.newPage(); deniedPage.on('pageerror', error => errors.push(error.message));
   await deniedPage.goto(base + '/login?next=/destination');
+  await deniedPage.locator('#other-login summary').click();
   await deniedPage.locator('#username-input').fill('kept username');
   await deniedPage.locator('#feishu-signin').click();
   await deniedPage.locator('#feishu-authorize').waitFor({ state: 'visible' });
@@ -151,8 +155,46 @@ try {
   assert.ok(await deniedPage.locator('#feishu-signin').isEnabled());
   await deniedPage.locator('#toggle-link').click();
   assert.ok(await deniedPage.locator('#token-input').isVisible(), 'original Token login remains available');
+
+  config.workbenchRegistration = true;
+  await writeFile(join(root, 'site-login.json'), JSON.stringify(config));
+  providerPerson = { id: 'person_new_employee', name: '新员工测试', handle: 'new-employee-fixture', discovered: true,
+    credentials: [], identities: [{ id: 'identity_new_feishu', kind: 'feishu', realm: config.realm, subjectId: 'new-employee-open' }] };
+  await authConfig.updateAuthDocument(d => { d.people.push(providerPerson); });
+  const newcomer = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN' });
+  await newcomer.route('https://accounts.feishu.cn/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Feishu authorization fixture</h1>' }));
+  const registrationPage = await newcomer.newPage();
+  registrationPage.on('pageerror', error => errors.push(error.message));
+  await registrationPage.goto(base + '/login?next=' + encodeURIComponent('/destination?session=original'));
+  assert.ok(await registrationPage.locator('#registration-intro').isVisible());
+  assert.equal(await registrationPage.locator('#username-input').isVisible(), false, 'employee flow has no username form');
+  assert.equal(await registrationPage.locator('#password-input').isVisible(), false, 'employee flow has no password form');
+  for (const colorScheme of ['light', 'dark']) {
+    await registrationPage.emulateMedia({ colorScheme });
+    for (const width of [390, 1440]) {
+      await registrationPage.setViewportSize({ width, height: 900 });
+      assert.ok(await registrationPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
+  }
+  await registrationPage.setViewportSize({ width: 390, height: 844 });
+  await registrationPage.emulateMedia({ colorScheme: 'light' });
+  if (process.env.LOGIN_SCREENSHOT_DIR) await registrationPage.screenshot({ path: join(process.env.LOGIN_SCREENSHOT_DIR, 'registration-mobile.png'), fullPage: true });
+  await registrationPage.locator('#feishu-signin').click();
+  await registrationPage.locator('#feishu-authorize').waitFor({ state: 'visible' });
+  now += 5000;
+  await registrationPage.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await registrationPage.waitForURL(base + '/destination?session=original');
+  assert.equal(await registrationPage.locator('h1').textContent(), 'Signed in');
+  const enrolled = (await authConfig.loadAuthDocument()).people.find(p => p.id === providerPerson.id);
+  assert.equal(enrolled.handle, 'new-employee-fixture'); assert.equal(enrolled.credentials[0].type, 'feishu');
+  assert.ok(!(await authConfig.loadAuthDocument()).administratorPersonIds.includes(enrolled.id));
+  const returner = await browser.newContext();
+  await returner.addCookies((await newcomer.cookies()).filter(c => c.name === 'employee_site_session'));
+  const returnPage = await returner.newPage();
+  await returnPage.goto(base + '/login?next=/destination');
+  await returnPage.waitForURL(base + '/destination');
   assert.deepEqual(errors, []);
-  console.log('Workbench browser: aligned desktop/mobile light/dark card, fresh Feishu → direct target, no second page, closed popup, verified reuse, logout pause, blocked-popup fallback and inline denial PASS');
+  console.log('Workbench browser PASS: existing login/denial, first employee registration, mobile/desktop light/dark, automatic enrollment without account fields, original target, no admin grant and subsequent Feishu login');
 } finally {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));

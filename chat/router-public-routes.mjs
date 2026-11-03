@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises';
 import { handleWorkbenchSiteLogin, workbenchAutoLoginCookie } from './workbench-site-login.mjs';
-import { siteLoginConfigured } from '../lib/site-publication-policy.mjs';
+import { siteLoginConfigured, loadEmployeeSiteSettings } from '../lib/site-publication-policy.mjs';
 import { performance } from 'perf_hooks';
 import {
   auth,
@@ -324,6 +324,8 @@ if (pathname === '/login') {
     MODE: mode,
     NEXT_PATH: escapeHtml(nextPath),
     FEISHU_LOGIN_ENABLED: await siteLoginConfigured().catch(() => false) ? 'yes' : 'no',
+    FEISHU_REGISTRATION_ENABLED: await loadEmployeeSiteSettings().then(c => c.workbenchRegistration === true
+      && c.enabled !== false && (!c.provider || c.provider === 'feishu-device')).catch(() => false) ? 'yes' : 'no',
   });
   const renderMs = performance.now() - renderStartMs;
   const totalMs = performance.now() - requestStartMs;

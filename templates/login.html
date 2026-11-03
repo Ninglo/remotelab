@@ -169,6 +169,10 @@
     .btn-feishu { background: #3370ff; color: #fff; margin-top: 0; }
     .btn-feishu:disabled { cursor: progress; opacity: 0.65; }
     .feishu-status { font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin-top: 12px; }
+    .registration-help { font-size: 12px; line-height: 1.6; color: var(--text-secondary); margin: 12px 0; }
+    #other-login { margin-top: 20px; }
+    #other-login summary { color: var(--text-secondary); font-size: 12px; cursor: pointer; text-align: center; }
+    #other-login[open] summary { margin-bottom: 20px; }
     .feishu-actions { display: flex; justify-content: center; gap: 16px; }
     .feishu-actions a, .feishu-actions button {
       font: inherit; font-size: 12px; color: var(--text-secondary); background: none;
@@ -208,14 +212,16 @@
 
     <section id="feishu-entry" hidden>
       <button id="feishu-signin" class="btn btn-feishu" type="button" data-i18n="login.feishu">Continue with Feishu</button>
+      <p id="registration-intro" class="registration-help" data-i18n="login.register.intro" hidden>New employees are registered automatically after Feishu verification. No username or password needed.</p>
       <p id="feishu-status" class="feishu-status" role="status" aria-live="polite" hidden></p>
       <div class="feishu-actions">
         <a id="feishu-authorize" target="_blank" rel="noopener noreferrer" data-i18n="login.feishu.open" hidden>Open Feishu</a>
         <button id="feishu-retry" type="button" data-i18n="login.feishu.retry" hidden>Try again</button>
       </div>
-      <div class="divider" data-i18n="login.otherAccount">or use your account</div>
     </section>
 
+    <details id="other-login" open>
+      <summary data-i18n="login.otherAccount">Other sign-in methods</summary>
     <!-- Password form -->
     <form id="pw-form" method="POST" action="login">
       <input type="hidden" name="type" value="password">
@@ -246,6 +252,8 @@
       <a href="#" id="toggle-link" data-i18n="login.switch.useToken">Use access token instead</a>
     </div>
 
+    </details>
+
     <div class="build-stamp" title="{{BUILD_TITLE}}">{{BUILD_LABEL}}</div>
   </div>
 
@@ -260,6 +268,23 @@
 
     if ('{{FEISHU_LOGIN_ENABLED}}' === 'yes' && window.RemoteLabSiteLogin) {
       var feishuButton = document.getElementById('feishu-signin');
+      var registrationEnabled = '{{FEISHU_REGISTRATION_ENABLED}}' === 'yes';
+      document.getElementById('registration-intro').hidden = !registrationEnabled;
+      if (registrationEnabled) {
+        feishuButton.setAttribute('data-i18n', 'login.register.entry');
+        feishuButton.textContent = t('login.register.entry');
+      }
+      document.getElementById('other-login').open = new URL(location.href).searchParams.has('error');
+      async function finishFeishu() {
+        var response = await fetch('/api/auth/feishu/complete', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ next: document.querySelector('input[name="next"]').value })
+        });
+        var value = await response.json();
+        if (!response.ok) throw new Error(value.error || t('login.feishu.incomplete'));
+        return value.redirect;
+      }
       var feishuLogin = window.RemoteLabSiteLogin.create({
         status: document.getElementById('feishu-status'),
         authorize: document.getElementById('feishu-authorize'),
@@ -272,14 +297,7 @@
         },
         onBusy: function(busy) { feishuButton.disabled = busy; },
         onConnected: async function() {
-          var response = await fetch('/api/auth/feishu/complete', {
-            method: 'POST', credentials: 'same-origin', cache: 'no-store',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ next: document.querySelector('input[name="next"]').value })
-          });
-          var value = await response.json();
-          if (!response.ok) throw new Error(value.error || t('login.feishu.incomplete'));
-          return value.redirect;
+          return finishFeishu();
         }
       });
       feishuButton.addEventListener('click', function() { feishuLogin.start(); });

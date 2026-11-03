@@ -47,6 +47,9 @@ async function call(who, path, method = 'GET', body) {
   return { status: res.status, data, headers: res.headers };
 }
 try {
+  const anonymous = await fetch(base + '/?session=' + ids.b + '&tab=sessions', { redirect: 'manual' });
+  assert.equal(anonymous.status, 302);
+  assert.equal(new URL(anonymous.headers.get('location'), base).searchParams.get('next'), '/?session=' + ids.b + '&tab=sessions');
   // Real token login creates the same cookies used by browsers; primary != admin.
   for (const p of people) {
     const res = await fetch(base + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ type: 'token', token: p.credentials[0].token }) });
@@ -61,6 +64,9 @@ try {
     `/api/sessions/${ids.b}/events?filter=all`, `/api/sessions/${ids.b}/events/1/body`, `/api/sessions/${ids.b}/source-context`,
     `/api/sessions/${ids.b}/workboards`]) assert.equal((await call('a', route)).status, 403, route);
   assert.equal((await call('b', `/api/sessions/${ids.b}`)).status, 200);
+  const deniedPage = await call('a', '/?session=' + ids.b);
+  assert.match(deniedPage.data, /进入我的工作区/);
+  assert.ok(!deniedPage.data.includes('b-secret'), 'denial page reveals no private Session details');
   assert.equal((await call('a', `/api/sessions/${ids.b}`, 'PATCH', { name: 'stolen' })).status, 403);
   assert.equal((await call('a', `/api/sessions/${ids.b}/share`, 'POST', {})).status, 403);
   for (const path of ['/api/monitoring/sessions', '/api/work-awareness', '/api/usage/session-totals', '/api/memory-context-view', '/api/source-delivery-issues', '/browser/']) assert.equal((await call('a', path)).status, 403, path);

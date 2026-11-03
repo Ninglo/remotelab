@@ -142,7 +142,8 @@ export async function requireAuth(req, res) {
     res.end(JSON.stringify({ error: 'Not authenticated' }));
     return false;
   }
-  res.writeHead(302, { 'Location': '/login' });
+  res.writeHead(302, { 'Location': '/login?next=' + encodeURIComponent(requestUrl.pathname + requestUrl.search),
+    'Cache-Control': 'private, no-store' });
   res.end();
   return false;
 }

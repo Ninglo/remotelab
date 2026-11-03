@@ -20,21 +20,31 @@ creator; a manual or unattended publication supplies `--owner <person-id>`.
 飞书页不负责跳到各个业务网站；原登录页按飞书给定间隔查询授权结果，再按 `returnTo` 继续。
 已有有效身份时直接进入，正常切站无需再打开飞书。
 
-RemoteLab 控制台在原 `/login` 卡片中提供飞书按钮，直接打开飞书确认页；确认后
-在原卡片完成账号映射并进入最初请求的页面，不再经过另一张员工登录页。返回原标签页
-会立即检查结果，服务端仍遵守飞书轮询间隔。被浏览器拦截新窗口时，可点击卡片中的
-“打开飞书确认”。失败或无控制台资格时在卡片内显示原因，保留已输入的原账号和 Token 登录。
-扫码成功后只映射同一个 Person 的现有个人凭据和 Web 身份；不会给其他员工新增控制台权限。
+RemoteLab 控制台在 `/login` 提供“使用飞书登录 / 注册”。员工点击 Session 链接后，
+原地址通过 `next` 保留；飞书确认完成后回到原标签页，自动登记员工身份并进入原地址。
+启用员工注册的实例无需员工填写账号名、身份码或密码。公司身份由飞书返回的公司标识和
+用户标识核验，服务端沿既有 Person 登记稳定身份；不按姓名匹配或接管其他账号。
+已有账号仍使用同一 Person，历史会话归属保持。原账号和 Token 入口折叠在“其他登录方式”。
+
+员工注册需在实例 `site-login.json` 设置 `workbenchRegistration: true`；默认关闭，
+仅适用于当前飞书设备授权提供方。员工网站访问本身不自动开通控制台：首次明确点击
+飞书登录并完成核验时才登记。登记的是普通个人账号，管理员授权程序不变。
+没有原 Session 访问权时，返回 403 并显示可读说明和“进入我的工作区”，不泄露会话内容。
 主动退出后仍停留在登录页，重新点击飞书按钮才复用已有员工身份。
 
-`POST /api/auth/feishu/complete` 接受同源 JSON `{next}`，持久化原账号会话后才签发
-控制台 Cookie，并返回同源目标。已有控制台会话优先，不切换人员。旧 `/login/feishu`
-回调继续兼容；员工网站的 `/site-login` 流程保持原入口。
+`POST /api/auth/feishu/complete` 接受同源 JSON `{next}`，仅使用服务端已核验身份，
+忽略客户端传入的姓名、身份码、Person 或角色。注册为既有 Person 增加绑定其飞书
+identity 的 `feishu` 登录方式及 Web identity，不发行额外密码或 bearer token。
+并发或重复完成请求保持同一身份与一份登记；登记和浏览器会话持久化后才签发控制台 Cookie。
+已有控制台会话优先，不切换人员。旧 `/login/feishu` 回调继续兼容；员工网站的
+`/site-login` 流程保持原入口。已登记员工后续复用飞书身份登录。
 
 浏览器回归入口为 `tests/test-workbench-login-browser.mjs`，通过
 `EMPLOYEE_TEST_PLAYWRIGHT` 和 `EMPLOYEE_TEST_CHROME` 指定已有 Playwright 模块与 Chromium。
-测试使用隔离身份与飞书响应夹具，覆盖首次确认直达目标、已核身份复用、退出暂停、
-弹窗拦截、内联拒绝，以及桌面／手机和浅色／深色布局。
+测试使用隔离身份与飞书响应夹具，覆盖首次自动注册直达目标、既有账号、已核身份复用、
+退出暂停、弹窗拦截、内联拒绝，以及桌面／手机和浅色／深色布局。
+`tests/test-workbench-registration.mjs` 覆盖配置关闭、身份校验、拒绝客户端身份指定、
+持久化失败重试、并发登记和注册后的会话隔离；夹具不代替真人飞书确认体验。
 
 | 现有组件 | 承担的工作 |
 | --- | --- |
@@ -118,11 +128,12 @@ The employee cookie does not directly authenticate control-plane APIs. The
 RemoteLab login page completes Feishu authorization in its original card via
 `POST /api/auth/feishu/complete`; `/login/feishu?next=...` remains a compatible
 callback. An existing valid workbench session continues unchanged; otherwise, a verified employee maps to the exact
-existing Person only if that Person currently has a personal password or token
-credential and Web identity. The bridge persists an ordinary workbench session
-before redirecting. New employees with no workbench credential are not admitted.
+existing Person with a personal password, token or enrolled Feishu sign-in method and Web identity.
+With explicit instance opt-in, verified new employees are registered automatically
+on their explicit Feishu login. Without opt-in, unprovisioned employees are not admitted.
+The bridge persists an ordinary workbench session before redirecting.
 The original password and Token forms remain usable when the optional bridge is
-unavailable. Existing requests, Sessions and credentials are not rewritten.
+unavailable; they remain under “Other sign-in methods”. Existing requests, Sessions and credentials are not rewritten.
 An explicit workbench logout pauses automatic re-entry in that browser. The
 login form remains visible until the person chooses Feishu or successfully uses
 the original credential again. Employee website sessions are retained, so signing
@@ -216,6 +227,17 @@ state, not an unavailable service. Preserve the attempt and provider polling
 interval, then continue through token exchange, company validation and cookie
 issuance. Regression fixtures include this real response shape; live verification
 must observe provider polling, not stop when the authorization link appears.
+
+Before enabling console registration, deploy the new auth normalizer to every active
+consumer of this instance's auth document (Core, Connector and any separate display
+server). An old process can drop the newly supported Feishu credential when saving.
+Verify that existing administrator memberships and credentials are unchanged. Enable
+only this instance's `workbenchRegistration` setting; other instances remain opted out.
+Turning it off stops new registrations while enrolled users retain their sign-in.
+Rollback uses a new revert commit and preserves identity/Session state; do not run an
+older auth writer over newly enrolled credentials. No new monitor or scheduled job is
+needed: login responses, the existing auth directory and Session access tests provide
+verification. Production acceptance still needs a real employee to finish Feishu confirmation.
 
 Verify the deployed anonymous boundary and actual Feishu authorization start.
 Employee content still needs an authenticated content read; the publisher's

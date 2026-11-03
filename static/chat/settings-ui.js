@@ -256,7 +256,9 @@ function buildPersonSummaryMeta(person) {
   const tokens = (person.credentials || []).filter((credential) => credential.type === "token");
   if (passwords.length > 0) meta.appendChild(buildPersonBadge(t("settings.people.passwordAccess")));
   if (tokens.length > 0) meta.appendChild(buildPersonBadge(tokens.length > 1 ? `${t("settings.people.token")} ×${tokens.length}` : t("settings.people.token")));
-  if (passwords.length === 0 && tokens.length === 0) meta.appendChild(buildPersonBadge(t("settings.people.noWebSignIn"), "muted"));
+  const feishu = (person.credentials || []).some(credential => credential.type === "feishu");
+  if (feishu) meta.appendChild(buildPersonBadge(t("login.feishu")));
+  if (passwords.length === 0 && tokens.length === 0 && !feishu) meta.appendChild(buildPersonBadge(t("settings.people.noWebSignIn"), "muted"));
   return meta;
 }
 
@@ -282,7 +284,7 @@ function buildCredentialRow(person, credential) {
   row.className = "settings-person-data-row";
   const icon = document.createElement("div");
   icon.className = "settings-person-data-icon";
-  icon.textContent = credential.type === "password" ? "P" : "T";
+  icon.textContent = credential.type === "feishu" ? "F" : credential.type === "password" ? "P" : "T";
   icon.setAttribute("aria-hidden", "true");
   row.appendChild(icon);
   const copy = document.createElement("div");
@@ -292,7 +294,7 @@ function buildCredentialRow(person, credential) {
     ? t("settings.people.passwordAccess")
     : (credential.label || t("settings.people.token"));
   const detail = document.createElement("span");
-  detail.textContent = credential.type === "password"
+  detail.textContent = credential.type === "feishu" ? `@${person.handle}` : credential.type === "password"
     ? `@${credential.username || person.handle}`
     : `•••• ${credential.tokenSuffix || ""}`;
   copy.append(title, detail);

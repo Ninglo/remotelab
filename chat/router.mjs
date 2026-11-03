@@ -1487,7 +1487,11 @@ export async function handleRequest(req, res) {
   if (scopedSessionId && !['archived', 'search'].includes(scopedSessionId)
       && !await requireSessionAccess(res, authSession, scopedSessionId)) return;
   const pageSessionId = pathname === '/' ? parsedUrl.query.session : '';
-  if (pageSessionId && !await requireSessionAccess(res, authSession, pageSessionId)) return;
+  if (pageSessionId && !await canAccessSession(authSession, pageSessionId)) {
+    const page = await readFile(new URL('../templates/session-access-denied.html', import.meta.url), 'utf8');
+    res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' });
+    res.end(page.replaceAll('{{NONCE}}', nonce)); return;
+  }
   if (await handleAdministratorRoutes({ req, res, pathname, authSession, nonce, writeJson })) return;
   if (await handleSiteUsageRoutes({ req, res, pathname, authSession })) return;
 
