@@ -59,10 +59,10 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
   return { schema: 1, observedAt: time, sources, tasks, attention, recovered };
 }
 
-async function jsonFetch(fetchImpl, url) {
+async function jsonFetch(fetchImpl, url, timeoutMs = 6000) {
   const target = new URL(url);
   if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1' || target.username || target.password) throw Error('POOL_SOURCE_NOT_LOCAL');
-  const response = await fetchImpl(target, { signal: AbortSignal.timeout(6000) });
+  const response = await fetchImpl(target, { signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw Error(`HTTP_${response.status}`);
   return response.json();
 }
@@ -118,10 +118,17 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
   }));
   const absent = Object.entries(previous?.assessment?.tasks || {}).filter(([id, task]) => task.alerted
     && fresh(sample.queue?._readAt, now) && !sample.queue.runs.some(run => run.run_id === id));
-  for (const [id] of absent) {
+  // Terminal reconciliation shares a six-second budget for the whole cycle.
+  // Failed items rotate behind less recently checked ones without delaying other alerts.
+  absent.sort(([, a], [, b]) => (at(a.terminalCheckedAt) || 0) - (at(b.terminalCheckedAt) || 0));
+  const terminalDeadline = Date.now() + 6000;
+  for (const [id, task] of absent) {
+    const remaining = terminalDeadline - Date.now();
+    if (remaining < 1) break;
+    task.terminalCheckedAt = new Date(now).toISOString();
     try {
       const url = new URL(`/v1/runs/${encodeURIComponent(id)}`, config.queueUrl);
-      const value = await jsonFetch(fetchImpl, url);
+      const value = await jsonFetch(fetchImpl, url, remaining);
       const run = value.run || value;
       if (run.run_id === id) sample.terminals.push(run);
     } catch { sample.errors.push(`任务 ${id} 终态未核实`); }

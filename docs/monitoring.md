@@ -1199,7 +1199,9 @@ The monitoring proxy allows the vertical GPU, account, usage-governance and empl
 Optional `poolMonitoring` reuses the existing minute resource-alert observer. It
 reads a loopback Results Hub `resourceUrl` (`/ui/resources.json?refresh=1`) and
 Controller `queueUrl` (`/v1/queue?view=status`) independently with six-second
-deadlines. The Hub owns source TTL/single-flight collection; page readers consume
+deadlines. Reconciliation of disappeared alerted Runs shares a six-second
+cycle budget and rotates failed checks; one unreachable Run cannot consume
+the resource-alert service deadline. The Hub owns source TTL/single-flight collection; page readers consume
 `pool-observation.json` and never launch GPU, cloud quota or queue sampling.
 The file is one bounded current snapshot plus active incident baselines, not an
 append-only task history. Failures preserve original successful timestamps. Hub cold starts retain the last
