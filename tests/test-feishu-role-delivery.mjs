@@ -14,7 +14,7 @@ const policy = { mode: 'roles', roles: { appId: 'cli_test', tenantKey: 'tenant',
   hrOpenIds: ['ou_hr'], interviewerOpenIds: ['ou_ge'] } };
 const config = { accessPolicy: policy, appId: 'cli_test', sourceRouteId: 'test', storageDir: join(home, 'connector') };
 const event = { appId: 'cli_test', tenantKey: 'tenant', chatId: 'oc_ge', chatType: 'p2p',
-  messageId: 'om_ge', messageType: 'text', eventType: 'im.message.receive_v1', messageText: '我的候选人',
+  messageId: 'om_ge', messageType: 'post', eventType: 'im.message.receive_v1', messageText: '4. 提问 Alice | 下一轮应追问什么？',
   sender: { openId: 'ou_ge', senderType: 'user', tenantKey: 'tenant' } };
 const sourceDelivery = target => ({ connector: 'feishu', sourceRouteId: 'test', target });
 const runtime = () => ({ config });

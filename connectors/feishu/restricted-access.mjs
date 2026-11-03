@@ -39,7 +39,8 @@ export function requireFullFeishuAccess(policy, summary) {
 }
 
 export function parseInterviewQuery(text) {
-  const value = trim(text);
+  // Copying a numbered instruction from Feishu can retain its list marker.
+  const value = trim(text).replace(/^\d{1,2}[.．、)]\s+/u, '');
   if (['名单', '我的候选人', '我负责的候选人', '我负责哪些候选人', '我负责哪些候选人？'].includes(value)) {
     return { action: 'list' };
   }
@@ -60,8 +61,13 @@ export function parseInterviewQuery(text) {
 
 export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now } = {}) {
   if (feishuAccessRole(policy, summary) !== 'interviewer') throw new Error('Interviewer identity required');
-  if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1'
-      || summary.messageType !== 'text') return '面试信息仅支持本人私聊中的文字查询，请私聊机器人。';
+  if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
+    return '面试信息仅支持本人私聊查询，请私聊机器人。';
+  }
+  // messageText is already extracted by the provider event normalizer. Rich
+  // text uses the same bounded command parser and signed identity as plain text;
+  // no attachments, linked documents or forwarded speakers enter the query.
+  if (!['text', 'post'].includes(summary.messageType)) return '请发送文字或富文本查询；此通道不解析图片、语音或合并转发。';
   const query = parseInterviewQuery(summary.messageText);
   if (!query) return '此通道只查询本人已分配的面试信息。发送「我的候选人」、「查询 姓名或候选人ID」、「简历 姓名或候选人ID」、「准备 姓名或候选人ID」，或「提问 姓名或ID | 你的问题」。';
   const credentials = JSON.parse(await readFile(policy.roles.credentialsPath, 'utf8'));
