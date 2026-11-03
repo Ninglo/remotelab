@@ -13,6 +13,14 @@ export function inboxFailureAlertKey(route, entry) {
   ])).digest('hex').slice(0, 24);
 }
 
+// Pause the incident, not its individual source events or unrelated monitoring.
+// Retain receipts and pending delivery identity when changing the pause state.
+export async function setInboxFailureAlertPause(root, route, entry, pause) {
+  return createRecordStore(root).mutate(inboxFailureAlertKey(route, entry), current => ({
+    ...current, pause: pause ? { ...pause, at: new Date().toISOString() } : null,
+  }));
+}
+
 // Source events retain separate inbox records. Group reminders share one durable
 // incident and survive reconnects; an uncertain enqueue retries the same ID.
 export function createInboxFailureAlerts(root, { now = Date.now } = {}) {
@@ -21,6 +29,7 @@ export function createInboxFailureAlerts(root, { now = Date.now } = {}) {
   return (route, entry, enqueue) => serial(async () => {
     const key = inboxFailureAlertKey(route, entry);
     let record = await store.get(key);
+    if (record?.pause) return { suppressed: true, reason: 'incident_paused', incidentKey: key };
     const timestamp = now();
     if (record?.lastAlertAt != null && timestamp - record.lastAlertAt < INBOX_FAILURE_ALERT_INTERVAL_MS) {
       return { suppressed: true, reason: 'same_incident_within_three_hours', incidentKey: key };

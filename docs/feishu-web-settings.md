@@ -112,6 +112,8 @@ Parallel work is enabled by default for verified members in registered Feishu gr
 
 个人入口失败仍沿统一运维告警通道通知。同一来源、会话、用户、事件类型和失败原因共享一个告警事件，三小时内只提醒一次，进程重启后仍生效；每次原始输入分别保留，通知发送结果未知时沿同一投递 ID 恢复。验证见 `tests/test-external-identity-dedup.mjs` 与 `tests/test-feishu-inbox-failure-alerts.mjs`。
 
+操作者要求暂停单次故障告警时，使用 `setInboxFailureAlertPause(storageDir + '/inbox-alerts', route, entry, { reason, requestId })` 保存到该故障记录；同故障的新事件、三小时窗口到期和进程重启都不会自动恢复推送。传入 `null` 明确恢复。此操作保留输入、历史投递回执和未确认投递 ID，也不暂停其他告警或故障处理；无需关闭全局 `alertDelivery.enabled`。
+
 验证使用隔离环境的 `tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
 记忆开关、首次欢迎去重及未知发送结果。真实私聊送达和本人点击应分别验收。
 

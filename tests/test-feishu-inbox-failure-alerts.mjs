@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createInboxFailureAlerts, INBOX_FAILURE_ALERT_INTERVAL_MS } from '../connectors/feishu/inbox-failure-alerts.mjs';
+import { createInboxFailureAlerts, setInboxFailureAlertPause, INBOX_FAILURE_ALERT_INTERVAL_MS } from '../connectors/feishu/inbox-failure-alerts.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'inbox-alerts-'));
 try {
@@ -27,6 +27,17 @@ try {
   await assert.rejects(notify('bot', uncertain, async id => { firstId = id; throw Error('lost acknowledgement'); }));
   notify = createInboxFailureAlerts(root, { now: () => clock + 1000 });
   await notify('bot', uncertain, async id => { assert.equal(id, firstId, 'retry reuses the durable delivery ID'); return { deliveryId: id }; });
+  await setInboxFailureAlertPause(root, 'bot', entry, { reason: 'operator requested pause', requestId: 'test-pause' });
+  clock += 2 * INBOX_FAILURE_ALERT_INTERVAL_MS;
+  notify = createInboxFailureAlerts(root, { now: () => clock });
+  assert.equal((await notify('bot', { ...entry, id: 'new-source-event' }, send)).reason, 'incident_paused',
+    'a pause survives restarts, new event IDs and the three-hour window');
+  assert.equal(calls, 3, 'paused incident never queues another notification');
+  await notify('bot', { ...entry, lastError: 'unrelated incident during pause' }, send);
+  assert.equal(calls, 4, 'unrelated incidents remain enabled');
+  await setInboxFailureAlertPause(root, 'bot', entry, null);
+  await notify('bot', entry, send);
+  assert.equal(calls, 5, 'an explicit resume permits the existing incident again');
   console.log('Feishu inbox alert grouping, three-hour persistence and uncertain delivery recovery: passed');
 } finally {
   await rm(root, { recursive: true, force: true });
