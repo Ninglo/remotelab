@@ -1202,7 +1202,9 @@ Controller `queueUrl` (`/v1/queue?view=status`) independently with six-second
 deadlines. The Hub owns source TTL/single-flight collection; page readers consume
 `pool-observation.json` and never launch GPU, cloud quota or queue sampling.
 The file is one bounded current snapshot plus active incident baselines, not an
-append-only task history. Failures preserve original successful timestamps.
+append-only task history. Failures preserve original successful timestamps. Hub cold starts retain the last
+durable inventory and each source sample until new evidence arrives; an empty
+warm-up response never changes known capacity to zero.
 
 Sources unavailable for three minutes produce `poolSource` notices. A running
 Run needs 30 minutes of consecutive fresh samples without an accepted result and

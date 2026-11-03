@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessPool, observePool } from '../chat/pool-monitor.mjs';
+import { assessPool, observePool, retainPoolEvidence } from '../chat/pool-monitor.mjs';
 const start = Date.parse('2026-11-03T07:00:00Z');
 const iso = ms => new Date(ms).toISOString();
 function sample(now, { accepted = 10, infra = 0, state = 'running' } = {}) {
@@ -51,4 +51,21 @@ test('one failed upstream does not suppress the other or forge a new success tim
   assert.equal(saved.resources.observedAt, iso(start));
   assert.equal(result.queue._readAt, iso(start + 60000));
   assert.equal(result.errors.length, 1);
+});
+
+
+test('Hub cold start preserves inventory and each source time without inventing new measurements', () => {
+  const previous = {observedAt: iso(start), machines: [{id: 'cloud', cards: [{id: '0', state: 'used', memoryMiB: 42}],
+    observation: {observedAt: iso(start), maxAgeSeconds: 600},
+    cloudObservation: {observedAt: iso(start), maxAgeSeconds: 120}, jobs: [{id: 'work', state: 'Running'}], quota: {total: 1, allocated: 1}}]};
+  const noController = retainPoolEvidence(previous, {observedAt: null, machines: [], stale: true}, start + 60000);
+  assert.equal(noController.machines.length, 1); assert.equal(noController.controllerStale, true);
+  const current = {observedAt: iso(start + 60000), machines: [{id: 'cloud', cards: [{id: '0', state: 'unknown', allocation: {state: 'unallocated'}}],
+    observation: {observedAt: null, refreshing: true}, cloudObservation: {observedAt: null, refreshing: true}}]};
+  const fresh = retainPoolEvidence(previous, current, start + 60000).machines[0];
+  assert.equal(fresh.observation.observedAt, iso(start)); assert.equal(fresh.cards[0].memoryMiB, 42);
+  assert.equal(fresh.cards[0].allocation.state, 'unallocated'); assert.equal(fresh.jobs[0].id, 'work');
+  assert.equal(fresh.cloudObservation.observedAt, iso(start));
+  const expired = retainPoolEvidence(previous, current, start + 900000).machines[0];
+  assert.equal(expired.cards[0].state, 'unknown'); assert.equal(expired.cards[0].reportedState, 'used');
 });

@@ -64,6 +64,39 @@ async function jsonFetch(fetchImpl, url) {
   return response.json();
 }
 
+// A Hub restart clears its in-memory collectors. Keep the last durable evidence
+// until each source supplies a new sample; never turn an empty warm-up into zero cards.
+export function retainPoolEvidence(previous, current, now = Date.now()) {
+  if (!previous) return current;
+  if (!current.observedAt && !current.machines.length) return { ...previous, controllerStale: true, stale: true };
+  const result = structuredClone(current);
+  const retained = (old, next) => ({ ...old, refreshing: !!next?.refreshing,
+    failed: !!old.failed || !!next?.failed, error: next?.error || old.error, retained: true });
+  for (const machine of result.machines) {
+    const old = previous.machines?.find(m => m.id === machine.id);
+    if (!old) continue;
+    if (!machine.observation?.observedAt && old.observation?.observedAt) {
+      machine.observation = retained(old.observation, machine.observation);
+      const usable = healthy(machine.observation, now);
+      for (const card of machine.cards) {
+        const prior = old.cards.find(c => c.id === card.id);
+        if (!prior) continue;
+        for (const key of ['memoryMiB', 'totalMemoryMiB', 'memoryPercent', 'utilization', 'processes', 'deviceJob', 'deviceProbe', 'node']) {
+          if (key in prior) card[key] = prior[key];
+        }
+        card.reportedState = prior.reportedState || prior.state;
+        card.state = usable ? prior.state : 'unknown'; card.deviceState = card.state;
+        card.note = usable ? prior.note : machine.observation.error || '设备采样已过期';
+      }
+    }
+    if (!machine.cloudObservation?.observedAt && old.cloudObservation?.observedAt) {
+      machine.cloudObservation = retained(old.cloudObservation, machine.cloudObservation);
+      for (const key of ['jobs', 'nodes', 'quota', 'monitoringJobs']) if (key in old) machine[key] = old[key];
+    }
+  }
+  return result;
+}
+
 export async function observePool({ config, dryRun = false, now = Date.now(), fetchImpl = fetch,
   file = POOL_SNAPSHOT, load = readRecord, save = writeDurableJson } = {}) {
   if (!config?.enabled) return null;
@@ -77,7 +110,7 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
       if (!valid(value)) throw Error('INVALID_SCHEMA');
       sample[key] = key === 'queue' ? { active: value.active, runs: value.runs.map(run => Object.fromEntries(
         ['run_id', 'state', 'generation', 'progress', 'admission', 'priority', 'created_at', 'spec_sha256', 'submitter', 'project_metadata'].filter(key => key in run).map(key => [key, run[key]]))),
-        _readAt: new Date(now).toISOString() } : value;
+        _readAt: new Date(now).toISOString() } : retainPoolEvidence(previous?.resources, value, now);
     } catch { sample.errors.push(`${key}读取失败，保留上次成功时间`); }
   }));
   const absent = Object.entries(previous?.assessment?.tasks || {}).filter(([id, task]) => task.alerted
