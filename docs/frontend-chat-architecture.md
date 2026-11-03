@@ -154,6 +154,12 @@ Rules:
 - adapter files do not dispatch shell action types directly
 - adapter files do not decide long-lived DOM state outside explicit render hooks
 
+Session event snapshots are a bounded browser-only display cache in `session-http.js`.
+Reattaching one of the last eight viewed Sessions renders its cached timeline
+immediately, then fetches the authoritative visible events and reconciles the
+display. Share snapshots do not enter this cache. The cache does not replace
+server history or the session store.
+
 ### 3.3 Catalog / selector layer
 
 Files:
