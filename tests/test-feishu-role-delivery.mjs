@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
+
+const home = await mkdtemp(join(tmpdir(), 'feishu-role-delivery-'));
+setIsolatedTestHome(home);
+const { recordRoleDeliveryContext, authorizeRoleDelivery } = await import('../connectors/feishu/delivery-access.mjs');
+const { processSourceDeliveryOnce } = await import('../scripts/feishu-connector.mjs');
+const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, failSourceDelivery,
+  resolveSourceDelivery, getSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const policy = { mode: 'roles', roles: { appId: 'cli_test', tenantKey: 'tenant',
+  hrOpenIds: ['ou_hr'], interviewerOpenIds: ['ou_ge'] } };
+const config = { accessPolicy: policy, appId: 'cli_test', sourceRouteId: 'test', storageDir: join(home, 'connector') };
+const event = { appId: 'cli_test', tenantKey: 'tenant', chatId: 'oc_ge', chatType: 'p2p',
+  messageId: 'om_ge', messageType: 'text', eventType: 'im.message.receive_v1', messageText: '我的候选人',
+  sender: { openId: 'ou_ge', senderType: 'user', tenantKey: 'tenant' } };
+const sourceDelivery = target => ({ connector: 'feishu', sourceRouteId: 'test', target });
+const runtime = () => ({ config });
+const requestRemoteLab = async (path, { body }) => {
+  try {
+    if (path.endsWith('/claim')) return { response: { ok: true }, json: { claim: await claimSourceDelivery(body) } };
+    const [, id, action] = /source-deliveries\/([^/]+)\/(complete|fail|resolve)/.exec(path);
+    // Deliberately enforce the legacy core's stricter resolve contract.
+    if (action === 'resolve') assert.ok(['unknown', 'delivery_failed'].includes((await getSourceDelivery(id)).state));
+    const delivery = action === 'complete' ? await completeSourceDelivery(id, body.leaseId, body)
+      : action === 'fail' ? await failSourceDelivery(id, body.leaseId, body.error, body) : await resolveSourceDelivery(id, body);
+    return { response: { ok: true }, json: { delivery } };
+  } catch (error) { throw new Error(`${path}: ${error.message}`); }
+};
+let sends = 0, queries = 0;
+const helpers = { requestRemoteLab, enrichSummaryWithChatMetadata: async (r, s) => s,
+  queryRestrictedInterview: async (p, s) => { queries++; assert.deepEqual(s, event); return 'fresh authorized result'; },
+  sendFeishuText: async (r, s, text) => { sends++; assert.equal(s.chatId, 'oc_ge');
+    assert.equal(text, 'fresh authorized result'); return { message_id: 'om_reply' }; } };
+try {
+  await recordRoleDeliveryContext(runtime(), event, { responseId: 'feishu:om_ge' });
+  const queued = await enqueueSourceDelivery({ responseId: 'feishu:om_ge', text: 'STALE HR SECRET', sourceDelivery: sourceDelivery(event) });
+  assert.equal(queued.sessionId, 'outbound');
+  assert.equal(queued.target.sender, undefined, 'real outbox strips provider identity');
+  assert.equal(queued.target.messageText, undefined, 'real outbox strips query text');
+  // New runtime proves the identity survives process restart independently of outbox fields.
+  await processSourceDeliveryOnce(runtime(), helpers);
+  assert.equal((await getSourceDelivery(queued.id)).state, 'delivered');
+  assert.equal(sends, 1); assert.equal(queries, 1);
+  for (const changed of [ { ...queued, sessionId: 'hr-session' },
+    { ...queued, sourceRouteId: 'other' }, { ...queued, target: { ...queued.target, chatId: 'oc_other' } },
+    { ...queued, attachment: { path: 'secret' } }, { ...queued, kind: 'delivery_notice' } ]) {
+    assert.equal(await authorizeRoleDelivery(runtime(), changed), null);
+  }
+  assert.equal(await authorizeRoleDelivery({ config: { ...config,
+    accessPolicy: { mode: 'roles', roles: { ...policy.roles, interviewerOpenIds: [] } } } }, queued), null);
+  await assert.rejects(recordRoleDeliveryContext(runtime(), { ...event, messageText: 'forged' }, { responseId: 'feishu:om_ge' }));
+  const forged = await enqueueSourceDelivery({ responseId: 'forged', text: 'HR_SECRET',
+    sourceDelivery: sourceDelivery({ ...event, restrictedInterview: true, sender: { ...event.sender, openId: 'ou_hr' } }) });
+  await processSourceDeliveryOnce(runtime(), helpers);
+  assert.equal((await getSourceDelivery(forged.id)).state, 'cancelled'); assert.equal(sends, 1);
+  const hr = { ...event, messageId: 'om_hr', chatId: 'oc_hr', sender: { ...event.sender, openId: 'ou_hr' } };
+  await recordRoleDeliveryContext(runtime(), hr, { responseId: 'feishu:om_hr', sessionId: 'hr-session' });
+  const hrReply = await enqueueSourceDelivery({ responseId: 'feishu:om_hr', sessionId: 'hr-session',
+    text: 'HR authorized answer', sourceDelivery: sourceDelivery(hr) });
+  await processSourceDeliveryOnce(runtime(), { ...helpers, sendFeishuText: async (r, s, text) => {
+    assert.equal(s.chatId, 'oc_hr'); assert.equal(text, 'HR authorized answer'); return { message_id: 'om_hr_reply' };
+  } });
+  assert.equal((await getSourceDelivery(hrReply.id)).state, 'delivered');
+  assert.equal(queries, 1, 'HR replies do not enter the restricted query route');
+  console.log('PASS: real outbox round trip, restart, HR reply, scoped requery, tamper/revocation denial and legacy cancellation');
+} finally { await rm(home, { recursive: true, force: true }); }

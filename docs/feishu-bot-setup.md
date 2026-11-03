@@ -1297,6 +1297,15 @@ exact HR provider subjects. Old unrestricted pending deliveries to non-HR users
 are cancelled; restricted replies recheck assignments immediately before sending.
 Backend errors never fall back to a general Session.
 
+The connector durably binds each authenticated event to its response ID, Session
+and destination before submitting or enqueueing it. The generic outbox stores
+normalized addresses and drops sender/query metadata; those fields must not be
+read back as authority. At delivery, the connector loads its own record and
+rechecks the current role. Restricted replies use the outbox's `outbound` Session
+sentinel and requery from the saved event, never from queued answer text.
+Missing or mismatched records fail closed. To support older control planes,
+local policy rejection is recorded as a definite failure before cancellation.
+
 The endpoint must verify the gateway credential and HMAC over `JSON.stringify`
 of the request body, then validate timestamp, app, tenant and sender and filter
 records before returning data. The connector sends no HR history or files.
@@ -1304,6 +1313,7 @@ The response is `{text}` (or `{data:{text}}`). Backend assignment, field selecti
 audit and revocation rules remain the application's responsibility.
 
 Run `node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-restricted-access.mjs`
+and `node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-role-delivery.mjs`
 and the normal connector regressions. Stage the backend and policy together;
 verify unauthorized, stale, forged and unassigned queries before restarting the
 bot. A staged configuration is not evidence that the running connector loaded it.

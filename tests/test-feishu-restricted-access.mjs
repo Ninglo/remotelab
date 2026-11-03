@@ -75,6 +75,7 @@ try {
     await processSourceDeliveryOnce(outbound, { requestRemoteLab: async path => {
       if (path.endsWith('/claim')) return { response: { ok: true }, json: { claim: { leaseId: 'lease',
         delivery: { id: 'queued', sessionId: 'old-unrestricted-session', target, text: 'HR_SECRET' } } } };
+      if (path.endsWith('/fail')) return { response: { ok: true }, json: { delivery: { state: 'delivery_failed' } } };
       assert.ok(path.endsWith('/resolve')); cancelled++;
       return { response: { ok: true }, json: { delivery: { state: 'cancelled' } } };
     }, sendFeishuText: async () => { sent++; } });

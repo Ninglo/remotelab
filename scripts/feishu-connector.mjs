@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview } from '../connectors/feishu/restricted-access.mjs';
+import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
@@ -1032,6 +1033,8 @@ async function submitRemoteLabRequest(runtime, summary, {
     }
   }
   if (prepared) {
+    await recordRoleDeliveryContext(runtime, summary, { responseId: prepared.payload.requestId,
+      sessionId: prepared.sessionId, target: prepared.payload.sourceDelivery?.target || summary });
     let submission;
     try {
       submission = await submitConnectorMessage(requester, prepared.sessionId, {
@@ -1523,19 +1526,23 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const delivery = claim.delivery;
   if (runtime.config.accessPolicy?.mode === 'roles') {
     const policy = runtime.config.accessPolicy;
-    const senderId = delivery.target?.sender?.openId;
-    const full = runtime.config.appId === policy.roles.appId && policy.roles.hrOpenIds.includes(senderId);
-    if (!full) {
-      if (delivery.sessionId || delivery.attachment || !delivery.target?.restrictedInterview
-          || feishuAccessRole(policy, delivery.target) !== 'interviewer') {
+    const authorization = await authorizeRoleDelivery(runtime, delivery);
+    if (!authorization) {
+        // Legacy control planes resolve only unknown/failed deliveries. No
+        // provider call occurred, so settle this local rejection before cancelling.
+        const rejected = await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST',
+          body: { leaseId: claim.leaseId, error: 'Role policy rejects unauthorized delivery',
+            definiteFailure: true, safeToRetry: false } });
+        if (!rejected.response.ok) throw new Error('Unable to record role delivery rejection');
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
           body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Role policy rejects unrestricted delivery' } });
         if (!resolved.response.ok) throw new Error('Unable to suppress unauthorized delivery');
         return resolved.json?.delivery;
-      }
+    }
+    if (authorization.role === 'interviewer') {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
-      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, delivery.target); }
+      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary); }
       catch { delivery.text = '面试查询暂时不可用，请联系 HR。'; }
     }
   }
@@ -1725,6 +1732,7 @@ function extractLocalCommand(summary) {
 }
 
 async function queueFeishuReply(runtime, summary, text, { responseId = buildRequestId(summary) } = {}) {
+  await recordRoleDeliveryContext(runtime, summary, { responseId });
   const result = await requestRemoteLab(runtime, '/api/source-deliveries', { method: 'POST', body: {
     responseId, text,
     sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary },
