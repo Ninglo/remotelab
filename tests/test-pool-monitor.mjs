@@ -80,3 +80,19 @@ test('silent execution loss requires persistent pending work and no active attem
   }
   assert.ok(prior.attention.some(x => x.kind === 'poolTask' && x.detail.includes('没有活动 Attempt')));
 });
+
+
+test('unreachable terminal runs share one budget and rotate checks across cycles', async () => {
+  let elapsed = 0, saved, calls = [];
+  const config = { enabled: true, resourceUrl: 'http://127.0.0.1:18788/ui/resources.json', queueUrl: 'http://127.0.0.1:8878/v1/queue?view=status' };
+  let prior = {assessment: {tasks: Object.fromEntries(['a','b','c'].map(id => [id, {alerted: true}]))}};
+  const fetchImpl = async url => {
+    if (url.pathname.startsWith('/v1/runs/')) { calls.push(url.pathname.split('/').at(-1)); elapsed += 4000; return {ok:false,status:503}; }
+    return {ok:true,json:async()=>url.port==='18788'?sample(start).resources:{runs:[]}};
+  };
+  await observePool({config, now:start, clock:()=>elapsed, fetchImpl, load:async()=>prior, save:async(_,v)=>{saved=v;}});
+  assert.deepEqual(calls, ['a','b']);
+  prior=saved;calls=[];
+  await observePool({config, now:start+60000, clock:()=>elapsed, fetchImpl, load:async()=>prior, save:async()=>{}});
+  assert.equal(calls[0], 'c'); assert.equal(calls.length, 2);
+});

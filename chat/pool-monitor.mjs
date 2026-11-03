@@ -101,7 +101,7 @@ export function retainPoolEvidence(previous, current, now = Date.now()) {
 }
 
 export async function observePool({ config, dryRun = false, now = Date.now(), fetchImpl = fetch,
-  file = POOL_SNAPSHOT, load = readRecord, save = writeDurableJson } = {}) {
+  file = POOL_SNAPSHOT, load = readRecord, save = writeDurableJson, clock = Date.now } = {}) {
   if (!config?.enabled) return null;
   const previous = await load(file), sample = { resources: previous?.resources, queue: previous?.queue, errors: [], terminals: [] };
   await Promise.all([
@@ -121,9 +121,9 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
   // Terminal reconciliation shares a six-second budget for the whole cycle.
   // Failed items rotate behind less recently checked ones without delaying other alerts.
   absent.sort(([, a], [, b]) => (at(a.terminalCheckedAt) || 0) - (at(b.terminalCheckedAt) || 0));
-  const terminalDeadline = Date.now() + 6000;
+  const terminalDeadline = clock() + 6000;
   for (const [id, task] of absent) {
-    const remaining = terminalDeadline - Date.now();
+    const remaining = terminalDeadline - clock();
     if (remaining < 1) break;
     task.terminalCheckedAt = new Date(now).toISOString();
     try {
