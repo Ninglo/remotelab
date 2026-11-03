@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
-import { loadAuthDocument, resolveOrCreateExternalIdentity } from '../../lib/auth-config.mjs';
+import { findIdentity, loadAuthDocument, resolveOrCreateExternalIdentity } from '../../lib/auth-config.mjs';
 import { loadPersonMessageReplies, changePersonMessageReplies } from '../../chat/person-message-replies.mjs';
 import { loadPersonalMemorySettings, changePersonalMemorySettings } from '../../chat/personal-memory-settings.mjs';
 
@@ -140,6 +140,12 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
     try { const url = new URL(runtime.config.personalSettings?.webUrl); if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) { url.search = '?tab=settings'; webUrl = url.href; } } catch {}
     return buildPersonalSettingsCard(record, { replies, memory, notice, webUrl });
   }
+  async function ownsRecord(record, actor) {
+    if (record.personId !== actor.personId) return false;
+    if (record.identityId === actor.identityId) return true;
+    const linked = findIdentity(await loadAuthDocument({ persistMigration: false }), record.identityId);
+    return linked?.person.id === actor.personId && linked.identity.id === actor.identityId;
+  }
   async function publish(source, { automatic = false, renew = false, view = 'settings', requestId = '' } = {}) {
     if (!enabled(source)) return null;
     const actor = await actorFor(source, { discover: true });
@@ -149,7 +155,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
       if (requestId && record?.lastPublishRequestId === requestId) return record;
       if (automatic && record) return record; // First-use welcome is not a recurring notification.
       if (!record) record = await store.mutate(key, () => ({ source, personId: actor.personId, identityId: actor.identityId, generation: 0 }));
-      if (record.personId !== actor.personId || record.identityId !== actor.identityId) throw Error('个人身份关联已变化，请核对原卡归属。');
+      if (!await ownsRecord(record, actor)) throw Error('个人身份关联已变化，请核对原卡归属。');
       record = await store.mutate(key, r => ({ ...r, view: view === 'help' ? 'help' : 'settings' }));
       const fresh = !renew && record.messageId && now() - record.createdAt < 13 * 86400000;
       const rendered = await card(record, actor);
@@ -186,7 +192,7 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
           || tenant !== record.source.tenantKey) throw Error('请在你与机器人的原私聊中操作自己的设置卡。');
         actor = { ...await actorFor(record.source), eventId: raw.header?.event_id || event.event_id,
           chatId: record.source.chatId, messageId: record.messageId };
-        if (!actor.eventId || actor.personId !== record.personId || actor.identityId !== record.identityId) throw Error('无法核对这次操作的身份。');
+        if (!actor.eventId || !await ownsRecord(record, actor)) throw Error('无法核对这次操作的身份。');
         if (value.input === 'select') {
           const option = event.action.option;
           if (value.field === 'progress') {

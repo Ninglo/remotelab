@@ -108,6 +108,10 @@ Parallel work is enabled by default for verified members in registered Feishu gr
 链接沿用原资源权限，展示介绍不启动业务操作，也不自动推断或保存人员方向。
 这只是内容试用入口，实际交办仍通过聊天进行。
 
+外部身份按应用来源与原生账号匹配，复用历史内部 ID，不因 ID 生成算法变化重复登记。同一 Person 内重复的同源账号统一为一个绑定，旧 ID 保留为兼容引用；同源账号若指向不同 Person，继续拒绝并要求核对归属，不按姓名自动消除冲突。
+
+个人入口失败仍沿统一运维告警通道通知。同一来源、会话、用户、事件类型和失败原因共享一个告警事件，三小时内只提醒一次，进程重启后仍生效；每次原始输入分别保留，通知发送结果未知时沿同一投递 ID 恢复。验证见 `tests/test-external-identity-dedup.mjs` 与 `tests/test-feishu-inbox-failure-alerts.mjs`。
+
 验证使用隔离环境的 `tests/test-feishu-personal-settings-card.mjs`，覆盖身份隔离、版本冲突、事件重放、
 记忆开关、首次欢迎去重及未知发送结果。真实私聊送达和本人点击应分别验收。
 

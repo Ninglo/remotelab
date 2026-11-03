@@ -27,6 +27,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 import { cleanupAtomicTemps, createKeyedTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 import { feishuReadRetryPolicy } from '../lib/feishu-retry-policy.mjs';
+import { createInboxFailureAlerts } from '../connectors/feishu/inbox-failure-alerts.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { createFeishuDisplayEventWriter } from '../lib/feishu-display-events.mjs';
 import {
@@ -2142,6 +2143,7 @@ async function notifyFeishuAdmissionFailure(runtime, entry) {
 }
 
 function initializeInbox(runtime) {
+  const notifyFailure = createInboxFailureAlerts(join(runtime.config.storageDir, 'inbox-alerts'));
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
     archiveRetentionDays: 90,
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
@@ -2154,10 +2156,11 @@ function initializeInbox(runtime) {
       const config = (await readRecord(join(CONFIG_DIR, 'monitoring.json')))?.alertDelivery;
       let alert = { suppressed: true, reason: 'monitoring_alert_delivery_disabled' };
       if (config?.enabled && config.chatId && config.profile) {
-        alert = await queueFeishuReply({ ...runtime, config: { ...runtime.config, sourceRouteId: config.profile } },
+        alert = await notifyFailure(runtime.config.sourceRouteId || 'default', entry, responseId =>
+          queueFeishuReply({ ...runtime, config: { ...runtime.config, sourceRouteId: config.profile } },
           { chatId: config.chatId, chatType: 'group', conversationKind: 'main' },
           `飞书输入已停止自动重试：${runtime.config.sourceRouteId || 'default'} / ${entry.id}；尝试 ${entry.attempts} 次，进程中断 ${entry.crashAttempts || 0} 次。原始输入保留在 inbox 归档中。`,
-          { responseId: `feishu-inbox-alert:${runtime.config.sourceRouteId || 'default'}:${entry.id}` });
+          { responseId }));
       }
       return { notificationDeliveryId: notice.deliveryId, alert };
     },
