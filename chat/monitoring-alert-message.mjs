@@ -79,7 +79,7 @@ export function monitoringProgress(item, recovery) {
 export function monitoringTitle(item) {
   if (item.continuity?.lastAccountWarning?.state === 'low') return `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}${item.recovered ? ' · 已恢复' : ''}`;
   const issue = { disk: '磁盘空间不足', diskGrowth: '磁盘短期快速增长', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
-    accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
+    poolSource: '卡池采样异常', poolTask: '评测进度异常', accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
   return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : item.kind === 'serviceCrash' ? (item.state === 'fixed' ? ' · 已修复' : ' · 已恢复') : ' · 已解决') : ''}`;
 }
 export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {

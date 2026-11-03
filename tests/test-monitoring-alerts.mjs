@@ -569,3 +569,19 @@ test('an active growth card presents the current rule and preserves the original
   assert.equal(card.elements.some(element => element.tag === 'img'), false);
   assert.equal(card.elements.find(element => element.tag === 'collapsible_panel').elements.at(-1).img_key, 'img_original_trigger');
 });
+
+
+test('confirmed pool issues reuse the existing incident card and require explicit recovery', async () => {
+  const f = fixture();
+  const issue = {kind: 'poolSource', id: 'device:dev04', subject: 'dev04', severity: 'warning', confirmed: true, signals: {unavailable: true}};
+  const options = {...f.options, config: {noisePolicy: {mode: 'risk_only'}}};
+  await dispatchMonitoringAlerts({...options, snapshot: snapshot([issue])});
+  await dispatchMonitoringAlerts({...options, snapshot: snapshot([issue])});
+  assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({...options, snapshot: snapshot([])});
+  assert.equal(Object.values(f.getState().incidents)[0].active, true);
+  const value = snapshot([]); value.pool = {assessment: {recovered: [{kind: issue.kind, id: issue.id}]}};
+  await dispatchMonitoringAlerts({...options, snapshot: value});
+  assert.equal(Object.values(f.getState().incidents)[0].active, false);
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});

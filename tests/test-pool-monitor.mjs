@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { assessPool, observePool } from '../chat/pool-monitor.mjs';
+const start = Date.parse('2026-11-03T07:00:00Z');
+const iso = ms => new Date(ms).toISOString();
+function sample(now, { accepted = 10, infra = 0, state = 'running' } = {}) {
+  return { resources: { observedAt: iso(now), controllerStale: false, machines: [] },
+    queue: { _readAt: iso(now), runs: [{ run_id: 'run', generation: 0, state, progress: { accepted, expected: 100, infra_failed: infra } }] } };
+}
+test('waiting or execution time alone never means stalled; fresh errors and no progress do', () => {
+  let prior;
+  for (let minute = 0; minute <= 31; minute++) {
+    const now = start + minute * 60000;
+    prior = assessPool(prior, sample(now, { infra: minute }), { now });
+  }
+  assert.equal(prior.attention.filter(x => x.kind === 'poolTask').length, 1);
+  const recovered = assessPool(prior, sample(start + 32 * 60000, { accepted: 11 }), { now: start + 32 * 60000 });
+  assert.ok(recovered.recovered.some(x => x.kind === 'poolTask'));
+  for (const opts of [{ state: 'queued', infra: 50 }, { infra: 0 }]) {
+    let previous;
+    for (let minute = 0; minute <= 31; minute++) previous = assessPool(previous, sample(start + minute * 60000, opts), { now: start + minute * 60000 });
+    assert.ok(!previous.attention.some(x => x.kind === 'poolTask'));
+  }
+});
+test('observation gaps cannot establish or resolve a stalled run', () => {
+  let prior = assessPool(null, sample(start), { now: start });
+  prior = assessPool(prior, sample(start + 31 * 60000, { infra: 50 }), { now: start + 31 * 60000 });
+  assert.ok(!prior.attention.some(x => x.kind === 'poolTask'));
+  prior.tasks.run.alerted = true;
+  const missing = assessPool(prior, {}, { now: start + 32 * 60000 });
+  assert.ok(!missing.recovered.some(x => x.kind === 'poolTask'));
+  const terminal = assessPool(missing, { terminals: [{ run_id: 'run', state: 'stopped' }] }, { now: start + 33 * 60000 });
+  assert.ok(terminal.recovered.some(x => x.kind === 'poolTask'));
+});
+test('source grace is elapsed outage time, not repeated page reads; recovery is explicit', () => {
+  let prior = assessPool(null, {}, { now: start });
+  for (let i = 0; i < 10; i++) prior = assessPool(prior, {}, { now: start });
+  assert.equal(prior.attention.length, 0);
+  prior = assessPool(prior, {}, { now: start + 180000 });
+  assert.equal(prior.attention.length, 2);
+  const good = assessPool(prior, sample(start + 240000), { now: start + 240000 });
+  assert.equal(good.attention.length, 0);
+  assert.ok(good.recovered.some(x => x.id === 'controller'));
+});
+test('one failed upstream does not suppress the other or forge a new success time', async () => {
+  let saved;
+  const old = sample(start);
+  const config = { enabled: true, resourceUrl: 'http://127.0.0.1:18788/ui/resources.json', queueUrl: 'http://127.0.0.1:8878/v1/queue?view=status' };
+  const result = await observePool({ config, now: start + 60000, load: async () => old, save: async (_, value) => { saved = value; },
+    fetchImpl: async url => { if (url.port === '18788') throw Error('source unavailable'); return { ok: true, json: async () => ({ runs: [] }) }; } });
+  assert.equal(saved.resources.observedAt, iso(start));
+  assert.equal(result.queue._readAt, iso(start + 60000));
+  assert.equal(result.errors.length, 1);
+});

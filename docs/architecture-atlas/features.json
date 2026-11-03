@@ -1100,6 +1100,7 @@
             "static/chat/agent-monitor-dashboard.js",
             "static/chat/agent-monitor-dashboard.css",
             "chat/monitoring.mjs",
+            "chat/pool-monitor.mjs",
             "chat/service-incidents.mjs",
             "chat/runtime-health.mjs",
             "chat/cache-release.mjs",

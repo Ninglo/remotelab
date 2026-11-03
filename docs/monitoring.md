@@ -1193,3 +1193,26 @@ Monitor proxy retain the same fields.
 ### Standalone employee monitoring entrance
 
 The monitoring proxy allows the vertical GPU, account, usage-governance and employee-presentation modules alongside the existing dashboard assets. A deployment may publish a read-only employee preview pointing to the same monitoring backend, with a restricted upstream path/method allowlist and without forwarding console cookies or credentials. Employee site authentication remains separate from RemoteLab console authentication. The deployed monitoring service owns its data collection, standalone presentation and deployment records; the employee entrance must not create another collector or fork the snapshots.
+
+## Shared card-pool observations
+
+Optional `poolMonitoring` reuses the existing minute resource-alert observer. It
+reads a loopback Results Hub `resourceUrl` (`/ui/resources.json?refresh=1`) and
+Controller `queueUrl` (`/v1/queue?view=status`) independently with six-second
+deadlines. The Hub owns source TTL/single-flight collection; page readers consume
+`pool-observation.json` and never launch GPU, cloud quota or queue sampling.
+The file is one bounded current snapshot plus active incident baselines, not an
+append-only task history. Failures preserve original successful timestamps.
+
+Sources unavailable for three minutes produce `poolSource` notices. A running
+Run needs 30 minutes of consecutive fresh samples without an accepted result and
+at least 10 additional infrastructure-failed episodes for a `poolTask` notice.
+Queue waiting alone, source failures and long execution alone do not establish a
+stalled Run. Gaps and generation changes reset the comparison window. Only
+fresh progress, a new generation or an explicitly read terminal state resolves
+a task notice. Thresholds can be adjusted under `poolMonitoring.thresholds`.
+These notices use the existing risk policy, incident identity, three-hour merge
+and original-card recovery updates. They never enter automated task stop or
+device restart recovery. Normal checks do not invoke a model or allocate GPUs.
+`enrichmentScript`, when configured, reuses a trusted local receipt reader with
+the same quota snapshot to preserve task attribution without a second collector.

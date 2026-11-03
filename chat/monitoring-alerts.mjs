@@ -1,3 +1,4 @@
+import { observePool } from './pool-monitor.mjs';
 import { appendAlertHistory } from '../lib/alert-card-history.mjs';
 import { alertIdentity, adoptCrashReceipt, recentAlertBatch, observePersistentAlert } from '../lib/alert-notification-policy.mjs';
 import { processSessionDiagnostics } from './session-diagnostics.mjs';
@@ -58,6 +59,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
     adoptCrashReceipt(state, item, hash(`serviceCrash:${item.id}`));
   }
   for (const key of recoveredCrashes.keys()) recovered.add(key);
+  for (const item of snapshot.pool?.assessment?.recovered || []) recovered.add(hash(`${item.kind}:${item.id}`));
   // Retire old per-account exhaustion alerts as normal lifecycle records.
   // Keep receipts/batches; never replay an uncertain send during this change.
   for (const incident of Object.values(state.incidents)) if (['account', 'quota'].includes(incident.kind)) {
@@ -94,14 +96,14 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api'].includes(item.kind)
+  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api', 'poolSource', 'poolTask'].includes(item.kind)
     && !(['service', 'serviceCrash', 'servicePressure'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
     && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
     let count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
-    const eligible = item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
+    const eligible = ['poolSource', 'poolTask'].includes(item.kind) && item.confirmed === true || item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
@@ -329,14 +331,17 @@ async function dispatchAlerts({ config, snapshot, stateFile,
 
 export async function runMonitoringAlerts({ baseline = false, dryRun = false, config: suppliedConfig,
   reader = createMonitoringReader({ getUsage: async () => null }), collectIncidents = collectServiceIncidents, recover = processMonitoringRecovery,
-  dispatch = dispatchMonitoringAlerts, diagnose = processSessionDiagnostics } = {}) {
+  dispatch = dispatchMonitoringAlerts, diagnose = processSessionDiagnostics, poolObserver = observePool } = {}) {
   let config = suppliedConfig;
   try { config ||= JSON.parse(await readFile(join(CONFIG_DIR, 'monitoring.json'), 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
   const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents, dryRun });
-  const snapshot = await reader({ days: 1 });
+  const [snapshot, pool] = await Promise.all([reader({ days: 1 }), poolObserver({ config: config.poolMonitoring, dryRun }).catch(() => ({ error: "POOL_OBSERVER_UNAVAILABLE" }))]);
+  snapshot.attention = snapshot.attention.filter(item => !['poolSource', 'poolTask'].includes(item.kind));
+  if (pool?.assessment) { snapshot.pool = pool; snapshot.attention.push(...pool.assessment.attention); }
+  if (pool?.error) snapshot.coverage.gaps.push({ source: "pool", code: pool.error });
   if (!dryRun) await recordDiskSamples(snapshot.disks, config.diskGrowth);
   if (!dryRun && snapshot.runtimeHealth) await recordRuntimeSample(snapshot.runtimeHealth);
   snapshot.attention = snapshot.attention.filter(a => a.kind !== 'serviceCrash');

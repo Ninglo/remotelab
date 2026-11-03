@@ -211,6 +211,11 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     if (savedIncidents?.gaps) gaps.push(...savedIncidents.gaps);
     if (config.serviceIncidents?.enabled && (!savedIncidents?.observedAt || now() - Date.parse(savedIncidents.observedAt) > 180_000)) gaps.push({ source: 'serviceIncidents', code: 'OBSERVER_STALE' });
     const analysis = analyzeResources({ accounts, disks, automations, services, recovery: recoveryItems, apiHealth, continuity, now: now() });
+    const pool = config.poolMonitoring?.enabled ? await observe('pool', () => getRecord(join(CONFIG_DIR, 'pool-observation.json')), null) : null;
+    if (config.poolMonitoring?.enabled) {
+      if (pool?.observedAt && now() - Date.parse(pool.observedAt) < 180000) analysis.attention.push(...pool.assessment?.attention || []);
+      else gaps.push({ source: 'pool', code: 'OBSERVER_STALE' });
+    }
     const growthHistory = config.diskGrowth?.enabled ? await observe('diskGrowth', () => getRecord(DISK_GROWTH_FILE), null) : null;
     const diskGrowth = assessDiskGrowth(disks, growthHistory, config.diskGrowth, now());
     analysis.attention.push(...diskGrowthAttention(diskGrowth, disks));
