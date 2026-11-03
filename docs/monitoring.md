@@ -1234,3 +1234,15 @@ and original-card recovery updates. They never enter automated task stop or
 device restart recovery. Normal checks do not invoke a model or allocate GPUs.
 `enrichmentScript`, when configured, reuses a trusted local receipt reader with
 the same quota snapshot to preserve task attribution without a second collector.
+
+`poolMonitoring.trainingIdle` enrolls explicit `machineIds` and an `afterMs`
+duration (default 21600000, six hours). A fresh native cloud quota with positive
+capacity, zero allocation and all capacity available starts the whole-pool idle
+clock. Partial availability does not qualify. Fresh minute observations preserve
+the clock across observer restarts; unavailable, inconsistent or backwards source
+evidence and observation gaps reset it. Missing evidence cannot close a sent notice.
+No earlier idle history is inferred when enabling the rule. After six continuous
+hours, `poolIdle` sends through the existing group delivery once; it does not add
+the ten-minute failure escalation. Confirmed allocation closes the original card
+and a later idle period starts a new clock. This reads the existing shared quota
+snapshot, creates no timer or GPU probe, and never submits training work.

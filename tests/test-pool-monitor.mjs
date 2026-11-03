@@ -135,3 +135,53 @@ test('unreachable terminal runs share one budget and rotate checks across cycles
   await observePool({config, now:start+60000, clock:()=>elapsed, fetchImpl, load:async()=>prior, save:async()=>{}});
   assert.equal(calls[0], 'c'); assert.equal(calls.length, 2);
 });
+
+function trainingSample(now, { total = 32, allocated = 0, available = total - allocated, failed = false, observedAt = iso(now) } = {}) {
+  const value = sample(now);
+  value.resources.machines = [{ id: 'training', name: 'Training pool', quota: { total, allocated, available },
+    cloudObservation: { observedAt, failed, maxAgeSeconds: 600 } }];
+  return value;
+}
+const trainingIdle = { machineIds: ['training'], afterMs: 21600000 };
+test('whole training pool needs six continuous hours; restart preserves the evidence clock', async () => {
+  let prior;
+  for (let minute = 0; minute < 360; minute++) {
+    const now = start + minute * 60000;
+    prior = assessPool(prior, trainingSample(now), { now, trainingIdle });
+    assert.ok(!prior.attention.some(item => item.kind === 'poolIdle'));
+  }
+  // Exercise the production observer's configuration forwarding and durable state.
+  const now = start + 21600000, value = trainingSample(now);
+  const result = await observePool({ now, config: { enabled: true, resourceUrl: 'http://127.0.0.1/resources',
+    queueUrl: 'http://127.0.0.1/queue', trainingIdle }, load: async () => JSON.parse(JSON.stringify({ assessment: prior })), save: async () => {},
+    fetchImpl: async url => ({ ok: true, json: async () => url.pathname === '/queue' ? value.queue : value.resources }) });
+  const issue = result.assessment.attention.find(item => item.kind === 'poolIdle');
+  assert.equal(issue.idleSince, iso(start));
+  assert.match(issue.detail, /360 分钟.*32 卡/);
+  assert.equal(assessPool(null, value, { now }).idle.training, undefined, 'other pools are opt-in');
+});
+test('partial allocation, bad quota and missing samples cannot establish whole-pool idleness', () => {
+  for (const bad of [{ allocated: 1 }, { available: 31 }, { failed: true }, { observedAt: iso(start - 3600000) }, { total: 0 }]) {
+    const first = assessPool(null, trainingSample(start), { now: start, trainingIdle });
+    const interrupted = assessPool(first, trainingSample(start + 60000, bad), { now: start + 60000, trainingIdle });
+    assert.equal(interrupted.idle.training.since, null);
+    const resumed = assessPool(interrupted, trainingSample(start + 120000), { now: start + 120000, trainingIdle });
+    assert.equal(resumed.idle.training.since, iso(start + 120000));
+  }
+  const first = assessPool(null, trainingSample(start), { now: start, trainingIdle });
+  const gap = assessPool(first, trainingSample(start + 21600000), { now: start + 21600000, trainingIdle });
+  assert.equal(gap.idle.training.since, iso(start + 21600000));
+  assert.ok(!gap.attention.some(item => item.kind === 'poolIdle'));
+});
+test('unknown evidence does not close an idle notice; confirmed allocation closes and rearms it', () => {
+  const previous = { idle: { training: { empty: true, total: 32, since: iso(start), checkedAt: iso(start), observedAt: iso(start), alerted: true } } };
+  const unknown = assessPool(previous, trainingSample(start + 60000, { failed: true }), { now: start + 60000, trainingIdle });
+  assert.equal(unknown.idle.training.alerted, true);
+  assert.ok(!unknown.recovered.some(item => item.kind === 'poolIdle'));
+  const used = assessPool(unknown, trainingSample(start + 120000, { allocated: 1 }), { now: start + 120000, trainingIdle });
+  assert.equal(used.idle.training.alerted, false);
+  assert.ok(used.recovered.some(item => item.kind === 'poolIdle'));
+  const empty = assessPool(used, trainingSample(start + 180000), { now: start + 180000, trainingIdle });
+  assert.equal(empty.idle.training.since, iso(start + 180000));
+  assert.ok(!empty.attention.some(item => item.kind === 'poolIdle'));
+});

@@ -585,3 +585,21 @@ test('confirmed pool issues reuse the existing incident card and require explici
   assert.equal(Object.values(f.getState().incidents)[0].active, false);
   assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
 });
+
+test('six-hour training idle notices send directly once and close the same card when allocated', async () => {
+  const f = fixture(), options = { ...f.options, config: { confirmationObservations: 3, noisePolicy: { mode: 'risk_only' } } };
+  const issue = { kind: 'poolIdle', id: 'training', subject: 'Training pool', severity: 'warning',
+    confirmed: true, detail: '训练卡池整池连续空闲 360 分钟；云平台配额 32 卡，已分配 0 卡，可用 32 卡。', signals: { wholePoolIdle: true } };
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([issue]) });
+  assert.equal(f.getSends(), 1, 'the six-hour evidence needs no extra confirmation cycle');
+  const later = snapshot([issue]); later.generatedAt = '2026-10-03T07:00:00Z';
+  await dispatchMonitoringAlerts({ ...options, now: options.now + 3600000, snapshot: later });
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 0, 'idle notices do not get ten-minute failure escalation');
+  const card = renderMonitoringAlertCard([issue], {});
+  assert.match(card.header.title.content, /训练卡池持续空闲/);
+  assert.doesNotMatch(JSON.stringify(card), /预警处理中|尚无本轮已执行动作/);
+  const recovered = snapshot([]); recovered.pool = { assessment: { recovered: [{ kind: 'poolIdle', id: 'training' }] } };
+  await dispatchMonitoringAlerts({ ...options, snapshot: recovered });
+  assert.equal(Object.values(f.getState().incidents)[0].active, false);
+  assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});

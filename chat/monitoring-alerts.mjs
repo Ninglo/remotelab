@@ -96,14 +96,14 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api', 'poolSource', 'poolTask'].includes(item.kind)
+  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api', 'poolSource', 'poolTask', 'poolIdle'].includes(item.kind)
     && !(['service', 'serviceCrash', 'servicePressure'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
     && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // A local optimization signal must not pre-confirm a new outage.
     let count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
-    const eligible = ['poolSource', 'poolTask'].includes(item.kind) && item.confirmed === true || item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
+    const eligible = ['poolSource', 'poolTask', 'poolIdle'].includes(item.kind) && item.confirmed === true || item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
@@ -339,7 +339,7 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   // This independent observer needs no model and no running HTTP server.
   const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents, dryRun });
   const [snapshot, pool] = await Promise.all([reader({ days: 1 }), poolObserver({ config: config.poolMonitoring, dryRun }).catch(() => ({ error: "POOL_OBSERVER_UNAVAILABLE" }))]);
-  snapshot.attention = snapshot.attention.filter(item => !['poolSource', 'poolTask'].includes(item.kind));
+  snapshot.attention = snapshot.attention.filter(item => !['poolSource', 'poolTask', 'poolIdle'].includes(item.kind));
   if (pool?.assessment) { snapshot.pool = pool; snapshot.attention.push(...pool.assessment.attention); }
   if (pool?.error) snapshot.coverage.gaps.push({ source: "pool", code: pool.error });
   if (!dryRun) await recordDiskSamples(snapshot.disks, config.diskGrowth);

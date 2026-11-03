@@ -10,8 +10,9 @@ const at = value => Date.parse(value || '');
 const fresh = (value, now, seconds = 180) => Number.isFinite(at(value)) && at(value) <= now + 5000 && now - at(value) <= seconds * 1000;
 const healthy = (source, now) => source && !source.failed && !source.stale && fresh(source.observedAt, now, source.maxAgeSeconds || 180);
 
-export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs = 180000, stallMs = 1800000, errorIncrease = 10 } = {}) {
-  const time = new Date(now).toISOString(), attention = [], recovered = [], sources = {}, tasks = {};
+export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs = 180000, stallMs = 1800000, errorIncrease = 10,
+  trainingIdle = {} } = {}) {
+  const time = new Date(now).toISOString(), attention = [], recovered = [], sources = {}, tasks = {}, idle = {};
   function source(id, label, ok, detail) {
     const old = previous?.sources?.[id];
     sources[id] = { ok, failedSince: ok ? null : old?.failedSince || time };
@@ -30,6 +31,29 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
       `设备采样持续不可用，占用显示未知；${machine.observation.error || '采样已过期'}。任务与云配额按各自来源判断。`);
     if (machine.cloudObservation) source(`cloud:${machine.id}`, `${machine.name || machine.id} 云队列`, healthy(machine.cloudObservation, now),
       '云配额与任务列表持续不可用；旧数据保留原采样时间，不计作当前空闲容量。');
+  }
+  // Only explicitly enrolled training pools use this rule. Native quota already
+  // includes ancestor allocations; physical utilization is not an idle signal.
+  for (const id of trainingIdle.machineIds || []) {
+    const machine = resources?.machines?.find(item => item.id === id), quota = machine?.quota;
+    const old = previous?.idle?.[id], observation = machine?.cloudObservation;
+    const known = healthy(observation, now) && Number.isInteger(quota?.total) && quota.total > 0
+      && Number.isInteger(quota.allocated) && quota.allocated >= 0 && Number.isInteger(quota.available)
+      && quota.available >= 0 && quota.allocated + quota.available === quota.total;
+    const empty = !!(known && quota.allocated === 0 && quota.available === quota.total);
+    const continuous = empty && old?.empty && old.total === quota.total && fresh(old.checkedAt, now)
+      && at(observation.observedAt) >= at(old.observedAt);
+    const since = empty ? continuous ? old.since : time : null;
+    const due = empty && now - at(since) >= (trainingIdle.afterMs ?? 21600000);
+    // Unknown evidence breaks the clock but cannot close a previously sent notice.
+    const busy = known && quota.allocated > 0;
+    idle[id] = { empty, known: !!known, since, checkedAt: time, observedAt: observation?.observedAt || null,
+      total: known ? quota.total : null, available: known ? quota.available : null,
+      alerted: busy ? false : !!(old?.alerted || due) };
+    if (due) attention.push({ kind: 'poolIdle', id, subject: machine.name || id, severity: 'warning', confirmed: true,
+      detail: `训练卡池整池连续空闲 ${Math.floor((now - at(since)) / 60000)} 分钟；云平台配额 ${quota.total} 卡，已分配 0 卡，可用 ${quota.available} 卡。`,
+      idleSince: since, signals: { wholePoolIdle: true } });
+    else if (busy && old?.alerted) recovered.push({ kind: 'poolIdle', id });
   }
   // Only fresh consecutive successful observations establish a task progress window.
   // A telemetry gap, a generation change or an accepted result resets the window.
@@ -57,7 +81,7 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
   for (const run of sample.terminals || []) if (['completed', 'stopped', 'cancelled', 'failed'].includes(run.state)) {
     recovered.push({ kind: 'poolTask', id: run.run_id }); delete tasks[run.run_id];
   }
-  return { schema: 1, observedAt: time, sources, tasks, attention, recovered };
+  return { schema: 1, observedAt: time, sources, tasks, idle, attention, recovered };
 }
 
 async function jsonFetch(fetchImpl, url, timeoutMs = 6000) {
@@ -134,7 +158,7 @@ export async function observePool({ config, dryRun = false, now = Date.now(), fe
       if (run.run_id === id) sample.terminals.push(run);
     } catch { sample.errors.push(`任务 ${id} 终态未核实`); }
   }
-  const assessment = assessPool(previous?.assessment, sample, { now, ...config.thresholds });
+  const assessment = assessPool(previous?.assessment, sample, { now, ...config.thresholds, trainingIdle: config.trainingIdle });
   const result = { schema: 1, observedAt: new Date(now).toISOString(), ...sample, assessment, cloud: previous?.cloud || null };
   const cloudMachine = sample.resources?.machines?.find(machine => machine.cloudObservation);
   if (config.enrichmentScript && healthy(cloudMachine?.cloudObservation, now) && !dryRun) {

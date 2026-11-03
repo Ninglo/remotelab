@@ -65,6 +65,7 @@ export function monitoringProblem(item) {
     : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
 export function monitoringProgress(item, recovery) {
+  if (item.kind === 'poolIdle') return item.recovered ? '云平台已确认资源重新被分配。' : '已根据连续有效的云配额观测确认整池空闲。';
   if (item.kind === 'serviceCrash' && item.state === 'fixed') return item.recoveryObservation + '。';
   if (item.kind === 'serviceCrash' && item.recovered) return '已连续稳定运行30分钟，根因修复待确认。';
   if (item.kind === 'diskGrowth') return item.recovered ? '最新有效观测不再满足增长预警条件，容量继续独立监测。' : '已保存实际增长窗口与基线，容量继续独立监测。';
@@ -79,14 +80,15 @@ export function monitoringProgress(item, recovery) {
 export function monitoringTitle(item) {
   if (item.continuity?.lastAccountWarning?.state === 'low') return `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}${item.recovered ? ' · 已恢复' : ''}`;
   const issue = { disk: '磁盘空间不足', diskGrowth: '磁盘短期快速增长', service: '服务运行异常', serviceCrash: '服务发生崩溃', servicePressure: '堆内存接近上限', automation: '自动化执行异常',
-    poolSource: '卡池采样异常', poolTask: '评测进度异常', accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
+    poolSource: '卡池采样异常', poolTask: '评测进度异常', poolIdle: '训练卡池持续空闲', accountContinuity: '账号无法自动接续', api: 'API额度或调用异常' }[item.kind] || '运行异常';
   return `${item.subject || issue}${item.subject ? ` · ${issue}` : ''}${item.recovered ? (item.recoveryStopped ? ' · 已停止' : item.kind === 'serviceCrash' ? (item.state === 'fixed' ? ' · 已修复' : ' · 已恢复') : ' · 已解决') : ''}`;
 }
 export function renderMonitoringAlert(events, config, { color = false, links = true } = {}) {
   return events.map(item => {
     const recovery = repairFor(item, config), next = monitoringNextStep(item, config);
     const resolved = item.recovered === true;
-    const status = resolved ? item.kind === 'serviceCrash' ? '服务已稳定恢复，根因修复待确认' : item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
+    const status = item.kind === 'poolIdle' ? resolved ? '资源已重新使用' : '训练资源持续空闲'
+      : resolved ? item.kind === 'serviceCrash' ? '服务已稳定恢复，根因修复待确认' : item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
     const decision = color && next.type !== 'notice' ? `<font color="red">${next.summary}</font>` : next.summary;
     return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
       + `上次预警：${alertTime(item.lastAlertAt || item.triggeredAt)}（北京时间）\n`
