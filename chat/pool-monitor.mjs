@@ -17,13 +17,14 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
     sources[id] = { ok, failedSince: ok ? null : old?.failedSince || time };
     if (ok) recovered.push({ kind: 'poolSource', id });
     else if (now - at(sources[id].failedSince) >= sourceGraceMs) attention.push({ kind: 'poolSource', id,
-      subject: label, severity: 'warning', confirmed: true, detail, signals: { unavailable: true } });
+      subject: label, severity: 'warning', confirmed: true,
+      detail: `数据源持续不可用 ${Math.floor((now - at(sources[id].failedSince)) / 60000)} 分钟；${detail}`, signals: { unavailable: true } });
   }
   const resources = sample.resources, queue = sample.queue;
   source('controller', '卡池控制面', !resources?.controllerStale && fresh(resources?.observedAt, now),
-    '连续三分钟未取得有效卡池控制面状态；接单与分配显示未知，原调度器仍独立运行。');
+    '未取得有效卡池控制面状态；接单与分配显示未知，原调度器仍独立运行。');
   const queueFresh = fresh(queue?._readAt, now);
-  source('queue', '评测队列状态', queueFresh, '连续三分钟未取得有效队列状态；暂停卡顿判断，保留上次成功时间。');
+  source('queue', '评测队列状态', queueFresh, '未取得有效队列状态；暂停卡顿判断，保留上次成功时间。');
   for (const machine of resources?.machines || []) {
     if (machine.observation) source(`device:${machine.id}`, machine.name || machine.id, healthy(machine.observation, now),
       `设备采样持续不可用，占用显示未知；${machine.observation.error || '采样已过期'}。任务与云配额按各自来源判断。`);

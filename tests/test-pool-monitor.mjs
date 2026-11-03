@@ -43,6 +43,19 @@ test('source grace is elapsed outage time, not repeated page reads; recovery is 
   assert.equal(good.attention.length, 0);
   assert.ok(good.recovered.some(x => x.id === 'controller'));
 });
+test('longer source confirmation waits thirty minutes and a successful sample resets it', () => {
+  const assess = (prior, value, elapsed) => assessPool(prior, value, { now: start + elapsed, sourceGraceMs: 1800000 });
+  let prior = assess(null, {}, 0);
+  prior = assess(prior, {}, 180000);
+  assert.equal(prior.attention.length, 0);
+  prior = assess(prior, sample(start + 240000), 240000);
+  prior = assess(prior, {}, 300000);
+  prior = assess(prior, {}, 2099999);
+  assert.equal(prior.attention.length, 0);
+  prior = assess(prior, {}, 2100000);
+  assert.equal(prior.attention.length, 2);
+  assert.ok(prior.attention.every(event => event.detail.startsWith('数据源持续不可用 30 分钟；')));
+});
 test('one failed upstream does not suppress the other or forge a new success time', async () => {
   let saved;
   const old = sample(start);

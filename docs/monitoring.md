@@ -1214,7 +1214,13 @@ append-only task history. Failures preserve original successful timestamps. Hub 
 durable inventory and each source sample until new evidence arrives; an empty
 warm-up response never changes known capacity to zero.
 
-Sources unavailable for three minutes produce `poolSource` notices. A running
+Source notices use `poolMonitoring.thresholds.sourceGraceMs` (default 180000).
+For less interruption from transient collection failures, the deployment may set
+1800000: notify only after 30 continuous minutes classified as unavailable,
+while continuing minute sampling. A successful sample resets the confirmation
+window. This grace follows source freshness/TTL checks, so total time since the
+last good sample can be longer. Notice text uses the actual unavailable duration.
+A running
 Run needs 30 minutes of consecutive fresh samples without an accepted result and
 either at least 10 additional infrastructure-failed episodes or a continuous
 30-minute absence of active Attempts while episodes remain pending for a
