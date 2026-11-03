@@ -522,7 +522,7 @@ export async function handleControlRoutes({
       writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to update person' });
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Failed to update person' });
     }
     return true;
   }
@@ -539,14 +539,16 @@ export async function handleControlRoutes({
       writeJson(res, 201, { ...created, people: await listPeopleForClient() });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to add credential' });
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Failed to add credential' });
     }
     return true;
   }
 
   const personCredentialMatch = /^\/api\/people\/([^/]+)\/credentials\/([^/]+)$/.exec(pathname);
   if (personCredentialMatch && req.method === 'DELETE') {
-    const removed = await removePersonCredential(personCredentialMatch[1], personCredentialMatch[2]);
+    let removed;
+    try { removed = await removePersonCredential(personCredentialMatch[1], personCredentialMatch[2]); }
+    catch (error) { writeJson(res, error.statusCode || 400, { error: error.message }); return true; }
     if (!removed) {
       writeJson(res, 404, { error: 'Credential not found' });
       return true;
@@ -574,7 +576,7 @@ export async function handleControlRoutes({
       writeJson(res, 200, { people: (await listPeopleForClient()).filter(p => isSessionAdministrator(authSession) || p.id === authSession.personId) });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to move identity' });
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Failed to move identity' });
     }
     return true;
   }

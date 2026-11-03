@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -7,6 +7,10 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'identity-dedup-'));
 setIsolatedTestHome(home);
 try {
+  const config = join(home, '.config/remotelab');
+  await mkdir(config, { recursive: true });
+  // This test repairs non-administrator historical identities, not admin sign-in.
+  await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'legacy-person', administratorPersonIds: [], serviceToken: 'f'.repeat(64), people: [] }));
   const { updateAuthDocument, loadAuthDocument, resolveOrCreateExternalIdentity, findIdentity } = await import('../lib/auth-config.mjs');
   const subject = { kind: 'feishu', realm: 'bot', subjectId: 'ou_legacy' };
   await updateAuthDocument(doc => {

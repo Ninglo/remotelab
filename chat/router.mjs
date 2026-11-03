@@ -1,3 +1,4 @@
+import { handleAdministratorRoutes } from './router-administrator-routes.mjs';
 import { canAccessSession, canReadSession, isSessionAdministrator, memberRouteAllowed } from './session-access.mjs';
 import { requireAttachmentAccess } from './session-attachment-access.mjs';
 import { handleSiteLogin } from './router-site-login.mjs';
@@ -1487,6 +1488,7 @@ export async function handleRequest(req, res) {
       && !await requireSessionAccess(res, authSession, scopedSessionId)) return;
   const pageSessionId = pathname === '/' ? parsedUrl.query.session : '';
   if (pageSessionId && !await requireSessionAccess(res, authSession, pageSessionId)) return;
+  if (await handleAdministratorRoutes({ req, res, pathname, authSession, nonce, writeJson })) return;
   if (await handleSiteUsageRoutes({ req, res, pathname, authSession })) return;
 
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;

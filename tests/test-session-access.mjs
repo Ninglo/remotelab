@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
+import { scryptSync } from 'node:crypto';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'remotelab-session-access-'));
@@ -15,6 +16,9 @@ const people = ['a', 'b', 'admin'].map((id, i) => ({ id, name: id, handle: id,
   credentials: [{ id: 'credential-' + id, type: 'token', token: String(i + 1).repeat(64) }],
   identities: [{ id: 'web-' + id, kind: 'web', realm: 'remotelab', subjectId: id },
     { id: 'feishu-' + id, kind: 'feishu', realm: 'test', subjectId: 'ou-' + id }] }));
+const adminPassword = 'isolated-admin-password';
+const adminSalt = Buffer.alloc(16, 7);
+people.find(p => p.id === 'admin').credentials.push({ id: 'admin-password', type: 'password', username: 'admin', passwordHash: 'scrypt$16384$8$1$' + adminSalt.toString('hex') + '$' + scryptSync(adminPassword, adminSalt, 32, { N: 16384, r: 8, p: 1 }).toString('hex') });
 await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'a',
   administratorPersonIds: ['admin'], people, serviceToken: 'f'.repeat(64) }));
 const ids = { a: 'a'.repeat(32), b: 'b'.repeat(32), group: 'c'.repeat(32), unknown: 'd'.repeat(32) };
@@ -69,9 +73,42 @@ try {
   const { resolveOrCreateExternalIdentity, updateAuthDocument } = await import('../lib/auth-config.mjs');
   const impostor = await resolveOrCreateExternalIdentity({ kind: 'feishu', realm: 'test', subjectId: 'ou-impostor', displayName: 'admin', handleHint: 'admin' });
   assert.notEqual(impostor.personId, 'admin');
-  await updateAuthDocument(doc => { doc.administratorPersonIds = []; });
-  assert.equal((await call('admin', '/api/sessions')).data.sessions.length, 0, 'Role revocation cannot reuse the administrator list cache');
-  await updateAuthDocument(doc => { doc.administratorPersonIds = ['admin']; });
+  await assert.rejects(updateAuthDocument(doc => { doc.administratorPersonIds.push('b'); }), { code: 'ADMINISTRATOR_PROCEDURE_REQUIRED' });
+  assert.equal((await call('service', '/api/people/admin/credentials', 'POST', { type: 'token' })).status, 403);
+  assert.equal((await call('admin', '/api/people/admin/credentials', 'POST', { type: 'token' })).status, 403);
+  assert.equal((await call('service', '/api/people/admin/credentials/admin-password', 'DELETE')).status, 403);
+  assert.equal((await call('service', '/api/people/b/identities', 'POST', { identityId: 'feishu-admin' })).status, 403);
+  assert.equal((await call('service', '/api/admin/session-administrators', 'POST', {})).status, 403);
+  assert.equal((await call('a', '/admin/session-administrators')).status, 403);
+  assert.equal((await call('admin', '/admin/session-administrators')).status, 200);
+  const adminPost = async (who, body, origin = base, useBearer = false) => {
+    const res = await fetch(base + '/api/admin/session-administrators', { method: 'POST', headers: {
+      ...(useBearer ? { Authorization: 'Bearer ' + people.find(p => p.id === who).credentials[0].token } : { Cookie: cookies[who] }),
+      ...(origin ? { Origin: origin } : {}), 'Content-Type': 'application/json',
+    }, body: JSON.stringify(body) });
+    const data = await res.json(); return { status: res.status, data };
+  };
+  const grant = { targetPersonId: 'b', action: 'grant', confirmation: 'b', reason: 'Isolated test administrator approval', password: adminPassword };
+  assert.equal((await adminPost('a', grant)).status, 403);
+  assert.equal((await adminPost('admin', grant, base, true)).status, 403);
+  assert.equal((await adminPost('admin', grant, '')).status, 403);
+  assert.equal((await adminPost('admin', grant, 'https://elsewhere.example')).status, 403);
+  assert.equal((await adminPost('admin', { ...grant, confirmation: 'a' })).status, 400);
+  assert.equal((await adminPost('admin', { ...grant, password: 'wrong' })).status, 403);
+  const approved = await adminPost('admin', grant); assert.equal(approved.status, 200); assert(approved.data.auditId);
+  assert((await call('b', '/api/sessions')).data.sessions.length > 1);
+  const audit = JSON.parse(await readFile(join(config, 'administrator-changes', approved.data.auditId + '.json')));
+  assert.equal(audit.status, 'applied'); assert.equal(audit.actorPersonId, 'admin'); assert.equal(audit.targetPersonId, 'b');
+  assert(!JSON.stringify(audit).includes(adminPassword));
+  assert.equal((await adminPost('admin', { ...grant, action: 'revoke' })).status, 200);
+  assert.equal((await call('b', '/api/sessions')).data.sessions.length, 1, 'Role revocation cannot reuse the administrator list cache');
+  assert.equal((await adminPost('admin', { ...grant, targetPersonId: 'admin', confirmation: 'admin', action: 'revoke' })).status, 409);
+  // Audit failure must reject a grant before changing the account's role.
+  await rm(join(config, 'administrator-changes'), { recursive: true });
+  await writeFile(join(config, 'administrator-changes'), 'blocked audit directory');
+  assert.equal((await adminPost('admin', grant)).status, 503);
+  assert.equal((await call('b', '/api/auth/me')).data.person.administrator, false);
+  await rm(join(config, 'administrator-changes'));
   const workspaceGrant = await fetch(base + '/api/feishu-web-workspace/grant', { method: 'POST', headers: { Cookie: cookies.a, Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: 'https://chat.feishu.cn', nativeAccount: '1234567890123', confirm: true }) });
   assert.equal(workspaceGrant.status, 201, await workspaceGrant.text());
   const aSession = (await call('a', `/api/sessions/${ids.a}`)).data.session;
@@ -138,9 +175,26 @@ try {
         const result = await page.evaluate(async () => (await fetch('/api/sessions')).json());
         assert(result.sessions.some(s => s.id === ids[who === 'admin' ? 'a' : who]));
         if (who === 'a') { const res = await page.goto(base + '/?session=' + ids.b); assert.equal(res.status(), 403); }
+        if (who === 'admin') {
+          await page.goto(base + '/admin/session-administrators');
+          await page.selectOption('#target', 'b');
+          await page.fill('#reason', 'Browser form isolated administrator verification');
+          await page.fill('#confirmation', 'wrong-user'); await page.fill('#password', adminPassword);
+          await page.click('#submit'); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('exact target username'));
+          assert.equal(await page.inputValue('#password'), '', 'Password is cleared on a failed confirmation');
+          await page.fill('#confirmation', 'b'); await page.fill('#password', adminPassword);
+          await page.click('#submit'); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('审计编号'));
+          assert.equal((await call('b', '/api/auth/me')).data.person.administrator, true);
+          await page.waitForFunction(() => [...document.querySelector('#target').options].some(o => o.value === 'b' && o.textContent.includes('管理员')));
+          await page.selectOption('#target', 'b'); await page.selectOption('#action', 'revoke');
+          await page.fill('#confirmation', 'b'); await page.fill('#password', adminPassword);
+          await page.click('#submit'); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('审计编号'));
+          assert.equal((await call('b', '/api/auth/me')).data.person.administrator, false);
+          assert.equal(await page.inputValue('#password'), '');
+        }
         await context.close();
       }
-      console.log('Headless Chromium: three separate login contexts, lists and forbidden direct URL passed');
+      console.log('Headless Chromium: three separate login contexts, lists, forbidden direct URL and reauthenticated administrator form passed');
     } finally { await browser.close(); }
   }
   console.log('Session access: HTTP login, lists, direct URLs, APIs, media, search, forged identity, forks, service and WS passed');

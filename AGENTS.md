@@ -15,6 +15,7 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 
 - Multiple People may share one instance; established identity determines Session ownership
 - Ordinary People can access only their own Sessions; configured administrators can access all Sessions; unauthenticated requests cannot enter the workbench
+- Administrator grants/revocations require a current administrator’s personal browser login, fresh password and recorded confirmation at `/admin/session-administrators`. Never fulfill later chat requests by editing role configuration, issuing administrator credentials or migrating administrator identities; see `docs/session-access.md` for independently verified host recovery.
 - First wedge: repetitive digital work that can be automated quickly
 - Phone + desktop are both first-class control surfaces
 - Node.js, no external frameworks (only `ws` for WebSocket)
@@ -177,6 +178,7 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 ### People and sign-in
 | Method | Path | Purpose |
 |--------|------|---------|
+| GET / POST | `/api/admin/session-administrators` | Personal administrator cookie + fresh password for role changes; no bearer/service delegation |
 | GET | `/api/people` | List People, identities, and credential metadata |
 | POST | `/api/people` | Create a Person |
 | PATCH | `/api/people/{id}` | Rename or update a Person |

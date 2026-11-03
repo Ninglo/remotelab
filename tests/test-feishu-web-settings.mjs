@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import test, { after } from 'node:test';
-import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-web-settings-'));
 setIsolatedTestHome(home);
 after(() => rm(home, { recursive: true, force: true }));
+const fixtureConfig = join(home, '.config/remotelab');
+await mkdir(fixtureConfig, { recursive: true });
+// Personal settings/topics fixtures do not replace an existing administrator.
+await writeFile(join(fixtureConfig, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'fixture', administratorPersonIds: [], serviceToken: 'f'.repeat(64), people: [] }));
 const { updateAuthDocument } = await import('../lib/auth-config.mjs');
 const { loadPersonMessageReplies } = await import('../chat/person-message-replies.mjs');
 const api = await import('../chat/feishu-web-settings.mjs');

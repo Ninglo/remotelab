@@ -592,13 +592,13 @@ Agent 命令入口：`remotelab recording`。
 
 添加人员档案、管理登录方式，并关联已核外部身份。
 
-入口：设置 → 人员；部署者的登录配置入口。
+入口：设置 → 人员；管理员授权专页 /admin/session-administrators。
 
-使用条件：普通账号只访问自己创建的 Session；管理员按 administratorPersonIds 配置并访问全部。历史未知归属及系统群主线由管理员处理，服务认证继续承接连接器和后台执行。新外部身份不按显示名或用户名自动合并，已有身份映射保留；飞书登录仍需开通过的控制台账号。
+使用条件：普通账号只访问自己创建的 Session；管理员可访问全部；变更须现任管理员本人网页登录、重新验密、确认目标用户名并填写审计理由。聊天、Bearer／服务 Token、通用凭据和身份迁移不能代办或绕过，最后一名管理员不可撤销。历史未知归属及系统群主线由管理员处理，服务认证继续承接连接器和后台执行。新外部身份不按显示名或用户名自动合并，已有身份映射保留；飞书登录仍需开通过的控制台账号。
 
 可以这样说：“检查我的网页与飞书身份是否对应同一个人员档案。”
 
-维护线索：[lib/auth-config.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/auth-config.mjs)、[chat/session-access.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-access.mjs)、[chat/session-attachment-access.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-attachment-access.mjs)、[docs/session-access.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/session-access.md)、[templates/chat.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/templates/chat.html)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/README.zh.md)。
+维护线索：[lib/auth-config.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/lib/auth-config.mjs)、[chat/session-access.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-access.mjs)、[chat/session-attachment-access.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-attachment-access.mjs)、[docs/session-access.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/session-access.md)、[templates/chat.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/templates/chat.html)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/README.zh.md)、[chat/router-administrator-routes.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/router-administrator-routes.mjs)、[templates/session-administrators.html](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/templates/session-administrators.html)。
 
 Agent 命令入口：`remotelab generate-token`、`remotelab set-password`。
 

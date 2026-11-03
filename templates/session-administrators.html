@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>管理员授权 · RemoteLab</title><style>body{font:15px/1.65 system-ui,sans-serif;color:#202124;background:#f7f8fa;margin:0}main{max-width:660px;margin:36px auto;padding:24px;background:white;border:1px solid #e5e7eb;border-radius:12px}h1{font-size:24px;margin-top:0}label{display:block;margin-top:18px}input,select,textarea,button{box-sizing:border-box;font:inherit;padding:10px;width:100%;border:1px solid #b7bdc6;border-radius:6px}button{margin-top:20px;background:#245bdb;color:white;cursor:pointer}small{color:#5f6368}#status{white-space:pre-wrap}a{color:#245bdb}@media(max-width:720px){main{margin:12px;padding:18px}}</style></head><body><main>
+<a href="/">返回工作台</a><h1>管理员授权</h1>
+<p>此入口只接受现任管理员本人网页登录。每次变更均需重新验证本人密码、核对目标账号、填写理由并留存审计记录。聊天请求和服务 Token 无法代办。</p>
+<p id="current"></p><p><b>当前管理员</b><br><span id="admins">正在读取…</span></p>
+<form id="form"><label>目标账号<select id="target" required></select></label>
+<label>操作<select id="action"><option value="grant">设为管理员</option><option value="revoke">撤销管理员</option></select></label>
+<label>变更理由<textarea id="reason" minlength="5" maxlength="500" rows="3" required></textarea></label>
+<label>确认目标用户名<input id="confirmation" autocomplete="off" required></label><small id="hint"></small>
+<label>你自己的当前密码<input id="password" type="password" autocomplete="current-password" required></label>
+<button id="submit" type="submit">验证密码并确认变更</button></form><p id="status" role="status"></p>
+<small>密码不会写入审计记录。管理员账号的新凭据与身份迁移同样不能由聊天或通用账号接口直接办理。</small>
+</main><script nonce="{{NONCE}}">
+const el=id=>document.getElementById(id);let people=[],actorPersonId;
+async function load(){const r=await fetch('/api/admin/session-administrators',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error);people=d.people;actorPersonId=d.actorPersonId;const actor=people.find(p=>p.id===d.actorPersonId);el('current').textContent='当前登录：'+actor.name+'（'+actor.handle+'）';el('admins').textContent=people.filter(p=>p.administrator).map(p=>p.name+'（'+p.handle+'）').join('、');el('target').replaceChildren(...people.map(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name+'（'+p.handle+'）'+(p.administrator?' · 管理员':'');return o}));hint();}
+function hint(){const target=people.find(p=>p.id===el('target').value);el('hint').textContent=target?'请再次输入：'+target.handle:'';el('confirmation').value='';}el('target').onchange=hint;
+el('form').onsubmit=async event=>{event.preventDefault();const b=el('submit');b.disabled=true;el('status').textContent='正在验证并保存…';try{const r=await fetch('/api/admin/session-administrators',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({targetPersonId:el('target').value,action:el('action').value,reason:el('reason').value,confirmation:el('confirmation').value,password:el('password').value})}),d=await r.json();el('password').value='';if(!r.ok)throw Error(d.error);el('status').textContent=d.changed?'已保存。审计编号：'+d.auditId:'账号已处于所选状态，没有重复变更。';if(d.administratorPersonIds.includes(actorPersonId))await load();else{el('form').hidden=true;el('status').textContent+='\n你的管理员权限已撤销，可返回工作台。';}}catch(e){el('password').value='';el('status').textContent=e.message;}finally{b.disabled=false;}};
+load().catch(e=>{el('status').textContent=e.message;el('submit').disabled=true;});
+</script></body></html>

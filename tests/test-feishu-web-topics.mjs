@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -9,6 +9,10 @@ const scratch = await mkdtemp(join(tmpdir(), 'remotelab-topic-read-')); setIsola
 after(() => rm(scratch, { recursive: true, force: true }));
 const { createFeishuTopicSource, topicProjection, topicIds } = await import('../chat/feishu-web-topics.mjs');
 const { handleFeishuWebTopics } = await import('../chat/router-feishu-web-topics.mjs');
+const fixtureConfig = join(scratch, '.config/remotelab');
+await mkdir(fixtureConfig, { recursive: true });
+// Personal settings/topics fixtures do not replace an existing administrator.
+await writeFile(join(fixtureConfig, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'fixture', administratorPersonIds: [], serviceToken: 'f'.repeat(64), people: [] }));
 const { updateAuthDocument } = await import('../lib/auth-config.mjs');
 const auth = await import('../chat/feishu-web-settings.mjs');
 const { broadcastAll } = await import('../chat/ws-clients.mjs');
