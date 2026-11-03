@@ -204,5 +204,5 @@ Employee SSH Codex memory: [authenticated account and file evidence](monitoring.
 [Employee site login](employee-site-login.md) shares Feishu login across managed static pages, previews and research pages on the same instance domain. New sites record their creator and reserve administrators without introducing role management.
 
 - [Feishu role-restricted application queries](feishu-bot-setup.md#role-restricted-application-queries):
-  exact HR/interviewer admission, signed data queries, and separation from the
+  exact HR/interviewer admission, signed candidate queries and preparation/Q&A commands, and separation from the
   general executor (`connectors/feishu/restricted-access.mjs`).

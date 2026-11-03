@@ -43,10 +43,17 @@ export function parseInterviewQuery(text) {
   if (['名单', '我的候选人', '我负责的候选人', '我负责哪些候选人', '我负责哪些候选人？'].includes(value)) {
     return { action: 'list' };
   }
-  const match = /^(查询|简历)\s+([^\r\n]{1,80})$/.exec(value);
+  const question = /^提问\s+([^|｜\r\n]{1,80})\s*[|｜]\s*([^\r\n]{1,1000})$/.exec(value);
+  if (question) {
+    const selector = question[1].trim();
+    return { action: 'ask', question: question[2].trim(),
+      ...(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(selector)
+        ? { candidateId: selector } : { candidateName: selector }) };
+  }
+  const match = /^(查询|简历|准备)\s+([^\r\n]{1,80})$/.exec(value);
   if (!match) return null;
   const selector = match[2].trim();
-  return { action: match[1] === '简历' ? 'resume' : 'detail',
+  return { action: ({ 查询: 'detail', 简历: 'resume', 准备: 'prepare' })[match[1]],
     ...(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(selector)
       ? { candidateId: selector } : { candidateName: selector }) };
 }
@@ -56,7 +63,7 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1'
       || summary.messageType !== 'text') return '面试信息仅支持本人私聊中的文字查询，请私聊机器人。';
   const query = parseInterviewQuery(summary.messageText);
-  if (!query) return '此通道只查询本人已分配的面试信息。发送「我的候选人」、「查询 姓名或候选人ID」或「简历 姓名或候选人ID」。';
+  if (!query) return '此通道只查询本人已分配的面试信息。发送「我的候选人」、「查询 姓名或候选人ID」、「简历 姓名或候选人ID」、「准备 姓名或候选人ID」，或「提问 姓名或ID | 你的问题」。';
   const credentials = JSON.parse(await readFile(policy.roles.credentialsPath, 'utf8'));
   if (!credentials.apiKey || !credentials.signingKey) throw new Error('Restricted query credentials unavailable');
   const payload = { version: 1, appId: policy.roles.appId, tenantKey: policy.roles.tenantKey,

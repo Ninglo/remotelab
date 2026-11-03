@@ -1288,7 +1288,9 @@ No role is inferred from names, user text, tenant-wide admission or old Sessions
 
 HR messages retain the normal executor. Interviewers use only their own private
 text messages and the signed read-only endpoint, supporting `我的候选人`,
-`查询 姓名或候选人ID`, and `简历 姓名或候选人ID`. Other inputs get an explanation;
+`查询 姓名或候选人ID`, `简历 姓名或候选人ID`, `准备 姓名或候选人ID`, and
+`提问 姓名或ID | 问题`. The latter actions still select exactly one authorized
+candidate in the backend before generating suggestions or an answer. Other inputs get an explanation;
 other identities are rejected. No interviewer message, command, retry or document
 comment is submitted to the general executor. Document binding polls admit only
 exact HR provider subjects. Old unrestricted pending deliveries to non-HR users
