@@ -603,3 +603,39 @@ test('six-hour training idle notices send directly once and close the same card 
   assert.equal(Object.values(f.getState().incidents)[0].active, false);
   assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
 });
+
+test('disk grace survives restarts, includes warnings and growth, and ignores stale expiry samples', async () => {
+  for (const kind of ['disk', 'diskGrowth']) {
+    const f = fixture(), start = f.options.now;
+    const config = { diskGraceMs: 30 * 60_000, noisePolicy: { mode: 'risk_only' } };
+    const value = snapshot([{ kind, id: '/', subject: 'Disk', severity: 'warning', availableBytes: 25 * 1024 ** 3 }]);
+    for (const minutes of [0, 10, 29]) {
+      value.generatedAt = new Date(start + minutes * 60_000).toISOString();
+      await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + minutes * 60_000 });
+      assert.equal(f.getSends(), 0);
+    }
+    await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 40 * 60_000 });
+    assert.equal(f.getSends(), 0, 'an old reading cannot establish continued failure');
+    value.generatedAt = new Date(start + 40 * 60_000).toISOString();
+    await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 40 * 60_000 });
+    assert.equal(f.getSends(), 1);
+    await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 41 * 60_000 });
+    assert.equal(f.getSends(), 1);
+  }
+});
+
+test('disk recovery inside thirty minutes sends neither alert nor success, and recurrence gets a new window', async () => {
+  const f = fixture(), start = f.options.now, config = { diskGraceMs: 30 * 60_000 };
+  const value = snapshot([{ ...disk, id: '/' }]);
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value });
+  const recovered = snapshot([]); recovered.disks = [{ path: '/', status: 'healthy' }];
+  recovered.generatedAt = new Date(start + 29 * 60_000).toISOString();
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: recovered, now: start + 29 * 60_000 });
+  assert.equal(f.getSends(), 0); assert.equal(f.getUpdates(), 0);
+  value.generatedAt = new Date(start + 31 * 60_000).toISOString();
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 31 * 60_000 });
+  assert.equal(f.getSends(), 0);
+  value.generatedAt = new Date(start + 61 * 60_000).toISOString();
+  await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 61 * 60_000 });
+  assert.equal(f.getSends(), 1);
+});

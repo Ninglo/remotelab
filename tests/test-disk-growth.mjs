@@ -68,7 +68,7 @@ test('growth sends before capacity warnings, deduplicates, survives unknown read
   const disk = point(0, 30), row = assess(disk, [point(2, 31.1)]);
   const options = { now, config: { noisePolicy: { mode: 'risk_only' } },
     load: async () => structuredClone(state), save: async (_, value) => { state = structuredClone(value); },
-    send: async () => `om_growth_${++sends}`, update: async () => { updates++; } };
+    send: async () => `om_growth_${++sends}`, update: async (_events, _config, id) => { updates++; return id; } };
   const snapshot = rows => ({ generatedAt: disk.observedAt, disks: [disk], diskGrowth: rows,
     attention: diskGrowthAttention(rows, [disk]), services: [], accounts: [], automations: { items: [] }, coverage: { gaps: [] } });
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([row]) });
@@ -79,5 +79,9 @@ test('growth sends before capacity warnings, deduplicates, survives unknown read
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ path: '/', status: 'healthy' }]) });
   assert.equal(Object.values(state.incidents)[0].active, false);
   await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([row]) });
-  assert.equal(sends, 2);
+  assert.equal(sends, 1, 'recovery and recurrence within three hours reuse the original card');
+  assert.equal(updates, 2);
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([{ path: '/', status: 'healthy' }]) });
+  await dispatchMonitoringAlerts({ ...options, now: now + 3 * 3600_000, snapshot: snapshot([row]) });
+  assert.equal(sends, 2, 'a recovered-then-failed cycle outside the deduplication window can send again');
 });

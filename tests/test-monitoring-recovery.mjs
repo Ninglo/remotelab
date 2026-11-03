@@ -20,7 +20,7 @@ function fixture({ conversation = false, kind = 'automation' } = {}) {
   const options = { config: { enabled: true, coordinatorSessionId: session.id, maxAttempts: 2, maxConcurrent: 1 }, snapshot,
     now: Date.parse(snapshot.generatedAt), stateFile: 'ledger',
     load: async path => structuredClone(path === 'ledger' ? state : receipts.get(path) || null),
-    save: async (_path, value) => { state = structuredClone(value); },
+    save: async (path, value) => { if (path === 'ledger') state = structuredClone(value); else receipts.set(path, structuredClone(value)); },
     readDeliveries: async () => structuredClone(deliveries),
     request: async (path, options = {}) => {
       const method = options.method || 'GET';
@@ -321,4 +321,43 @@ test('receipt distinguishes missing information from approval without admitting 
   assert.equal(projectRecovery(f.getState())[0].humanAction.type, 'approval');
   assert.equal(f.getAdmissions(), 1);
   assert.equal(f.incident().status, 'awaiting_confirmation');
+});
+
+test('disk script runs once before AI, then an independent healthy observation closes it without a Session', async () => {
+  const f = fixture({ kind: 'disk' }); let calls = 0;
+  f.options.config.diskScript = { enabled: true };
+  f.options.diskScript = async () => { calls++; return { summary: 'cache cleaned' }; };
+  await processMonitoringRecovery(f.options);
+  assert.equal(calls, 1); assert.equal(f.getAdmissions(), 0);
+  assert.equal(f.incident().script.status, 'completed');
+  assert.equal(f.receipts.get(f.incident().script.receiptFile).summary, 'cache cleaned');
+  await processMonitoringRecovery(f.options);
+  assert.equal(calls, 1); assert.equal(f.getAdmissions(), 0);
+  f.snapshot.attention = []; f.snapshot.disks = [{ path: '/', status: 'healthy' }];
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(f.incident().status, 'resolved'); assert.equal(f.getAdmissions(), 0);
+});
+
+test('persistent disk growth uses script first and passes evidence to one fallback Session', async () => {
+  const f = fixture({ kind: 'diskGrowth' }); let calls = 0;
+  f.options.config.diskScript = { enabled: true };
+  f.options.diskScript = async () => { calls++; return { summary: 'no safe candidate' }; };
+  await processMonitoringRecovery(f.options);
+  assert.equal(calls, 1); assert.equal(f.getAdmissions(), 0);
+  f.snapshot.generatedAt = new Date(f.options.now + 60_000).toISOString();
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(calls, 1); assert.equal(f.getAdmissions(), 1);
+  assert.ok(f.incident().attempts[0].body.text.includes(f.incident().script.receiptFile));
+  assert.ok(f.incident().attempts[0].body.text.includes('不向群发送'));
+});
+
+test('interrupted script intent is not replayed, and unknown readings do not admit AI', async () => {
+  const f = fixture({ kind: 'disk' }); let calls = 0;
+  f.options.config.diskScript = { enabled: true };
+  f.options.diskScript = async () => { calls++; throw new Error('interrupted'); };
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().script.status, 'failed');
+  f.snapshot.attention = []; f.snapshot.disks = [{ path: '/', status: 'unknown' }];
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(calls, 1); assert.equal(f.getAdmissions(), 0);
 });

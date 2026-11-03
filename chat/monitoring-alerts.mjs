@@ -129,7 +129,12 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       && previous.event?.severity === item.severity
       && previous.event?.continuity?.status === item.continuity?.status
       && JSON.stringify(previous.event?.signals) === JSON.stringify(item.signals);
-    const decision = monitoringNotificationDecision(item, { policy: config.noisePolicy, repair, now });
+    const diskGrace = ['disk', 'diskGrowth'].includes(item.kind) && Number.isFinite(config.diskGraceMs) && config.diskGraceMs > 0;
+    // Start at the first real failed observation, not at repair admission or a
+    // changed risk stage. Recovery discards this cycle; unknown data does not.
+    if (diskGrace) incident.firstObservedAt ||= snapshot.generatedAt || new Date(now).toISOString();
+    const decision = diskGrace ? { notify: true, reason: 'disk_repair_window', confirmations: 1 }
+      : monitoringNotificationDecision(item, { policy: config.noisePolicy, repair, now });
     if (decision.reason === 'last_account_low') requiredCount = 1;
     if (config.noisePolicy?.mode === 'risk_only') {
       const sameQualification = previous?.notificationDecision?.notify && decision.notify
@@ -210,7 +215,10 @@ async function dispatchAlerts({ config, snapshot, stateFile,
         && (!config.feishuAppId || p.appId === config.feishuAppId))
         || snapshot.apiHealth?.providers?.some(p => p.notificationDelivery?.status === 'available'
           && (!config.feishuAppId || p.appId === config.feishuAppId)) )) incident.status = 'pending';
-    if (critical && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
+    const fresh = snapshot.generatedAt && now >= Date.parse(snapshot.generatedAt)
+      && now - Date.parse(snapshot.generatedAt) <= 180_000;
+    const graceElapsed = !diskGrace || fresh && now - Date.parse(incident.firstObservedAt) >= config.diskGraceMs;
+    if (critical && graceElapsed && incident.status === 'pending') due.push({ key, ...item, cycle: incident.cycle });
   }
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key)) incident.observations = 0;
   for (const [key, incident] of Object.entries(state.incidents)) if (!current.has(key) && recovered.has(key)) {
@@ -231,7 +239,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
         recovery: repair, recoveryStopped: stopped, recoveryObservation: observation, history: structuredClone(incident.history) };
       incident.version = hash(`recovered:${incident.event.state || ''}:${incident.event.repair?.commit || ''}`); edits.add(incident.messageId);
     }
-    incident.active = false; delete incident.persistence; delete incident.persistentWarningAt;
+    incident.active = false; delete incident.persistence; delete incident.persistentWarningAt; delete incident.firstObservedAt;
   }
   // Stability may close the outage before its root-cause deployment is verified.
   // Update that same receipt when confirmation arrives, including while muted.

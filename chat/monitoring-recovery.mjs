@@ -7,6 +7,7 @@ import { isStoppedAutomation } from '../lib/monitoring-status.mjs';
 import { requests } from './requests.mjs';
 import { monitoringPolicyFor } from '../lib/monitoring-policy.mjs';
 import { diskRiskStage, recoveryPlan, recoveryHumanAction } from '../lib/monitoring-actions.mjs';
+import { maintainDisk } from './disk-maintenance.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
 const terminal = state => ['completed', 'failed', 'cancelled'].includes(state);
@@ -25,11 +26,13 @@ export function projectRecovery(state) {
     reason: trim(item.reason).slice(0, 240), summary: ['pending', 'admitting', 'running', 'waiting'].includes(item.status) ? '' : trim(item.summary).slice(0, 1200),
     error: trim(item.error).slice(0, 240),
     resolution: item.resolution || null, plan: recoveryPlan(item.plan), humanAction: recoveryHumanAction(item.humanAction), riskStage: item.riskStage || 0,
+    script: item.script || null,
     createdAt: item.createdAt, updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }
 
 function healthy(snapshot, item) {
   return item.kind === 'disk' ? snapshot.disks.some(d => (d.path || d.label) === item.id && d.status === 'healthy')
+    : item.kind === 'diskGrowth' ? snapshot.diskGrowth?.some(d => d.path === item.id && d.status === 'healthy')
     : item.kind === 'service' ? snapshot.services.some(s => (s.unit || s.label) === item.id && s.status === 'healthy') : false;
 }
 
@@ -40,6 +43,7 @@ function promptFor(item, attempt, task, config) {
     + (policy ? `本类处置规则：${policy.remedy} ${policy.intervention}\n` : '')
     + `对象：${item.subject}；类型：${item.kind}；ID：${item.id}；原失败Run：${item.originRunId || '无'}。\n`
     + `已观测问题：${item.error || item.reason || '见本轮监管快照'}。本次是第${item.attempts.length}次，最多${config.maxAttempts || 2}次；执行方不可再建恢复任务、日程或自我重试循环。\n`
+    + (item.script ? `已先执行磁盘脚本，记录：${item.script.receiptFile}；先读其结果，复用已完成步骤，不重复清理。磁盘通知由观察器按配置的静默处理期统一判断；本次补救只保存本地结果，不向群发送进展或成功消息。\n` : '')
     + (attempt.mode === 'verify' ? '已有一次后续执行结束。本次先只读核对该执行及真实产物；不能把整份任务从头再执行，不能重发已有成功消息。\n' : '')
     + `先核对现实：原任务是否已有人恢复、停止、被替代或已完成；查已保存材料和实际错误，保留已通过的检查。没有新的修正或证据，不重复失败动作。\n`
     + `先判断是否影响业务，再按拟执行动作的影响与恢复成本分级。账号正常消耗或耗尽不是待修故障；关注已有授权账号的备用准备、提前切换及切换失败，不要求人解决正常消耗。\n`
@@ -62,7 +66,7 @@ function promptFor(item, attempt, task, config) {
 export async function processMonitoringRecovery({ config, snapshot, stateFile = RECOVERY_FILE,
   load = readRecord, save = writeDurableJson, request,
   readDeliveries = async (sessionId, requestId) => (await requests.byRequest(sessionId, requestId))?.deliveries || [],
-  now = Date.now(), dryRun = false } = {}) {
+  now = Date.now(), dryRun = false, diskScript = maintainDisk } = {}) {
   if (!config?.enabled) return { enabled: false };
   const client = request ? null : createRemoteLabHttpClient({ baseUrl: config.baseUrl });
   const api = request || (async (path, options = {}) => {
@@ -82,7 +86,9 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   const touch = (item, status, reason = '') => Object.assign(item, { status, reason, updatedAt: at });
   const taskById = new Map((snapshot.automations.items || []).map(t => [t.id, t]));
   const failures = snapshot.attention.filter(i => i.kind === 'automation'
-    || (i.kind === 'disk' && ['warning', 'critical'].includes(i.severity) || i.kind === 'service' && i.severity === 'critical')
+    || (i.kind === 'disk' && ['warning', 'critical'].includes(i.severity)
+      || i.kind === 'diskGrowth' && config.diskScript?.enabled && ['warning', 'critical'].includes(i.severity)
+      || i.kind === 'service' && i.severity === 'critical')
       && !(config.ignoreUnits || []).includes(i.id));
   const failingServices = new Set(failures.filter(i => i.kind === 'service').map(i => i.id || i.subject));
   for (const [id, resource] of Object.entries(state.resources)) {
@@ -136,6 +142,12 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     (a.kind === 'automation') - (b.kind === 'automation') || stamp(a.createdAt) - stamp(b.createdAt));
   // Reconcile every in-flight attempt before considering a new admission.
   for (const item of ordered) {
+    if (config.diskScript?.enabled && ['disk', 'diskGrowth'].includes(item.kind)
+      && ['pending', 'blocked', 'awaiting_confirmation'].includes(item.status) && healthy(snapshot, item)) {
+      item.summary = '本轮独立观测确认指标已恢复；原处置证据及待确认方案保留，未执行待确认动作';
+      item.evidence = [...(item.evidence || []), snapshot.generatedAt];
+      touch(item, 'resolved'); continue;
+    }
     if (item.status === 'admitting') { active++; continue; }
     // Reconcile repaired receipts without launching another model attempt.
     // Also recover the exact legacy formatting failure; unrelated blocks stay put.
@@ -211,6 +223,43 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     } catch (error) { item.reason = `补救状态读取失败：${error.code || 'UNAVAILABLE'}`; errors.push(item.reason); }
   }
   await persist();
+  // One durable script attempt per failure cycle, before any new AI admission.
+  // Existing in-flight/manual repairs and confirmation plans retain ownership.
+  const scriptedPaths = new Map();
+  for (const item of ordered) {
+    const resource = state.resources[`${item.kind}:${item.id}`];
+    if (!config.diskScript?.enabled || !['disk', 'diskGrowth'].includes(item.kind)
+      || !['pending', 'blocked', 'awaiting_confirmation'].includes(item.status) || item.script || dryRun || healthy(snapshot, item)
+      || !resource?.active || item.key !== hash(`${item.kind}:${item.id}:${resource.cycle}`)
+      || !failures.some(f => f.kind === item.kind && (f.id || f.subject) === item.id)) continue;
+    if ((config.diskScript.maintenanceTaskIds || []).some(id => {
+      const task = taskById.get(id);
+      return task?.lastExecution && !terminal(task.lastExecution.state);
+    })) { item.reason = '现行磁盘维护任务正在执行，先沿原任务检查点完成'; continue; }
+    if (ordered.some(other => other !== item && other.id === item.id && ['disk', 'diskGrowth'].includes(other.kind)
+      && ['running', 'admitting', 'waiting', 'verifying'].includes(other.status))) {
+      item.reason = '同一磁盘已有补救正在执行，保留原处理记录'; continue;
+    }
+    const shared = scriptedPaths.get(item.id);
+    if (shared) { item.script = shared; await persist(); continue; }
+    const receiptFile = join(CONFIG_DIR, 'monitoring-recovery-receipts', `${item.key}-disk-script.json`);
+    item.script = { status: 'started', startedAt: at, receiptFile };
+    await persist(); // a crash cannot silently replay a cleanup
+    try {
+      const result = await diskScript({ path: item.id, config: config.diskScript });
+      await save(receiptFile, { key: item.key, ...result });
+      item.script.status = 'completed'; item.script.completedAt = at; item.script.summary = result.summary;
+      item.evidence = [...new Set([...(item.evidence || []), receiptFile])];
+      if (item.status === 'pending') {
+        item.summary = result.summary;
+        item.reason = '脚本处置已完成，下一次独立观测确认恢复后再决定是否需要Session';
+      }
+    } catch (error) {
+      item.script.status = 'failed'; item.script.error = error.code || 'DISK_SCRIPT_FAILED';
+      item.reason = '脚本未完成，沿既有Session读取已保存的执行意图并定位，不自动重跑';
+    }
+    scriptedPaths.set(item.id, item.script); await persist();
+  }
   for (const item of ordered) {
     const heldSlot = item.status === 'admitting';
     if (!['pending', 'admitting'].includes(item.status) || !heldSlot && (active >= maxConcurrent || admitted >= 1)) continue;
@@ -221,6 +270,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       if (healthy(snapshot, item)) {
         item.summary = '本轮独立观测确认已恢复，无需重复补救'; item.evidence = [snapshot.generatedAt];
         touch(item, 'resolved'); continue;
+      }
+      if (config.diskScript?.enabled && ['disk', 'diskGrowth'].includes(item.kind)) {
+        if (!failures.some(f => f.kind === item.kind && (f.id || f.subject) === item.id)) continue;
+        if (!item.script || item.script.startedAt === at) continue;
       }
       if (item.kind === 'service' && item.status !== 'admitting'
         && (!failingServices.has(item.id) || (state.resources[`service:${item.id}`]?.observations || 0) < serviceConfirmations)) {

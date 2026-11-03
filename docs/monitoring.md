@@ -485,6 +485,16 @@ An optional independent `scripts/monitoring-alerts.mjs` observer needs no HTTP s
 
 ### Three-hour deduplication and persistent warnings
 
+An instance may set `alertDelivery.diskGraceMs: 1800000` to give disk capacity,
+inode and short-term-growth incidents a thirty-minute repair window. The first
+failed observation starts the durable clock; changes in severity, observer
+restarts and unknown samples do not restart it. An explicit healthy observation
+closes an unnotified incident without either an alert or a success message.
+Only a fresh failed observation at or after the deadline can publish it. This
+setting includes warning thresholds even under `risk_only`; other incident
+types retain their policies. Already published cards retain their message IDs
+and can still be updated to close the original incident.
+
 An unresolved incident keeps its original message ID. Starting recovery, switching models, changing a plan, reaching a worse disk risk stage or completing verification edits that message rather than sending another one. Minor disk-byte fluctuations do not trigger edits. Batch updates preserve the other subjects in the original message, including their recovery results. The same alert identity (kind and resource, or service for crashes) sends at most once within three hours of the first send. A verified recovery followed by recurrence inside that window updates the original card and retains both transitions in history. A later recovered-then-failed cycle can send a new card after the window; an unresolved incident never resends merely because three hours elapsed. Timestamps, process invocation IDs and changing measurements do not change notification identity. A durable dispatcher lease prevents concurrent observers from sending the same new alert twice.
 
 After ten minutes without improvement, a fresh qualifying observation adds a persistent-warning line to the existing card once. Improved severity, disk availability or account quota resets that interval; recovery clears the active line and retains its history. Missing or stale observations never establish persistence or recovery. Repeated crashes must continue beyond the interval, or the service must still be unavailable; historical crash records alone do not establish an ongoing crash loop. The existing observer evaluates this condition on its normal cadence; there is no separate reminder job.
@@ -506,6 +516,28 @@ Before resuming after a task-source change, verify that all configured important
 Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance environment to preview eligible notifications without sending or changing durable observer state. Once the current problems have been reviewed, run `--baseline` with the timer stopped, then enable the existing timer and verify its natural execution. The baseline also acknowledges existing important-task failures before they reach three observations, while preserving previous sending receipts. Known problems remain visible in Overview and the report; a later verified recovery allows a new failure to alert again, reusing the original card if it is still within three hours.
 
 ## Recovery after a failure
+
+For script-first disk maintenance, enable `recovery.diskScript.enabled` and
+configure `caches: [{kind: "npm", path: "/owned/npm-cache"}, {kind: "pip",
+path: "/owned/pip-cache"}]`, `maxBytes` (default 10 GiB), `maxDurationMs`
+(default 30 seconds, within the observer service timeout), and optional
+`maintenanceTaskIds` for existing disk-maintenance tasks. This opt-in also
+routes measured `diskGrowth` failures to recovery. Include those resource keys
+in `recovery.workflowPaths` so any fallback reads the same authorized workflow.
+
+The existing observer runs the deterministic cache procedure once per incident
+before admitting AI work. It verifies ownership, filesystem, tree contents,
+size, official cache location, package processes and open handles, then uses
+only npm/pip's official cache commands. Unknown or busy candidates are skipped;
+no generic directory deletion, dependency removal or data migration is allowed.
+The durable attempt is saved before execution and the receipt includes cache
+outcomes and physical disk deltas (including concurrent writes). An interrupted
+attempt is not automatically replayed. Existing in-flight maintenance retains
+ownership. A following healthy observation closes the incident without a
+Session; persistent problems use the existing bounded Session fallback with
+the script receipt. Disk fallback results stay local; notification is owned by
+the observer's grace period. Existing confirmation plans are retained and never
+executed merely because the script policy was enabled.
 
 When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
 
