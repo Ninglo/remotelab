@@ -1543,7 +1543,17 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
       try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary); }
-      catch { delivery.text = '面试查询暂时不可用，请联系 HR。'; }
+      catch { delivery.text = null; }
+      if (!delivery.text) {
+        const failed = await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST',
+          body: { leaseId: claim.leaseId, error: 'Restricted query has no authorized reply',
+            definiteFailure: true, safeToRetry: false } });
+        if (!failed.response.ok) throw new Error('Unable to record silent query rejection');
+        const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
+          body: { state: 'cancelled', leaseId: claim.leaseId, reason: 'Restricted query intentionally silent' } });
+        if (!resolved.response.ok) throw new Error('Unable to suppress rejected query');
+        return resolved.json?.delivery;
+      }
     }
   }
   const summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
@@ -1914,10 +1924,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     const enqueue = helpers.queueFeishuReply || queueFeishuReply;
     try {
       const text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(runtime.config.accessPolicy, summary);
+      if (!text) return { ignored: true, reason: 'restricted_no_reply' };
       return await enqueue(runtime, { ...summary, restrictedInterview: true }, text);
     } catch (error) {
       console.error('[feishu-restricted] query unavailable:', error.message);
-      return enqueue(runtime, { ...summary, restrictedInterview: true }, '面试查询暂时不可用，请联系 HR。');
+      return { ignored: true, reason: 'restricted_query_failed' };
     }
   }
   if (helpers.preparedSubmission) {

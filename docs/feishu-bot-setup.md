@@ -1290,7 +1290,7 @@ HR messages retain the normal executor. Interviewers use only their own private
 text or rich-text messages and the signed read-only endpoint, supporting `我的候选人`,
 `查询 姓名或候选人ID`, `简历 姓名或候选人ID`, `准备 姓名或候选人ID`, and
 `提问 姓名或ID | 问题`. The latter actions still select exactly one authorized
-candidate in the backend before generating suggestions or an answer. Other inputs get an explanation;
+candidate in the backend before generating suggestions or an answer. Other inputs are silently ignored;
 other identities are rejected. No interviewer message, command, retry or document
 comment is submitted to the general executor. Copied list numbers are ignored;
 rich text supplies only the provider-normalized message text to the same bounded
@@ -1312,7 +1312,10 @@ local policy rejection is recorded as a definite failure before cancellation.
 The endpoint must verify the gateway credential and HMAC over `JSON.stringify`
 of the request body, then validate timestamp, app, tenant and sender and filter
 records before returning data. The connector sends no HR history or files.
-The response is `{text}` (or `{data:{text}}`). Backend assignment, field selection,
+The response is `{text}` (or `{data:{text}}`). `{reply:false}` suppresses a denied
+or unrelated query without publishing any text. A rejection or backend failure
+at delivery also cancels the queued reply; it never emits stale output or command help.
+Backend assignment, field selection,
 audit and revocation rules remain the application's responsibility.
 
 Run `node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-restricted-access.mjs`

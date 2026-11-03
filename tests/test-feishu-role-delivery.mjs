@@ -65,5 +65,17 @@ try {
   } });
   assert.equal((await getSourceDelivery(hrReply.id)).state, 'delivered');
   assert.equal(queries, 1, 'HR replies do not enter the restricted query route');
+  for (const failed of [false, true]) {
+    const responseId = `revoked-${failed}`;
+    await recordRoleDeliveryContext(runtime(), event, { responseId });
+    const pending = await enqueueSourceDelivery({ responseId, text: 'STALE AUTHORIZED DATA',
+      sourceDelivery: sourceDelivery(event) });
+    await processSourceDeliveryOnce(runtime(), { ...helpers, queryRestrictedInterview: async () => {
+      if (failed) throw new Error('backend unavailable');
+      return null;
+    } });
+    assert.equal((await getSourceDelivery(pending.id)).state, 'cancelled');
+    assert.equal(sends, 1, 'revoked or failed queries remain silent after queueing');
+  }
   console.log('PASS: real outbox round trip, restart, HR reply, scoped requery, tamper/revocation denial and legacy cancellation');
 } finally { await rm(home, { recursive: true, force: true }); }

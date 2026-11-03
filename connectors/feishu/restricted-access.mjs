@@ -62,14 +62,14 @@ export function parseInterviewQuery(text) {
 export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now } = {}) {
   if (feishuAccessRole(policy, summary) !== 'interviewer') throw new Error('Interviewer identity required');
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
-    return '面试信息仅支持本人私聊查询，请私聊机器人。';
+    return null;
   }
   // messageText is already extracted by the provider event normalizer. Rich
   // text uses the same bounded command parser and signed identity as plain text;
   // no attachments, linked documents or forwarded speakers enter the query.
-  if (!['text', 'post'].includes(summary.messageType)) return '请发送文字或富文本查询；此通道不解析图片、语音或合并转发。';
+  if (!['text', 'post'].includes(summary.messageType)) return null;
   const query = parseInterviewQuery(summary.messageText);
-  if (!query) return '此通道只查询本人已分配的面试信息。发送「我的候选人」、「查询 姓名或候选人ID」、「简历 姓名或候选人ID」、「准备 姓名或候选人ID」，或「提问 姓名或ID | 你的问题」。';
+  if (!query) return null;
   const credentials = JSON.parse(await readFile(policy.roles.credentialsPath, 'utf8'));
   if (!credentials.apiKey || !credentials.signingKey) throw new Error('Restricted query credentials unavailable');
   const payload = { version: 1, appId: policy.roles.appId, tenantKey: policy.roles.tenantKey,
@@ -82,6 +82,9 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   if (!response.ok) throw new Error(`Restricted interview query failed (${response.status})`);
   const packet = await response.json();
   const result = packet.data || packet;
+  // The backend owns object access and topic scope. A silent rejection must
+  // never turn into command help, a fallback answer or an empty queued message.
+  if (result.reply === false) return null;
   if (typeof result.text !== 'string' || !result.text.trim() || result.text.length > 24_000) {
     throw new Error('Invalid restricted query response');
   }

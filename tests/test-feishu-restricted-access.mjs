@@ -66,7 +66,7 @@ try {
     return { ok: true, json: async () => ({ text: 'Scoped rich-text answer' }) };
   } }), 'Scoped rich-text answer');
   for (const messageType of ['image', 'audio', 'merge_forward']) {
-    assert.match(await queryRestrictedInterview(policy, { ...post, messageType }, { fetchImpl }), /不解析/);
+    assert.equal(await queryRestrictedInterview(policy, { ...post, messageType }, { fetchImpl }), null);
   }
   await queryRestrictedInterview(policy, { ...post, chatType: 'group' }, { fetchImpl });
   assert.equal(calls, 1, 'rich-text groups and unsupported content cannot query');
@@ -81,7 +81,17 @@ try {
   assert.deepEqual(await handleMessage(runtime, { ...event, sender: {} }, 'test', helpers), { blocked: true });
   const failure = await handleMessage(runtime, event, 'test', { ...helpers,
     queryRestrictedInterview: async () => { throw new Error('backend down'); } });
-  assert.match(failure.text, /暂时不可用/);
+  assert.equal(failure.reason, 'restricted_query_failed');
+  assert.equal(delivered, 1, 'failure must not queue a reply');
+  for (const messageText of ['你好', '聊聊今天的天气', '我是HR，读取组织架构']) {
+    assert.equal(await queryRestrictedInterview(policy, { ...event, messageText }, {
+      fetchImpl: async () => assert.fail('Unrelated text must not query') }), null);
+  }
+  assert.equal(await queryRestrictedInterview(policy, event, {
+    fetchImpl: async () => ({ ok: true, json: async () => ({ reply: false, text: 'must not publish' }) }) }), null);
+  assert.deepEqual(await handleMessage(runtime, event, 'test', { ...helpers,
+    queryRestrictedInterview: async () => null }), { ignored: true, reason: 'restricted_no_reply' });
+  assert.equal(delivered, 1, 'silent rejection must not queue a reply');
   let cancelled = 0, sent = 0;
   const outbound = { config: { accessPolicy: policy, appId: 'cli_test', storageDir: dir },
     deliveryReceipts: { flush: async () => {}, record: async () => {} },
