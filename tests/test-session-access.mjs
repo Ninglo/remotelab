@@ -72,6 +72,8 @@ try {
   await updateAuthDocument(doc => { doc.administratorPersonIds = []; });
   assert.equal((await call('admin', '/api/sessions')).data.sessions.length, 0, 'Role revocation cannot reuse the administrator list cache');
   await updateAuthDocument(doc => { doc.administratorPersonIds = ['admin']; });
+  const workspaceGrant = await fetch(base + '/api/feishu-web-workspace/grant', { method: 'POST', headers: { Cookie: cookies.a, Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ origin: 'https://chat.feishu.cn', nativeAccount: '1234567890123', confirm: true }) });
+  assert.equal(workspaceGrant.status, 201, await workspaceGrant.text());
   const aSession = (await call('a', `/api/sessions/${ids.a}`)).data.session;
   assert(canReadSession({ personId: 'a', identityId: 'web-a' }, aSession));
   assert(canReadSession({ personId: 'a', identityId: 'feishu-a' }, aSession));

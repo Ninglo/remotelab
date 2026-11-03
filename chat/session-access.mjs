@@ -47,7 +47,7 @@ export function memberRouteAllowed(method, path, personId) {
   if (['/api/settings', '/api/auto-routing', '/api/tools'].includes(path)) return method === 'GET';
   if (['/api/auth/me', '/api/models', '/api/runtime-presets', '/api/push/vapid-public-key', '/api/push/subscribe',
     '/api/message-reply-settings', '/api/personal-memory-settings', '/api/voice-review/settings', '/api/voice-review',
-    '/api/voice-shortcut/recording-diagnostic', '/api/feishu-web-topics/grant', '/api/feishu-personal-workspace/grant',
+    '/api/voice-shortcut/recording-diagnostic', '/api/feishu-web-topics/grant', '/api/feishu-web-workspace/grant',
     '/api/feishu-web-settings/grant', '/api/feishu-web-settings/native-grant'].includes(path)) return true;
   if (['/api/usage/events', '/api/usage/settings'].includes(path)) return method === 'POST';
   return ['/', '/upload-fallback'].includes(path) || path.startsWith('/static/') || path.startsWith('/page/feishu-');
