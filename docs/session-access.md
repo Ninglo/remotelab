@@ -1,6 +1,6 @@
 # Session ownership and administrator access
 
-Ordinary workbench accounts can read and operate only Sessions they created. Administrators can access all Sessions. This is enforced on the server for lists (including archived counts and summary references), search, direct URLs, events and bodies, Runs, mutations, shares, file assets, legacy media, WebSocket hints and completion push notifications. Display filters and personal Space/group organization do not grant access.
+Ordinary workbench accounts can read and operate only Sessions they created. Administrators can access all Sessions. This is enforced on the server for lists (including archived counts and summary references), search, direct URLs, events and bodies, Runs, mutations, shares, file assets, legacy media, WebSocket hints and completion push notifications. The sidebar’s “All sessions” / “My sessions” options filter only this authorized set; “All sessions” does not include other owners for an ordinary account. Display filters and personal Space/group organization do not grant access.
 
 ## Operator handoff
 

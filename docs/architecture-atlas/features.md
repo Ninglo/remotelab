@@ -80,11 +80,11 @@ Agent 命令入口：`remotelab work`。
 
 入口：会话侧栏与会话菜单；设置 → 会话 → 我的视图。
 
-使用条件：普通账号只能访问自己创建的 Session；管理员可访问全部。个人筛选和分组只在有权范围内组织视图，不授予额外权限。
+使用条件：普通账号只能访问自己创建的 Session；管理员可访问全部。侧栏“全部会话／我的会话”只筛选当前账号有权访问的范围；普通账号的“全部会话”仍只有自己创建的会话。个人筛选和分组不授予额外权限。
 
 可以这样说：“把这些相关会话放到我的同一个分组里。”
 
-维护线索：[static/chat/sidebar-ui.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/sidebar-ui.js)、[chat/session-person-view.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-person-view.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/README.zh.md)。
+维护线索：[static/chat/sidebar-ui.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/sidebar-ui.js)、[chat/session-person-view.mjs](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/chat/session-person-view.mjs)、[README.zh.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/README.zh.md)、[static/chat/bootstrap-session-catalog.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/bootstrap-session-catalog.js)、[static/chat/i18n.js](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/static/chat/i18n.js)、[docs/session-access.md](https://github.com/Ninglo/remotelab/blob/c914b197be3e84c19cb558786d9cc78c71b06c28/docs/session-access.md)。
 
 ### 归档、自动归档和重新打开
 

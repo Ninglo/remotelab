@@ -165,12 +165,15 @@
           "name": "会话搜索、筛选、置顶、重命名和分组",
           "purpose": "在有权访问的会话中找回自己的工作，并按个人视图组织 Space 和 Group。",
           "entry": "会话侧栏与会话菜单；设置 → 会话 → 我的视图。",
-          "condition": "普通账号只能访问自己创建的 Session；管理员可访问全部。个人筛选和分组只在有权范围内组织视图，不授予额外权限。",
+          "condition": "普通账号只能访问自己创建的 Session；管理员可访问全部。侧栏“全部会话／我的会话”只筛选当前账号有权访问的范围；普通账号的“全部会话”仍只有自己创建的会话。个人筛选和分组不授予额外权限。",
           "example": "把这些相关会话放到我的同一个分组里。",
           "sources": [
             "static/chat/sidebar-ui.js",
             "chat/session-person-view.mjs",
-            "README.zh.md"
+            "README.zh.md",
+            "static/chat/bootstrap-session-catalog.js",
+            "static/chat/i18n.js",
+            "docs/session-access.md"
           ],
           "commands": []
         },

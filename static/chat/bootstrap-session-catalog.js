@@ -434,7 +434,7 @@ function renderPersonFilterOptions() {
   const people = getPeopleDirectory();
   const entries = [[
     FILTER_ALL_VALUE,
-    `${t("sidebar.filter.allPeople")} (${getSessionCountForPersonFilter(FILTER_ALL_VALUE)})`,
+    `${t("sidebar.filter.allSessions")} (${getSessionCountForPersonFilter(FILTER_ALL_VALUE)})`,
   ]];
   for (const person of people) {
     const count = getSessionCountForPersonFilter(person.id);
