@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { join } from 'node:path';
+import { createRecordStore } from '../../lib/durable-records.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -51,42 +53,94 @@ export function parseInterviewQuery(text) {
       ...(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(selector)
         ? { candidateId: selector } : { candidateName: selector }) };
   }
-  const match = /^(查询|简历|准备)\s+([^\r\n]{1,80})$/.exec(value);
-  if (!match) return null;
+  const match = /^(查询|简历|准备)\s+([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.exec(value);
+  if (!match) return value ? { action: 'chat', question: value } : null;
   const selector = match[2].trim();
   return { action: ({ 查询: 'detail', 简历: 'resume', 准备: 'prepare' })[match[1]],
     ...(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(selector)
       ? { candidateId: selector } : { candidateName: selector }) };
 }
 
-export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now } = {}) {
+export const INTERVIEW_QUERY_UNAVAILABLE = '面试查询服务暂时不可用，请稍后重试；无需重新授权。';
+
+export function restrictedInterviewOptions(runtime) {
+  return { store: runtime.interviewConversationStore ||= createRecordStore(
+    join(runtime.config.storageDir, 'interview-conversations')) };
+}
+
+const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+const validIds = ids => Array.isArray(ids) && ids.length <= 100 && ids.every(uuid) && new Set(ids).size === ids.length;
+const recordKey = value => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,24);
+
+// The backend may resolve natural language only into this closed, signed query
+// protocol. It cannot nominate another URL, identity, role or executor command.
+function resolvedQuery(result, original) {
+  const q = result.nextQuery;
+  if (!q || !['answer', 'resume'].includes(q.action) || !validIds(q.candidateIds) || !q.candidateIds.length
+      || Object.keys(q).some(key => !['action','candidateIds','question','context'].includes(key))
+      || (q.action === 'answer' && q.question !== original.question)
+      || (q.action === 'resume' && (q.question || q.context))) throw new Error('Invalid interview query resolution');
+  return { action: q.action, candidateIds: q.candidateIds,
+    ...(q.action === 'answer' ? {question: original.question, ...(original.context ? {context:original.context} : {})} : {}) };
+}
+
+export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store } = {}) {
   if (feishuAccessRole(policy, summary) !== 'interviewer') throw new Error('Interviewer identity required');
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
     return null;
   }
-  // messageText is already extracted by the provider event normalizer. Rich
-  // text uses the same bounded command parser and signed identity as plain text;
-  // no attachments, linked documents or forwarded speakers enter the query.
+  // Normalized rich text and plain text share the restricted backend; arbitrary
+  // wording never enters the general executor or grants object access.
   if (!['text', 'post'].includes(summary.messageType)) return null;
-  const query = parseInterviewQuery(summary.messageText);
+  let query = parseInterviewQuery(summary.messageText);
   if (!query) return null;
+  if ((query.question?.length || 0) > 4000) return '问题较长，请分成几条发送，每条不超过4000字。';
+  const subject = [policy.roles.appId, policy.roles.tenantKey, summary.sender.openId, summary.chatId || ''];
+  const messageKey = recordKey([...subject, summary.messageId]);
+  const contextKey = recordKey([...subject, 'context']);
+  if (store) {
+    const context = await store.get(contextKey);
+    const snapshot = await store.mutate(messageKey, previous => previous || {
+      query: {...query, ...(query.action === 'chat' && context?.expiresAt > now()
+        ? {context:{candidateIds:context.candidateIds,question:context.question}} : {})},
+      createdAt: now(),
+    });
+    query = snapshot.resolvedQuery || snapshot.query;
+  }
   const credentials = JSON.parse(await readFile(policy.roles.credentialsPath, 'utf8'));
   if (!credentials.apiKey || !credentials.signingKey) throw new Error('Restricted query credentials unavailable');
-  const payload = { version: 1, appId: policy.roles.appId, tenantKey: policy.roles.tenantKey,
-    senderOpenId: summary.sender.openId, messageId: summary.messageId, issuedAt: now(), query };
-  const body = JSON.stringify(payload);
-  const signature = createHmac('sha256', credentials.signingKey).update(body).digest('hex');
-  const response = await fetchImpl(policy.roles.endpoint, { method: 'POST', redirect: 'error',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credentials.apiKey}`,
-      'X-Interview-Signature': signature }, body, signal: AbortSignal.timeout(30_000) });
-  if (!response.ok) throw new Error(`Restricted interview query failed (${response.status})`);
-  const packet = await response.json();
-  const result = packet.data || packet;
+  const request = async selected => {
+    const payload = { version: 1, appId: policy.roles.appId, tenantKey: policy.roles.tenantKey,
+      senderOpenId: summary.sender.openId, messageId: summary.messageId, issuedAt: now(), query: selected };
+    const body = JSON.stringify(payload);
+    const signature = createHmac('sha256', credentials.signingKey).update(body).digest('hex');
+    const response = await fetchImpl(policy.roles.endpoint, { method: 'POST', redirect: 'error',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credentials.apiKey}`,
+        'X-Interview-Signature': signature }, body, signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error(`Restricted interview query failed (${response.status})`);
+    const packet = await response.json();
+    return packet.data || packet;
+  };
+  let result = await request(query);
+  if (query.action === 'chat' && result.nextQuery) {
+    query = resolvedQuery(result, query);
+    if (store) await store.mutate(messageKey, previous => ({...previous, resolvedQuery:query}));
+    result = await request(query);
+  }
   // The backend owns object access and topic scope. A silent rejection must
   // never turn into command help, a fallback answer or an empty queued message.
   if (result.reply === false) return null;
   if (typeof result.text !== 'string' || !result.text.trim() || result.text.length > 24_000) {
     throw new Error('Invalid restricted query response');
+  }
+  if (store && validIds(result.candidateIds)) {
+    const snapshot = await store.get(messageKey);
+    // A delayed delivery/retry cannot replace context from a newer message.
+    await store.mutate(contextKey, previous => (previous?.createdAt || 0) > snapshot.createdAt ? previous : {
+      createdAt:snapshot.createdAt, expiresAt:now()+24*60*60_000,
+      candidateIds:result.candidateIds, question:snapshot.query.question || summary.messageText.slice(0,4000),
+    });
+    await store.archive(messageKey);
   }
   return result.text;
 }

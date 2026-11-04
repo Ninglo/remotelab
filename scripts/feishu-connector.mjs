@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview } from '../connectors/feishu/restricted-access.mjs';
+import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview,
+  restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE } from '../connectors/feishu/restricted-access.mjs';
 import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
@@ -1543,8 +1544,12 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     if (authorization.role === 'interviewer') {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
-      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary); }
-      catch { delivery.text = null; }
+      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary,
+        restrictedInterviewOptions(runtime)); }
+      catch (error) {
+        console.error('[feishu-restricted] delivery query unavailable:', error.message);
+        delivery.text = INTERVIEW_QUERY_UNAVAILABLE;
+      }
       if (!delivery.text) {
         const failed = await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST',
           body: { leaseId: claim.leaseId, error: 'Restricted query has no authorized reply',
@@ -1924,12 +1929,13 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (role === 'interviewer') {
     const enqueue = helpers.queueFeishuReply || queueFeishuReply;
     try {
-      const text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(runtime.config.accessPolicy, summary);
+      const text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(runtime.config.accessPolicy, summary,
+        restrictedInterviewOptions(runtime));
       if (!text) return { ignored: true, reason: 'restricted_no_reply' };
       return await enqueue(runtime, { ...summary, restrictedInterview: true }, text);
     } catch (error) {
       console.error('[feishu-restricted] query unavailable:', error.message);
-      return { ignored: true, reason: 'restricted_query_failed' };
+      return enqueue(runtime, { ...summary, restrictedInterview: true }, INTERVIEW_QUERY_UNAVAILABLE);
     }
   }
   if (helpers.preparedSubmission) {

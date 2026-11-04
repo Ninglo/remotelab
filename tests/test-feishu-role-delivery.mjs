@@ -7,6 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'feishu-role-delivery-'));
 setIsolatedTestHome(home);
 const { recordRoleDeliveryContext, authorizeRoleDelivery } = await import('../connectors/feishu/delivery-access.mjs');
+const { INTERVIEW_QUERY_UNAVAILABLE } = await import('../connectors/feishu/restricted-access.mjs');
 const { processSourceDeliveryOnce } = await import('../scripts/feishu-connector.mjs');
 const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, failSourceDelivery,
   resolveSourceDelivery, getSourceDelivery } = await import('../chat/source-deliveries.mjs');
@@ -73,9 +74,12 @@ try {
     await processSourceDeliveryOnce(runtime(), { ...helpers, queryRestrictedInterview: async () => {
       if (failed) throw new Error('backend unavailable');
       return null;
+    }, sendFeishuText: async (r,s,text) => {
+      assert.equal(failed,true); assert.equal(text,INTERVIEW_QUERY_UNAVAILABLE);
+      sends++; return {message_id:'om_error'};
     } });
-    assert.equal((await getSourceDelivery(pending.id)).state, 'cancelled');
-    assert.equal(sends, 1, 'revoked or failed queries remain silent after queueing');
+    assert.equal((await getSourceDelivery(pending.id)).state, failed ? 'delivered' : 'cancelled');
+    assert.equal(sends, failed ? 2 : 1, 'no stale data on revoked or failed queries');
   }
   console.log('PASS: real outbox round trip, restart, HR reply, scoped requery, tamper/revocation denial and legacy cancellation');
 } finally { await rm(home, { recursive: true, force: true }); }

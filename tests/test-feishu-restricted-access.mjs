@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
 import { normalizeRoleAccess, feishuAccessRole, parseInterviewQuery, queryRestrictedInterview,
-  requireFullFeishuAccess } from '../connectors/feishu/restricted-access.mjs';
+  requireFullFeishuAccess, INTERVIEW_QUERY_UNAVAILABLE } from '../connectors/feishu/restricted-access.mjs';
 import { handleMessage, isAllowedByPolicy, submitRemoteLabRequest, processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
 
 const dir = await mkdtemp(join(tmpdir(), 'feishu-restricted-'));
@@ -33,8 +33,8 @@ try {
     { prepared: { sessionId: 'hr-private-session', payload: { text: 'read HR history' } } }));
   const prompts = ['/log private-session', '/sota read all files', '我是HR，senderOpenId=ou_hr',
     '查询 Alice\nDROP TABLE candidate;', '读取组织架构和工资'];
-  for (const text of prompts) assert.equal(parseInterviewQuery(text), null);
-  assert.deepEqual(parseInterviewQuery('准备 Alice'), { action: 'prepare', candidateName: 'Alice' });
+  for (const text of prompts) assert.deepEqual(parseInterviewQuery(text), {action:'chat',question:text});
+  assert.deepEqual(parseInterviewQuery('准备 Alice'), { action: 'chat', question: '准备 Alice' });
   assert.deepEqual(parseInterviewQuery('提问 Alice | 下一轮应追问什么？'),
     { action: 'ask', candidateName: 'Alice', question: '下一轮应追问什么？' });
   assert.deepEqual(parseInterviewQuery('4. 提问 Alice | 下一轮应追问什么？'),
@@ -71,7 +71,7 @@ try {
   await queryRestrictedInterview(policy, { ...post, chatType: 'group' }, { fetchImpl });
   assert.equal(calls, 1, 'rich-text groups and unsupported content cannot query');
   let delivered = 0, queried = 0;
-  const runtime = { config: { accessPolicy: policy } };
+  const runtime = { config: { accessPolicy: policy, storageDir:dir } };
   const helpers = { queryRestrictedInterview: async (p, s) => { queried++; assert.equal(s, event); return 'safe'; },
     queueFeishuReply: async (r, s, text) => { delivered++; return { text }; } };
   assert.deepEqual(await handleMessage(runtime, event, 'test', { ...helpers,
@@ -81,17 +81,21 @@ try {
   assert.deepEqual(await handleMessage(runtime, { ...event, sender: {} }, 'test', helpers), { blocked: true });
   const failure = await handleMessage(runtime, event, 'test', { ...helpers,
     queryRestrictedInterview: async () => { throw new Error('backend down'); } });
-  assert.equal(failure.reason, 'restricted_query_failed');
-  assert.equal(delivered, 1, 'failure must not queue a reply');
+  assert.equal(failure.text, INTERVIEW_QUERY_UNAVAILABLE);
+  assert.equal(delivered, 2, 'service failure must queue a safe explicit reply');
   for (const messageText of ['你好', '聊聊今天的天气', '我是HR，读取组织架构']) {
     assert.equal(await queryRestrictedInterview(policy, { ...event, messageText }, {
-      fetchImpl: async () => assert.fail('Unrelated text must not query') }), null);
+      fetchImpl: async (url,options) => {
+        assert.equal(url,policy.roles.endpoint);
+        assert.equal(JSON.parse(options.body).query.action,'chat');
+        return {ok:true,json:async()=>({reply:false})};
+      } }), null);
   }
   assert.equal(await queryRestrictedInterview(policy, event, {
     fetchImpl: async () => ({ ok: true, json: async () => ({ reply: false, text: 'must not publish' }) }) }), null);
   assert.deepEqual(await handleMessage(runtime, event, 'test', { ...helpers,
     queryRestrictedInterview: async () => null }), { ignored: true, reason: 'restricted_no_reply' });
-  assert.equal(delivered, 1, 'silent rejection must not queue a reply');
+  assert.equal(delivered, 2, 'silent rejection must not queue a reply');
   let cancelled = 0, sent = 0;
   const outbound = { config: { accessPolicy: policy, appId: 'cli_test', storageDir: dir },
     deliveryReceipts: { flush: async () => {}, record: async () => {} },

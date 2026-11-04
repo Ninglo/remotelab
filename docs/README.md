@@ -98,7 +98,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Session work awareness](session-work-awareness.md) — personal work-start switches select a versioned rule only for the verified requester; accepted work keeps its original snapshot.
   Independent Web topics use the existing explicit lookup to find project candidates, current briefs and topic directories without automatically binding or resuming work; see [Web topic background](session-work-awareness.md#网页独立新话题的背景续接).
 - [Connector turn context](connector-turn-context.md) — compact startup/transport guidance, on-demand project brief pointers, recovery snapshots, shared project announcements for bound Feishu chats, topic snapshots and acceptance-based deduplication.
-- [Feishu role-restricted replies](feishu-bot-setup.md#role-restricted-application-queries) — plain/rich-text queries, silent unrelated/denied requests, connector-owned authorization records, normalized outbox compatibility, per-send scope checks and restart-safe delivery tests.
+- [Feishu role-restricted replies](feishu-bot-setup.md#role-restricted-application-queries) — natural plain/rich-text questions, candidate followups, explicit service errors, connector-owned authorization records, per-send scope checks and restart-safe delivery tests.
 
 - [RemoteLab deliverables](architecture-atlas/deliverables.html) — a generated chapter of the unified explanation project; reuses the feature catalog, page catalog and original source records instead of maintaining a separate memory document.
 
@@ -205,5 +205,5 @@ Employee SSH Codex memory: [authenticated account and file evidence](monitoring.
 [Employee site login](employee-site-login.md) shares Feishu login across managed static pages, previews and research pages on the same instance domain. New sites record their creator and reserve administrators without introducing role management.
 
 - [Feishu role-restricted application queries](feishu-bot-setup.md#role-restricted-application-queries):
-  exact HR/interviewer admission, signed candidate queries and preparation/Q&A commands, and separation from the
+  exact HR/interviewer admission, signed natural candidate queries, durable per-chat followups, safe backend-error replies and separation from the
   general executor (`connectors/feishu/restricted-access.mjs`).
