@@ -13,7 +13,7 @@ const storeFor = runtime => runtime.roleDeliveryContexts ||= createRecordStore(
 export async function recordRoleDeliveryContext(runtime, summary, { responseId, sessionId = 'outbound', target = summary }) {
   if (runtime.config.accessPolicy?.mode !== 'roles') return;
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
-  if (!['hr', 'interviewer'].includes(role) || !responseId || !summary.messageId
+  if (!['hr', 'collaborator', 'interviewer'].includes(role) || !responseId || !summary.messageId
       || (role === 'interviewer' && sessionId !== 'outbound')) throw new Error('Invalid role delivery context');
   const context = { responseId, sessionId, sourceRouteId: runtime.config.sourceRouteId || 'default',
     target: normalizeConversationTarget(target), summary: {
@@ -42,7 +42,7 @@ export async function authorizeRoleDelivery(runtime, delivery) {
       || context.target.tenantKey !== delivery.target?.tenantKey) return null;
   const role = feishuAccessRole(runtime.config.accessPolicy, context.summary);
   if (runtime.config.appId !== context.summary.appId) return null;
-  if (role === 'hr') return { role, summary: context.summary };
+  if (['hr', 'collaborator'].includes(role)) return { role, summary: context.summary };
   if (role !== 'interviewer' || delivery.sessionId !== 'outbound' || delivery.attachment
       || delivery.kind !== 'content'
       || canonicalJson(context.target) !== canonicalJson(normalizeConversationTarget(delivery.target))) return null;

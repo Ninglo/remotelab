@@ -641,7 +641,7 @@ async function updateKnownSenders(pathname, summary) {
 }
 
 async function isAllowedByPolicy(policy, summary) {
-  if (policy.mode === 'roles') return feishuAccessRole(policy, summary) === 'hr';
+  if (policy.mode === 'roles') return ['hr', 'collaborator'].includes(feishuAccessRole(policy, summary));
   if (policy.mode !== 'whitelist') return true;
   const sender = summary.sender || {};
   const allowed = await loadEffectiveAllowedSenders(policy);

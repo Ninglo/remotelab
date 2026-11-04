@@ -224,7 +224,8 @@ export async function reconcileDocumentBinding(runtime, binding) {
         const item = state.pending[0];
         const policy = runtime.config.accessPolicy;
         if (policy?.mode === 'roles' && (runtime.config.appId !== policy.roles.appId
-            || !policy.roles.hrOpenIds.includes(item.payload?.sourceContext?.sender?.openId))) {
+            || ![...policy.roles.hrOpenIds, ...(policy.roles.collaboratorOpenIds || [])]
+              .includes(item.payload?.sourceContext?.sender?.openId))) {
           state.seen[item.key] = item.revision;
           state.pending.shift();
           await writeBindingJson(statePath, state);

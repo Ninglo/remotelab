@@ -9,15 +9,18 @@ export function normalizeRoleAccess(value) {
   if (!value || !trim(value.appId) || !trim(value.tenantKey)
       || !Array.isArray(value.hrOpenIds) || !value.hrOpenIds.length
       || !Array.isArray(value.interviewerOpenIds)
+      || (value.collaboratorOpenIds !== undefined && !Array.isArray(value.collaboratorOpenIds))
       || !trim(value.endpoint).startsWith('https://') || !trim(value.credentialsPath).startsWith('/')) {
     throw new Error('roles policy requires app, tenant, exact role IDs, HTTPS endpoint and credentialsPath');
   }
-  const ids = [...value.hrOpenIds, ...value.interviewerOpenIds];
+  const collaboratorOpenIds = value.collaboratorOpenIds || [];
+  const ids = [...value.hrOpenIds, ...collaboratorOpenIds, ...value.interviewerOpenIds];
   if (ids.some(id => !/^ou_[a-zA-Z0-9]+$/.test(id)) || new Set(ids).size !== ids.length) {
     throw new Error('roles policy has invalid or overlapping identities');
   }
   return { appId: value.appId, tenantKey: value.tenantKey,
-    hrOpenIds: [...value.hrOpenIds], interviewerOpenIds: [...value.interviewerOpenIds],
+    hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
+    interviewerOpenIds: [...value.interviewerOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };
 }
 
@@ -30,12 +33,13 @@ export function feishuAccessRole(policy, summary) {
   if (!config || summary?.appId !== config.appId || summary?.tenantKey !== config.tenantKey
       || sender?.senderType !== 'user' || sender?.tenantKey !== config.tenantKey) return 'deny';
   if (config.hrOpenIds.includes(sender.openId)) return 'hr';
+  if (config.collaboratorOpenIds?.includes(sender.openId)) return 'collaborator';
   if (config.interviewerOpenIds.includes(sender.openId)) return 'interviewer';
   return 'deny';
 }
 
 export function requireFullFeishuAccess(policy, summary) {
-  if (!['legacy', 'hr'].includes(feishuAccessRole(policy, summary))) {
+  if (!['legacy', 'hr', 'collaborator'].includes(feishuAccessRole(policy, summary))) {
     throw new Error('Restricted sender cannot enter the general RemoteLab executor');
   }
 }

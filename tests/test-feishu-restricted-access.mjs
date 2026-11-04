@@ -12,7 +12,7 @@ try {
   const credentialsPath = join(dir, 'secret.json');
   await writeFile(credentialsPath, JSON.stringify({ apiKey: 'test-api', signingKey: 'test-signing-key' }));
   const policy = { mode: 'roles', roles: normalizeRoleAccess({ appId: 'cli_test', tenantKey: 'tenant',
-    hrOpenIds: ['ou_hr'], interviewerOpenIds: ['ou_interviewer'],
+    hrOpenIds: ['ou_hr'], collaboratorOpenIds: ['ou_collaborator'], interviewerOpenIds: ['ou_interviewer'],
     endpoint: 'https://example.invalid/openapi/interviews/query', credentialsPath }) };
   const event = { appId: 'cli_test', tenantKey: 'tenant', chatType: 'p2p', messageType: 'text',
     eventType: 'im.message.receive_v1', messageId: 'om_test', messageText: '我的候选人',
@@ -21,7 +21,17 @@ try {
   const hr = { ...event, sender: { ...event.sender, openId: 'ou_hr' } };
   assert.equal(feishuAccessRole(policy, hr), 'hr');
   assert.equal(await isAllowedByPolicy(policy, hr), true);
-  assert.equal(await isAllowedByPolicy(policy, event), false, 'control callbacks only admit HR');
+  const collaborator = { ...event, sender: { ...event.sender, openId: 'ou_collaborator' } };
+  assert.equal(feishuAccessRole(policy, collaborator), 'collaborator');
+  assert.equal(await isAllowedByPolicy(policy, collaborator), true);
+  assert.doesNotThrow(() => requireFullFeishuAccess(policy, collaborator));
+  const { collaboratorOpenIds, ...legacyRoles } = policy.roles;
+  assert.deepEqual(normalizeRoleAccess(legacyRoles).collaboratorOpenIds, []);
+  for (const collaboratorOpenIds of [null, 'ou_collaborator', ['invalid'], ['ou_hr'], ['ou_interviewer'], ['ou_a', 'ou_a']]) {
+    assert.throws(() => normalizeRoleAccess({ ...policy.roles, collaboratorOpenIds }));
+  }
+  await assert.rejects(queryRestrictedInterview(policy, collaborator), /Interviewer identity required/);
+  assert.equal(await isAllowedByPolicy(policy, event), false, 'interviewers cannot use general control callbacks');
   for (const value of [ { ...event, appId: 'other' }, { ...event, tenantKey: 'other' },
     { ...event, sender: { ...event.sender, tenantKey: 'other' } },
     { ...event, sender: { ...event.sender, senderType: 'app' } },

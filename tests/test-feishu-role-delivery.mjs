@@ -12,7 +12,7 @@ const { processSourceDeliveryOnce } = await import('../scripts/feishu-connector.
 const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, failSourceDelivery,
   resolveSourceDelivery, getSourceDelivery } = await import('../chat/source-deliveries.mjs');
 const policy = { mode: 'roles', roles: { appId: 'cli_test', tenantKey: 'tenant',
-  hrOpenIds: ['ou_hr'], interviewerOpenIds: ['ou_ge'] } };
+  hrOpenIds: ['ou_hr'], collaboratorOpenIds: ['ou_collaborator'], interviewerOpenIds: ['ou_ge'] } };
 const config = { accessPolicy: policy, appId: 'cli_test', sourceRouteId: 'test', storageDir: join(home, 'connector') };
 const event = { appId: 'cli_test', tenantKey: 'tenant', chatId: 'oc_ge', chatType: 'p2p',
   messageId: 'om_ge', messageType: 'post', eventType: 'im.message.receive_v1', messageText: '4. 提问 Alice | 下一轮应追问什么？',
@@ -66,6 +66,20 @@ try {
   } });
   assert.equal((await getSourceDelivery(hrReply.id)).state, 'delivered');
   assert.equal(queries, 1, 'HR replies do not enter the restricted query route');
+  const collaborator = { ...event, messageId: 'om_collaborator', chatId: 'oc_collaborator',
+    sender: { ...event.sender, openId: 'ou_collaborator' } };
+  await recordRoleDeliveryContext(runtime(), collaborator, { responseId: 'feishu:om_collaborator', sessionId: 'agent-session' });
+  const collaboratorReply = await enqueueSourceDelivery({ responseId: 'feishu:om_collaborator', sessionId: 'agent-session',
+    text: 'Agent collaboration answer', sourceDelivery: sourceDelivery(collaborator) });
+  assert.equal((await authorizeRoleDelivery(runtime(), collaboratorReply)).role, 'collaborator');
+  assert.equal(await authorizeRoleDelivery({ config: { ...config, accessPolicy: { mode: 'roles',
+    roles: { ...policy.roles, collaboratorOpenIds: [] } } } }, collaboratorReply), null);
+  await processSourceDeliveryOnce(runtime(), { ...helpers, sendFeishuText: async (r, s, text) => {
+    assert.equal(s.chatId, 'oc_collaborator'); assert.equal(text, 'Agent collaboration answer');
+    return { message_id: 'om_collaborator_reply' };
+  } });
+  assert.equal((await getSourceDelivery(collaboratorReply.id)).state, 'delivered');
+  assert.equal(queries, 1, 'collaborator replies retain general routing without being HR');
   for (const failed of [false, true]) {
     const responseId = `revoked-${failed}`;
     await recordRoleDeliveryContext(runtime(), event, { responseId });

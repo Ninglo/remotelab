@@ -84,6 +84,17 @@ try {
   const saved = await readBindingJson(join(bindingsDirectory(storageDir), `${bindingKey('doc')}.state.json`));
   assert.equal(saved.pending.length, 0);
   assert.equal(saved.lastError, '');
+  runtime.config.appId = 'app';
+  runtime.config.accessPolicy = { mode: 'roles', roles: { appId: 'app', hrOpenIds: ['hr'],
+    collaboratorOpenIds: ['collaborator'], interviewerOpenIds: ['interviewer'] } };
+  for (const user of ['hr', 'collaborator', 'interviewer', 'unknown']) comments[0].replies.push(reply(`role-${user}`, 'role check', user));
+  const beforeRoleCheck = payloads.length;
+  await reconcileDocumentBinding(runtime, binding);
+  assert.deepEqual(payloads.slice(beforeRoleCheck).map(p => p.sourceContext.sender.openId).sort(), ['collaborator', 'hr']);
+  runtime.config.accessPolicy.roles.collaboratorOpenIds = [];
+  comments[0].replies.push(reply('revoked-collaborator', 'must not enter', 'collaborator'));
+  await reconcileDocumentBinding(runtime, binding);
+  assert.equal(payloads.length, beforeRoleCheck + 2);
   let calls = 0;
   runtime.appClient.drive.v1.fileComment.list = async ({ params }) => {
     calls++;

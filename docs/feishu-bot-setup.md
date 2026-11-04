@@ -1281,12 +1281,19 @@ The explicitly enrolled `reviewCardPersonIds` trial in `learning-policy.json` us
 
 `accessPolicy.mode: "roles"` replaces the flat whitelist for an instance that
 needs a separate interviewer query capability. Configure `roles.appId`,
-`roles.tenantKey`, exact non-overlapping `hrOpenIds` and `interviewerOpenIds`,
+`roles.tenantKey`, exact non-overlapping `hrOpenIds`, `interviewerOpenIds`,
+and optional `collaboratorOpenIds` (defaults to an empty list),
 an HTTPS `endpoint`, and an absolute `credentialsPath`. The private credentials
 JSON contains `apiKey` and `signingKey`; neither belongs in the repository.
 No role is inferred from names, user text, tenant-wide admission or old Sessions.
 
-HR messages retain the normal executor. Interviewers use only their own private
+HR and explicitly allowlisted non-HR collaborators retain the normal executor,
+control callbacks, document comments and response delivery. Collaborators have a
+separate `collaborator` role: executor admission does not identify someone as HR
+or grant HR-specific application access. Keep application data permissions and
+business responsibilities separate from this transport allowlist.
+
+Interviewers use only their own private
 text or rich-text messages and the signed read-only endpoint. Natural wording,
 multiline questions and followups use `chat`; the legacy list, explicit ID and
 `提问 姓名或ID | 问题` forms remain compatible. The backend selects only from
@@ -1299,7 +1306,7 @@ comment is submitted to the general executor. Copied list numbers are ignored;
 rich text supplies only the provider-normalized message text to the same bounded
 parser. It does not add attachment access or change sender authorization.
 Document binding polls admit only
-exact HR provider subjects. Old unrestricted pending deliveries to non-HR users
+exact HR or collaborator provider subjects. Old unrestricted pending deliveries to other users
 are cancelled; restricted replies recheck assignments immediately before sending.
 Backend errors receive a fixed unavailable message without candidate data or an
 OAuth request; they never fall back to a general Session.
