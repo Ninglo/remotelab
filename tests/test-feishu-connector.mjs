@@ -1118,7 +1118,9 @@ await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 
 await assert.rejects(loadConfig(candidateConfigPath), /jevReactions must be boolean/);
 assert.equal(loadedConfig.personalSettings.enabled, false, 'personal settings full rollout is explicit');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { enabled: true, openIds: ['ou_legacy'] } }));
-assert.deepEqual((await loadConfig(candidateConfigPath)).personalSettings, { enabled: true, openIds: ['ou_legacy'], webUrl: '' });
+assert.deepEqual((await loadConfig(candidateConfigPath)).personalSettings, { enabled: true, openIds: ['ou_legacy'], webUrl: '', newcomerDocUrl: '' });
+await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { newcomerDocUrl: 'https://example.test/newcomer' } }));
+assert.equal((await loadConfig(candidateConfigPath)).personalSettings.newcomerDocUrl, 'https://example.test/newcomer');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', personalSettings: { enabled: 'true' } }));
 assert.equal((await loadConfig(candidateConfigPath)).personalSettings.enabled, false, 'truthy strings do not enable full rollout');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', groupReactionCandidates: ['SOB', 'YouAreTheBest'] }));

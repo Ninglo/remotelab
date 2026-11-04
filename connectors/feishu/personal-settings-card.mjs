@@ -11,7 +11,12 @@ const caption = content => ({ ...md(`<font color='grey'>${content}</font>`), tex
 const progressLabels = { none: '只看最终结果', messages: '进展单独发消息', card_latest: '卡片只留最新进展', card_all: '卡片保留全部进展' };
 export const PERSONAL_INTRO = '嗨，我是 Index，你的 AI 同事。\n查资料、写文档、改代码、跑实验，都可以来找我。把正在讨论的事转给我也行，我们一起想办法，把事情做成。\n我会结合能读到的项目资料和已有讨论接着做，也会提出自己的判断。你随时可以补充、纠正；这些反馈会帮助我更懂团队的工作。';
 
-export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '' }) {
+export function buildPersonalSettingsCard(record, { replies, memory, notice = '', webUrl = '', newcomerDocUrl = '' }) {
+  let newcomerLink = '';
+  try {
+    const url = new URL(newcomerDocUrl);
+    if (url.protocol === 'https:' && !url.username && !url.password) newcomerLink = url.href;
+  } catch {}
   let panelId = 0;
   const panel = (title, elements) => ({ tag: 'collapsible_panel', element_id: `personal_section_${panelId++}`, expanded: false, header: { title: plain(title), icon: { tag: 'standard_icon', token: 'down-small-ccm_outlined' }, icon_position: 'right' }, elements });
   // Instance-curated, per-card trial content. This is presentation only: it
@@ -91,6 +96,7 @@ export function buildPersonalSettingsCard(record, { replies, memory, notice = ''
   });
   const elements = [
     md(hasGuide ? guide.intro.replace(/\n{2,}/g, '\n') : '嗨，我是 Index，你的 AI 同事。查资料、写文档、改代码、跑实验，都可以来找我。'),
+    ...(newcomerLink ? [md(`[新人文档](${newcomerLink})`)] : []),
     ...(notice ? [md(notice)] : []),
     { ...panel('个人设置', [caption('选择即保存 · 仅对你生效'), ...rows,
       panel('设置详解 · 用途与生效范围', [...settingHelp, button('刷新设置', 'refresh', null)])]),
@@ -138,7 +144,8 @@ export function createPersonalSettingsController(runtime, { authorize = async ()
     // Only an explicitly configured, credential-free HTTPS fallback is shown.
     let webUrl = '';
     try { const url = new URL(runtime.config.personalSettings?.webUrl); if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) { url.search = '?tab=settings'; webUrl = url.href; } } catch {}
-    return buildPersonalSettingsCard(record, { replies, memory, notice, webUrl });
+    return buildPersonalSettingsCard(record, { replies, memory, notice, webUrl,
+      newcomerDocUrl: runtime.config.personalSettings?.newcomerDocUrl });
   }
   async function ownsRecord(record, actor) {
     if (record.personId !== actor.personId) return false;

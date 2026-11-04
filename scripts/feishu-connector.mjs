@@ -424,6 +424,7 @@ async function loadConfig(pathname) {
       enabled: parsed.personalSettings?.enabled === true,
       openIds: Array.isArray(parsed.personalSettings?.openIds) ? parsed.personalSettings.openIds.filter(x => typeof x === 'string' && /^ou_[a-zA-Z0-9]+$/.test(x)) : [],
       webUrl: trimString(parsed.personalSettings?.webUrl),
+      newcomerDocUrl: trimString(parsed.personalSettings?.newcomerDocUrl),
     },
     projectSurfacesPath: trimString(parsed?.projectSurfacesPath)
       ? resolve(configDir, parsed.projectSurfacesPath) : '',

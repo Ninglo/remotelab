@@ -13,8 +13,7 @@ try {
   const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { loadPersonalMemorySettings } = await import('../chat/personal-memory-settings.mjs');
   await updateAuthDocument(doc => {
-    doc.people = ['one', 'two'].map(id => ({ id, name: id, credentials: [], identities: [{ id: `id_${id}`, kind: 'feishu', realm: 'bot', subjectId: `ou_${id}` }] }));
-    doc.primaryPersonId = 'one';
+    doc.people.push(...['one', 'two'].map(id => ({ id, name: id, credentials: [], identities: [{ id: `id_${id}`, kind: 'feishu', realm: 'bot', subjectId: `ou_${id}` }] })));
   });
   await mkdir(MEMORY_DIR, { recursive: true });
   await writeFile(join(MEMORY_DIR, 'learning-policy.json'), JSON.stringify({ version: 1, enabled: true, profiles: true, personIds: ['one'] }));
@@ -44,6 +43,7 @@ try {
   assert.equal(controls.reduce((n,c) => n + c.options.length, 0), 16);
   controller = createPersonalSettingsController(runtime, opts);
   await controller.publish(source, { automatic: true }); assert.equal(creates, 1, 'restart does not spam welcome');
+  runtime.config.personalSettings.newcomerDocUrl = 'https://example.test/newcomer';
   const guide = { version: 1, intro: '评测能力试用', sections: [{ title: '查询示例评测', body: '案例属于另一位同事，不改变本人身份。' }] };
   await createRecordStore(join(home, 'personal-settings')).mutate(record.key, r => ({ ...r, capabilityGuide: guide }));
   const event = (field, value, revision, extra = {}) => ({ header: { event_id: extra.eventId || 'event1' }, event: {
@@ -57,6 +57,7 @@ try {
   let feedback = await controller.action(event('opening', false, 0));
   assert.equal(feedback.toast.type, 'success'); assert.equal(feedback.card.type, 'raw');
   assert.equal(feedback.card.data.body.elements[0].content, guide.intro, 'guide survives a real settings callback');
+  assert.equal(feedback.card.data.body.elements[1].content, '[新人文档](https://example.test/newcomer)', 'shared newcomer link also appears with a personalized guide');
   assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').expanded, true);
   assert.equal(feedback.card.data.body.elements.find(e => e.element_id === 'personal_settings_region').elements.filter(e => e.tag === 'column_set').length, 4, 'guide retains every settings row');
   assert.equal((await loadPersonMessageReplies({ personId: 'two', identityId: 'id_two', authKind: 'test' })).revision, 0, 'example guide never changes another person');
@@ -153,6 +154,7 @@ try {
   assert.equal(await controller.publish({ ...publicSource, chatType: 'group' }), null, 'full rollout remains private-chat only');
   await assert.rejects(controller.publish({ ...publicSource, tenantKey: 'other' }), /尚未开放/, 'connector access policy still applies');
   const publicRecord = await controller.publish(publicSource, { renew: true, requestId: 'public-help', view: 'help' });
+  assert.equal(sent.body.elements[1].content, '[新人文档](https://example.test/newcomer)', 'new users receive the same instance newcomer link');
   assert.notEqual(publicRecord.personId, actor.personId, 'new users get their own identity');
   assert.equal(sent.body.elements.find(e => e.element_id === 'personal_help_region').expanded, true);
   const publicActor = { personId: publicRecord.personId, identityId: publicRecord.identityId, authKind: 'test' };
