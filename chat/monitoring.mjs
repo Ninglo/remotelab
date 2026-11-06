@@ -63,8 +63,11 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
 
 export async function readService(item, execute = exec) {
   if (!/^[\w@.-]+\.(service|timer)$/.test(item.unit || '') || !['user', 'system'].includes(item.scope)) throw new Error('INVALID_UNIT');
+  // systemctl otherwise emits local abbreviations: China's CST is parsed by
+  // JavaScript as US Central time, moving a start timestamp fourteen hours ahead.
   const { stdout } = await execute('systemctl', [...(item.scope === 'user' ? ['--user'] : []), 'show', item.unit,
-    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,MainPID,NRestarts,LastTriggerUSec,TimersCalendar,TimersMonotonic'], { timeout: 3000, maxBuffer: 8192 });
+    '--property=LoadState,ActiveState,SubState,Result,Type,ExecMainStatus,ExecMainStartTimestamp,MainPID,NRestarts,LastTriggerUSec,TimersCalendar,TimersMonotonic'],
+    { timeout: 3000, maxBuffer: 8192, env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' } });
   const state = Object.fromEntries(stdout.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
   const known = state.LoadState === 'loaded';
   const neverRan = state.Type === 'oneshot' && state.ActiveState === 'inactive' && !state.ExecMainStartTimestamp;

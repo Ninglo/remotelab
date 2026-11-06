@@ -64,6 +64,7 @@ export function mergeServiceCycles(previous = [], events = []) {
 }
 
 export async function collectServiceIncidents({ services = [], config = {},
+  observedServices = [],
   directory = join(CONFIG_DIR, 'service-incidents'), execute = exec,
   load = readRecord, save = writeDurableJson, now = Date.now(), dryRun = false } = {}) {
   if (config.enabled !== true) return { events: [], gaps: [] };
@@ -98,6 +99,13 @@ export async function collectServiceIncidents({ services = [], config = {},
   }
   state.observedAt = new Date(now).toISOString();
   state.cycles = mergeServiceCycles(state.cycles, state.events);
+  for (const item of serviceIncidentAttention(state.cycles, observedServices, { now, gaps, repairs: config.repairs })) {
+    if (!item.recovered) continue;
+    const cycle = state.cycles.find(c => c.id === item.id);
+    if (cycle.recoveredLastAt === cycle.lastAt) continue;
+    cycle.recoveredAt = state.observedAt;
+    cycle.recoveredLastAt = cycle.lastAt;
+  }
   state.gaps = gaps;
   if (!dryRun) await save(file, state);
   return { events: state.events, cycles: state.cycles, gaps, observedAt: state.observedAt };
@@ -129,9 +137,14 @@ export function serviceIncidentAttention(events, services, { now = Date.now(), g
     const stableSince = Math.max(Date.parse(event.lastAt), Date.parse(service?.lastRunAt) || 0);
     const covered = !gaps.some(g => g.source === 'serviceIncidents' || g.source === `serviceJournal:${event.unit}`);
     const repair = available && covered ? verifiedRepair(event, repairs, now) : null;
-    const recovered = available && covered && (Boolean(repair) || now - stableSince >= SERVICE_STABLE_MS);
+    // Recovery belongs to this failure evidence, not the lifetime of the next
+    // process. A later deployment or read gap cannot reopen a closed old crash.
+    // A new journal event advances lastAt and requires fresh recovery evidence.
+    const previouslyRecovered = Number.isFinite(Date.parse(event.recoveredAt)) && event.recoveredLastAt === event.lastAt;
+    const recovered = previouslyRecovered || available && covered && (Boolean(repair) || now - stableSince >= SERVICE_STABLE_MS);
     const state = repair ? 'fixed' : recovered ? 'recovered' : 'active';
     const recoveryObservation = repair ? `已修复：提交 ${repair.commit.slice(0, 8)}，已核验上线版本 ${repair.deployment.commit.slice(0, 8)}`
+      : previouslyRecovered ? `本事故已于 ${event.recoveredAt} 确认恢复，根因修复待确认`
       : recovered ? '服务已连续稳定运行30分钟，根因修复待确认' : undefined;
     return { kind: 'serviceCrash', severity: 'critical', id: event.id, unit: event.unit,
       subject: service?.label || event.unit, occurredAt: event.at, lastOccurredAt: event.lastAt,

@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { collectServiceIncidents, mergeServiceJournal, mergeServiceCycles, serviceIncidentAttention } from '../chat/service-incidents.mjs';
 import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 const unit = 'example.service';
@@ -43,4 +46,48 @@ test('normal stop is not a crash; cursor is durable and failed reads never advan
 test('journal grep with no matches is healthy empty coverage, not a failed read',async()=>{
  const result=await collectServiceIncidents({services:[{unit,scope:'system'}],config:{enabled:true},load:async()=>null,save:async()=>{},execute:async()=>{throw Object.assign(new Error('no matches'),{code:1,stdout:'',stderr:''})}});
  assert.deepEqual(result.gaps,[]);assert.deepEqual(result.events,[]);
+});
+
+test('confirmed recovery survives cold collection, planned restarts and later gaps; new crashes remain actionable', async t => {
+ const root=await mkdtemp(join(tmpdir(),'service-recovery-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const events=mergeServiceJournal([],rows,unit);
+ const last=Date.parse(events[0].at);
+ let stored={version:1,since:events[0].at,units:{},events,cycles:mergeServiceCycles([],events)};
+ const services=[{unit,scope:'system'}];
+ const observedServices=[{unit,status:'healthy',lastRunAt:new Date(last+1000).toISOString()}];
+ const options={services,observedServices,config:{enabled:true},directory:'/isolated',now:last+31*60_000,
+  load:async()=>structuredClone(stored),save:async(path,value)=>{if(path.endsWith('/state.json'))stored=structuredClone(value)},
+  execute:async()=>({stdout:''})};
+ await collectServiceIncidents({...options,dryRun:true});
+ assert.equal(stored.cycles[0].recoveredAt,undefined,'dry runs never persist recovery');
+ await collectServiceIncidents(options);
+ assert.equal(stored.cycles[0].recoveredLastAt,stored.cycles[0].lastAt);
+ const restarted=[{unit,status:'healthy',lastRunAt:new Date(last+4*3600_000).toISOString()}];
+ const later=last+4*3600_000+1000;
+ let item=serviceIncidentAttention(stored.cycles,restarted,{now:later})[0];
+ assert.equal(item.recovered,true,'deployment cannot reopen an already recovered crash');
+ item=serviceIncidentAttention(stored.cycles,restarted,{now:later,gaps:[{source:`serviceJournal:${unit}`} ]})[0];
+ assert.equal(item.recovered,true,'later missing coverage does not erase prior recovery evidence');
+ assert.match(item.recoveryObservation,/本事故已于/);
+ let ledger=null,sends=0,edits=0;
+ const dispatch=async(attention,now)=>dispatchMonitoringAlerts({stateFile:join(root,'alerts.json'),now,
+  config:{enabled:true},snapshot:{generatedAt:new Date(now).toISOString(),attention,services:restarted,
+   disks:[],accounts:[],automations:{items:[]},coverage:{gaps:[]}},
+  load:async()=>structuredClone(ledger),save:async(_,s)=>{ledger=structuredClone(s)},
+  send:async()=>{sends++;return 'om_recovery_test'},update:async()=>{edits++;return 'om_recovery_test'}});
+ await dispatch(serviceIncidentAttention(events,observedServices,{now:last+1000}),last+1000);
+ await dispatch(serviceIncidentAttention(stored.cycles,observedServices,{now:options.now}),options.now);
+ await dispatch(serviceIncidentAttention(stored.cycles,restarted,{now:later}),later);
+ assert.equal(sends,1,'a restart beyond the three-hour window does not create another card');
+ assert.equal(edits,1);
+ const fresh={...events[0],id:'new-fatal',at:new Date(later+1000).toISOString()};
+ const cycles=mergeServiceCycles(stored.cycles,[fresh]);
+ const projected=serviceIncidentAttention(cycles,restarted,{now:later+2000});
+ assert.equal(projected.at(-1).recovered,false,'a fresh journal crash opens a new incident');
+ await dispatch(projected,later+2000);
+ assert.equal(sends,2);
+ const changed=mergeServiceCycles(stored.cycles,[{...fresh,id:'late-evidence',at:new Date(last+20_000).toISOString()}]);
+ assert.equal(serviceIncidentAttention(changed,observedServices,{now:last+21_000})[0].recovered,false,
+  'new evidence in the same cycle invalidates its older recovery receipt');
 });

@@ -345,8 +345,12 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   catch (error) { if (error.code === 'ENOENT') return { enabled: false }; throw error; }
   if (!config.alertDelivery) return { enabled: false };
   // This independent observer needs no model and no running HTTP server.
-  const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents, dryRun });
   const [snapshot, pool] = await Promise.all([reader({ days: 1 }), poolObserver({ config: config.poolMonitoring, dryRun }).catch(() => ({ error: "POOL_OBSERVER_UNAVAILABLE" }))]);
+  const incidents = await collectIncidents({ services: config.services, config: config.serviceIncidents,
+    observedServices: snapshot.services, dryRun });
+  // The just-completed collector supersedes the reader's saved journal status.
+  snapshot.coverage.gaps = snapshot.coverage.gaps.filter(gap => gap.source !== 'serviceIncidents'
+    && !gap.source.startsWith('serviceJournal:'));
   snapshot.attention = snapshot.attention.filter(item => !['poolSource', 'poolTask', 'poolIdle'].includes(item.kind));
   if (pool?.assessment) { snapshot.pool = pool; snapshot.attention.push(...pool.assessment.attention); }
   if (pool?.error) snapshot.coverage.gaps.push({ source: "pool", code: pool.error });

@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dispatchMonitoringAlerts, renderMonitoringAlert, runMonitoringAlerts, renderMonitoringAlertCard, updateMonitoringAlert } from '../chat/monitoring-alerts.mjs';
+
+test('the current journal collection replaces stale reader coverage and receives live service status', async () => {
+  const services = [{ unit: 'app.service', status: 'healthy' }];
+  await runMonitoringAlerts({ config: { alertDelivery: { enabled: false } }, dryRun: true,
+    reader: async () => ({ attention: [], services, coverage: { gaps: [
+      { source: 'serviceIncidents', code: 'OBSERVER_STALE' }, { source: 'serviceJournal:app.service', code: 'OLD' },
+    ] } }),
+    collectIncidents: async options => {
+      assert.equal(options.observedServices, services);
+      return { cycles: [], gaps: [{ source: 'serviceJournal:app.service', code: 'EACCES' }] };
+    },
+    poolObserver: async () => null, recover: async () => ({}), diagnose: async () => ({}),
+    dispatch: async ({ snapshot }) => {
+      assert.deepEqual(snapshot.coverage.gaps, [{ source: 'serviceJournal:app.service', code: 'EACCES' }]);
+      return {};
+    },
+  });
+});
 import { renderMonitoringReport } from '../lib/monitoring-report.mjs';
 
 const disk = { kind: 'disk', subject: 'System disk', severity: 'critical', availableBytes: 3 * 1024 ** 3, usedPercent: 97 };

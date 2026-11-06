@@ -29,6 +29,16 @@ test('oneshot execution in progress is not a service fault, and a never-run or f
   assert.equal((await observe('activating', 'exit-code')).status, 'failed');
 });
 
+test('service timestamps remain UTC when the host uses Chinese CST', async () => {
+  const item = { unit: 'bot.service', scope: 'system' };
+  const service = await readService(item, async (_command, _args, options) => {
+    assert.equal(options.env.TZ, 'UTC');
+    assert.equal(options.env.LC_ALL, 'C');
+    return { stdout: 'LoadState=loaded\nActiveState=active\nExecMainStartTimestamp=Thu 2026-11-05 22:03:23 UTC\n' };
+  });
+  assert.equal(new Date(Date.parse(service.lastRunAt)).toISOString(), '2026-11-05T22:03:23.000Z');
+});
+
 test('quotas deduplicate sources without letting a stale or paused source override a valid observation', () => {
   const fleet = { adapters: { fresh: entry([sample(70)]), old: entry([sample(0, { status: 'paused', observedAt: '2026-09-30T00:00:00Z' })]) } };
   const result = projectAccounts({ activeId: 'saved', accounts: [{ id: 'saved', identityId: 'account', label: 'Owner', usage: null }] }, fleet, now);
