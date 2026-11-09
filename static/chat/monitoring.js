@@ -256,7 +256,7 @@
       summary.append(node('p', '模型提出的风险线索，需结合原会话核对授权与实际后果。审阅不会执行整改。', 'monitoring-note'));
       summary.append(node('p', `原文来源 ${c.sources || 0} 条：完整审完 ${c.fullyReviewed || 0}，部分或待审 ${c.partialOrPending || 0}，无法读取 ${c.unreadable || 0}。`, 'monitoring-note'));
       summary.append(node('p', `去重内容段 ${c.uniqueSegments || 0}：已审 ${c.reviewed || 0}，待审 ${c.pending || 0}，失败 ${c.failed || 0}；复用 ${c.deduplicatedOccurrences || 0} 次。`, 'monitoring-note'));
-      summary.append(node('p', `内容段风险：严重 ${data.risks?.critical || 0} · 高 ${data.risks?.high || 0} · 中 ${data.risks?.medium || 0} · 低 ${data.risks?.low || 0}。同一内容段只计一次。`, 'monitoring-note'));
+      summary.append(node('p', `内容段风险：严重 ${data.risks?.critical || 0} · 高 ${data.risks?.high || 0} · 中 ${data.risks?.medium || 0} · 低 ${data.risks?.low || 0}。同一内容段只计一次；不同片段可能指向同一问题，不能作为事故数。`, 'monitoring-note'));
       if (data.calibration) summary.append(node('p', `新标准已审 ${data.calibration.currentPolicyReviewed} 段；旧高风险待复核 ${data.calibration.pending} 段（失败 ${data.calibration.failed}）；旧版其他已审结果复用 ${data.calibration.carriedForward} 段。待复核保留旧等级，不计作已排除。`, 'monitoring-note'));
       summary.append(node('p', `实测输入 ${u.inputTokens ?? '—'} token（缓存 ${u.cachedInputTokens ?? '—'}），输出 ${u.outputTokens ?? '—'}；${u.measuredCalls || 0}/${u.calls || 0} 次调用有用量回执；调用累计 ${(Number(u.elapsedMs || 0) / 60000).toFixed(1)} 分钟。`, 'monitoring-note'));
       summary.append(node('p', `扫描 ${time(data.scannedAt)} · 更新 ${time(data.updatedAt)} · 增量任务 ${data.config?.scheduleId || '尚未登记'}。页面读取不会调用模型。`, 'monitoring-note'));

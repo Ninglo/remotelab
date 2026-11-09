@@ -18,7 +18,9 @@ test('unsupported severity cannot promote uncertainty, expiry or a quotation int
   assert.equal(result({}).severity, 'low');
   assert.equal(result({ evidenceBasis: 'direct', immediacy: 'expired' }).severity, 'low');
   assert.equal(result({ evidenceBasis: 'historical', immediacy: 'unknown' }).severity, 'medium');
-  assert.equal(result({ category: 'disclosure', evidenceBasis: 'historical', immediacy: 'unknown' }).severity, 'high');
+  assert.equal(result({ category: 'disclosure', evidenceBasis: 'historical', immediacy: 'unknown' }).severity, 'medium');
+  assert.equal(result({ category: 'disclosure', evidenceBasis: 'direct', immediacy: 'unknown', exposureBasis: 'authorized_use' }).severity, 'medium');
+  assert.equal(result({ category: 'disclosure', evidenceBasis: 'direct', immediacy: 'unknown', exposureBasis: 'unintended_audience' }).severity, 'high');
   assert.equal(result({ evidenceBasis: 'direct', immediacy: 'active' }).severity, 'high');
   assert.equal(result({ evidenceBasis: 'direct', immediacy: 'active', criticalBasis: 'imminent_irreversible_harm' }).severity, 'critical');
 });

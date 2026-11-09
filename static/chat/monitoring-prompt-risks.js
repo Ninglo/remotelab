@@ -100,7 +100,7 @@
     if (!data) { if (!error) host.append(node('p', '正在读取已保存的风险明细…', 'meta')); return; }
     host.append(node('p', `结果更新 ${stamp(data.updatedAt)} · 审阅模型 ${data.model} · 规则 ${data.ruleVersion}。只读取已有结果，不启动模型审阅。`, 'meta'));
     if (data.calibration) host.append(node('p', `新标准已审 ${data.calibration.currentPolicyReviewed} 段 · 旧高风险待复核 ${data.calibration.pending} 段（其中复核失败 ${data.calibration.failed}）· 仅有上下文疑问 ${data.calibration.contextOnly} 段。待复核仍保留旧等级。`, 'meta'));
-    host.append(node('p', '同一文本按指纹去重；关联来源数不等于独立事件数。处置结果尚未关联，旧标记不代表风险仍在发生。', 'meta'));
+    host.append(node('p', '同一文本按指纹去重；不同片段可能指向同一问题，片段数和关联来源数均不等于事故数。处置结果尚未关联，旧标记不代表风险仍在发生。', 'meta'));
     host.append(node('p', state.sort === 'time' ? '按审阅时间从新到旧排列；不是任务发生时间。' : '按严重程度从高到低排列，同级按审阅时间从新到旧。', 'meta'));
     const paging = () => {
       const bar = node('div', null, 'prompt-risk-toolbar');
