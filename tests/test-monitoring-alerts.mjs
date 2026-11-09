@@ -19,6 +19,20 @@ test('the current journal collection replaces stale reader coverage and receives
     },
   });
 });
+
+test('a failed business health check remains an alert even when its process is active', async () => {
+  await runMonitoringAlerts({ config: { services: [{ unit: 'hub.service', scope: 'system' }],
+    recovery: { scriptTriage: { enabled: true } }, alertDelivery: { enabled: false } }, dryRun: true,
+    reader: async () => ({ generatedAt: new Date().toISOString(), attention: [], services: [{ unit: 'hub.service', status: 'healthy' }], coverage: { gaps: [] } }),
+    collectIncidents: async () => ({ cycles: [], gaps: [] }), poolObserver: async () => null,
+    recover: async ({ config }) => {
+      assert.equal(config.scriptTriage.services[0].unit, 'hub.service');
+      return { incidents: [{ kind: 'service', id: 'hub.service', status: 'blocked', triage: { code: 'business_health_failed', summary: 'Health endpoint failed' } }] };
+    }, diagnose: async () => ({}), dispatch: async ({ snapshot }) => {
+      assert.equal(snapshot.services[0].status, 'failed'); assert.equal(snapshot.services[0].recoveryReady, false);
+      assert.equal(snapshot.attention.find(item => item.id === 'hub.service').detail, 'Health endpoint failed'); return {};
+    } });
+});
 import { renderMonitoringReport } from '../lib/monitoring-report.mjs';
 
 const disk = { kind: 'disk', subject: 'System disk', severity: 'critical', availableBytes: 3 * 1024 ** 3, usedPercent: 97 };

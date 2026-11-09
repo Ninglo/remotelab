@@ -101,7 +101,13 @@ export function analyzeResources({ accounts, disks, automations, services, recov
     && !(task.lastExecution?.runId && !task.lastError && recovery.some(item => item.kind === 'automation'
       && item.id === task.id && item.originRunId === task.lastExecution.runId && item.status === 'resolved'))) attention.push({ kind: 'automation',
     severity: 'warning', subject: task.title, id: task.id, sessionId: task.lastExecution?.sessionId || null });
-  for (const service of services) if (service.status === 'failed') attention.push({ kind: 'service', severity: 'critical', id: service.unit, subject: service.label });
+  for (const service of services) {
+    const repair = recovery.findLast(item => item.kind === 'service' && item.id === service.unit);
+    const businessFailed = !['resolved', 'cancelled'].includes(repair?.status) && repair?.triage?.code === 'business_health_failed';
+    if (service.status === 'failed' || businessFailed && service.status !== 'paused') attention.push({
+      kind: 'service', severity: 'critical', id: service.unit, subject: service.label,
+      ...(businessFailed ? { detail: repair.triage.summary, businessHealthFailed: true } : {}) });
+  }
   const capacity = available.filter(account => account.windows.some(window => Math.abs(window.minutes - 10080) <= 60 && window.remainingPercent >= 50));
   const opportunities = capacity.length ? [{ kind: 'capacity', accounts: capacity.map(account => ({ label: account.label,
     ...account.windows.find(window => Math.abs(window.minutes - 10080) <= 60) })) }] : [];

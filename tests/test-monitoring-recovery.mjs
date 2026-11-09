@@ -70,6 +70,85 @@ test('one durable incident resumes the original Session with the actual fallback
   await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1, 'the unchanged original failure must not create another repair');
 });
 
+test('script gate blocks known SSH failures without a model, rechecks facts and preserves evidence', async () => {
+  const f = fixture(); f.options.config.scriptTriage = { enabled: true }; f.options.readRequest = async () => null;
+  f.task.lastExecution.error = 'user@host: Permission denied (publickey,password).';
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 0); assert.equal(f.incident().status, 'blocked');
+  assert.equal(f.incident().triage.code, 'ssh_authentication_failed');
+  assert.ok(f.receipts.has(f.incident().triage.receiptFile));
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(f.getAdmissions(), 0); assert.equal(f.incident().triageHistory.length, 1);
+  f.task.lastExecution.error = 'New unclassified execution failure';
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 300_000 });
+  assert.equal(f.getAdmissions(), 1); assert.match(f.incident().attempts[0].body.text, /脚本已先完成固定分流/);
+});
+
+test('unchanged unresolved diagnosis cannot spend a second model attempt after provider completion', async () => {
+  const f = fixture(); f.options.config.scriptTriage = { enabled: true }; f.options.readRequest = async () => null;
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+  f.runs.get(f.incident().attempts[0].runId).state = 'completed';
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 1); assert.equal(f.incident().status, 'blocked');
+  assert.match(f.incident().reason, /没有新的分流证据/);
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 600_000 });
+  assert.equal(f.getAdmissions(), 1);
+});
+
+test('script-owned native work waits consume no model slot and later require actual acceptance', async () => {
+  const f = fixture(); f.options.config.scriptTriage = { enabled: true }; f.options.readRequest = async () => null;
+  f.runs.set('run_manual', { id: 'run_manual', state: 'running', createdAt: '2026-10-05T00:01:30Z' }); f.setLatest('run_manual');
+  let result = await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'verifying'); assert.equal(result.active, 0); assert.equal(f.getAdmissions(), 0);
+  f.runs.get('run_manual').state = 'completed';
+  result = await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
+  assert.equal(f.getAdmissions(), 1); assert.equal(f.incident().attempts[0].mode, 'verify');
+});
+
+test('late native delivery closes an accepted blocked repair by script without a new Agent', async () => {
+  const f = fixture({ conversation: true });
+  await processMonitoringRecovery(f.options); f.finish('blocked');
+  await processMonitoringRecovery(f.options); assert.equal(f.incident().status, 'blocked');
+  const attempt = f.incident().attempts[0];
+  f.options.config.scriptTriage = { enabled: true }; f.options.readRequest = async () => null;
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'blocked'); assert.equal(f.getAdmissions(), 1, 'enabling triage cannot reopen historical blocks');
+  f.delivery([{ runId: attempt.runId, surfaceKind: 'final', state: 'delivered', externalId: 'om_native' }]);
+  await processMonitoringRecovery({ ...f.options, now: f.options.now + 300_000 });
+  assert.equal(f.incident().status, 'resolved'); assert.equal(f.incident().resolution.method, 'script');
+  assert.equal(f.getAdmissions(), 1); assert.equal(f.incident().attempts.length, 1);
+});
+
+test('service action intent survives a crash and script evidence reaches fallback exactly once', async () => {
+  const f = fixture({ kind: 'service' }); f.options.config.scriptTriage = { enabled: true };
+  f.snapshot.services = [{ unit: '/', status: 'failed' }];
+  let actions = 0;
+  f.options.triage = async ({ item, beforeAction }) => {
+    if (!item.triageAction) { await beforeAction({ kind: 'test_restart' }); actions++;
+      assert.equal(Object.values(f.getState().incidents)[0].triageAction.kind, 'test_restart'); }
+    return { disposition: 'agent', code: 'action_unverified', fingerprint: 'same-action', summary: 'Action needs diagnosis', evidence: {} };
+  };
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1); assert.equal(actions, 1);
+  f.runs.get(f.incident().attempts[0].runId).state = 'failed';
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1); assert.equal(actions, 1);
+});
+
+test('failed business health preserves one incident while the process remains active', async () => {
+  const f = fixture({ kind: 'service' }); f.options.config.scriptTriage = { enabled: true };
+  f.snapshot.services = [{ unit: '/', status: 'healthy', recoveryReady: true }];
+  f.snapshot.attention[0].businessHealthFailed = true;
+  f.options.triage = async () => ({ disposition: 'agent', code: 'business_health_failed', fingerprint: 'same-health', summary: 'Health failed' });
+  await processMonitoringRecovery(f.options); f.finish('blocked');
+  const key = f.incident().key;
+  for (let minute = 1; minute <= 8; minute++) {
+    f.snapshot.generatedAt = new Date(f.options.now + minute * 60_000).toISOString();
+    await processMonitoringRecovery({ ...f.options, now: f.options.now + minute * 60_000 });
+  }
+  assert.equal(Object.keys(f.getState().incidents).length, 1);
+  assert.equal(f.incident().key, key); assert.equal(f.getAdmissions(), 1);
+  assert.equal(f.incident().status, 'blocked');
+});
+
 test('service recovery waits for three distinct failed observations, with durable counts', async () => {
   const f = fixture({ kind: 'service' }); f.options.config.serviceConfirmationObservations = 3;
   let apiCalls = 0; const request = f.options.request;

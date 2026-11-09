@@ -8,6 +8,7 @@ import { requests } from './requests.mjs';
 import { monitoringPolicyFor } from '../lib/monitoring-policy.mjs';
 import { diskRiskStage, recoveryPlan, recoveryHumanAction } from '../lib/monitoring-actions.mjs';
 import { maintainDisk } from './disk-maintenance.mjs';
+import { triageMonitoringIncident } from './monitoring-triage.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex').slice(0, 24);
 const terminal = state => ['completed', 'failed', 'cancelled'].includes(state);
@@ -27,13 +28,16 @@ export function projectRecovery(state) {
     error: trim(item.error).slice(0, 240),
     resolution: item.resolution || null, plan: recoveryPlan(item.plan), humanAction: recoveryHumanAction(item.humanAction), riskStage: item.riskStage || 0,
     script: item.script || null,
+    triage: item.triage ? { code: item.triage.code, disposition: item.triage.disposition,
+      summary: item.triage.summary, receiptFile: item.triage.receiptFile, checkedAt: item.triage.checkedAt } : null,
     createdAt: item.createdAt, updatedAt: item.updatedAt, evidence: (item.evidence || []).slice(0, 5) }));
 }
 
 function healthy(snapshot, item) {
   return item.kind === 'disk' ? snapshot.disks.some(d => (d.path || d.label) === item.id && d.status === 'healthy')
     : item.kind === 'diskGrowth' ? snapshot.diskGrowth?.some(d => d.path === item.id && d.status === 'healthy')
-    : item.kind === 'service' ? snapshot.services.some(s => (s.unit || s.label) === item.id && s.status === 'healthy' && s.recoveryReady !== false) : false;
+    : item.kind === 'service' ? snapshot.services.some(s => (s.unit || s.label) === item.id && s.status === 'healthy' && s.recoveryReady !== false)
+      && !snapshot.attention.some(a => a.kind === 'service' && a.id === item.id && a.businessHealthFailed) : false;
 }
 
 function promptFor(item, attempt, task, config) {
@@ -43,6 +47,7 @@ function promptFor(item, attempt, task, config) {
     + (policy ? `本类处置规则：${policy.remedy} ${policy.intervention}\n` : '')
     + `对象：${item.subject}；类型：${item.kind}；ID：${item.id}；原失败Run：${item.originRunId || '无'}。\n`
     + `已观测问题：${item.error || item.reason || '见本轮监管快照'}。本次是第${item.attempts.length}次，最多${config.maxAttempts || 2}次；执行方不可再建恢复任务、日程或自我重试循环。\n`
+    + (item.triage ? `脚本已先完成固定分流：${item.triage.summary}；证据：${item.triage.receiptFile}。先读取并复用该证据，只处理脚本未能完成的部分，不重做固定检查或重放已记录动作。\n` : '')
     + (item.script ? `已先执行磁盘脚本，记录：${item.script.receiptFile}；先读其结果，复用已完成步骤，不重复清理。磁盘通知由观察器按配置的静默处理期统一判断；本次补救只保存本地结果，不向群发送进展或成功消息。\n` : '')
     + (attempt.mode === 'verify' ? '已有一次后续执行结束。本次先只读核对该执行及真实产物；不能把整份任务从头再执行，不能重发已有成功消息。\n' : '')
     + `先核对现实：原任务是否已有人恢复、停止、被替代或已完成；查已保存材料和实际错误，保留已通过的检查。没有新的修正或证据，不重复失败动作。\n`
@@ -66,7 +71,8 @@ function promptFor(item, attempt, task, config) {
 export async function processMonitoringRecovery({ config, snapshot, stateFile = RECOVERY_FILE,
   load = readRecord, save = writeDurableJson, request,
   readDeliveries = async (sessionId, requestId) => (await requests.byRequest(sessionId, requestId))?.deliveries || [],
-  now = Date.now(), dryRun = false, diskScript = maintainDisk } = {}) {
+  now = Date.now(), dryRun = false, diskScript = maintainDisk,
+  triage = triageMonitoringIncident, readRequest = runId => requests.byRunId(runId) } = {}) {
   if (!config?.enabled) return { enabled: false };
   const client = request ? null : createRemoteLabHttpClient({ baseUrl: config.baseUrl });
   const api = request || (async (path, options = {}) => {
@@ -142,6 +148,13 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     (a.kind === 'automation') - (b.kind === 'automation') || stamp(a.createdAt) - stamp(b.createdAt));
   // Reconcile every in-flight attempt before considering a new admission.
   for (const item of ordered) {
+    if (config.scriptTriage?.enabled && item.kind === 'automation'
+      && !['running', 'admitting', 'resolved', 'cancelled'].includes(item.status)) {
+      const task = taskById.get(item.id);
+      if (task && (isStoppedAutomation(task, now) || task.lastExecution?.runId && task.lastExecution.runId !== item.originRunId)) {
+        touch(item, 'cancelled', '原任务已停止或已有更新执行；旧事故与回执保留，不补跑旧Run'); continue;
+      }
+    }
     if (item.kind === 'service' && snapshot.services.some(s => s.unit === item.id && s.status === 'paused')
       && !['running', 'admitting', 'resolved', 'cancelled'].includes(item.status)) {
       touch(item, 'cancelled', '服务已按登记维护停用；保留原补救回执，不再启动或轮询旧补救'); continue;
@@ -153,6 +166,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       touch(item, 'resolved'); continue;
     }
     if (item.status === 'admitting') { active++; continue; }
+    // Script-owned observation waits do not consume an Agent slot or become a
+    // new verification dialogue when a process or delivery finishes.
+    if (config.scriptTriage?.enabled && item.triage && ['wait', 'blocked'].includes(item.triage.disposition)
+      && ['verifying', 'blocked'].includes(item.status)) continue;
     // Reconcile repaired receipts without launching another model attempt.
     // Also recover the exact legacy formatting failure; unrelated blocks stay put.
     const receiptBlocked = item.status === 'blocked' && (item.receiptIssue === 'invalid_plan'
@@ -205,12 +222,15 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       if (item.kind !== 'automation' && !healthy(snapshot, item)) {
         touch(item, 'blocked', '补救运行结束，但本轮独立观测仍未确认恢复'); continue;
       }
+      if (item.kind === 'service' && config.scriptTriage?.enabled) {
+        touch(item, 'pending', '已有Agent回执，先由脚本独立核对服务和登记的业务健康条件'); continue;
+      }
       if (attempt.sourceDelivery) {
         // Completed Requests leave the active outbox. Their durable aggregate
         // retains verified receipts through archival and observer restarts.
         const deliveries = await readDeliveries(item.sessionId, attempt.requestId);
         const final = deliveries.filter(d => (d.runId === runId || d.responseId === attempt.requestId) && d.surfaceKind === 'final');
-        if (!final.some(d => d.state === 'delivered' && d.externalId)) {
+        if (!final.length || !final.every(d => d.state === 'delivered' && d.externalId)) {
           attempt.deliveryDeadlineAt ||= new Date(now + 10 * 60_000).toISOString();
           touch(item, final.some(d => ['failed', 'needs_review'].includes(d.state)) || now >= stamp(attempt.deliveryDeadlineAt) ? 'blocked' : 'verifying',
             '产物已核验，原出口最终消息送达仍待回读；不自动重发'); continue;
@@ -264,6 +284,82 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     }
     scriptedPaths.set(item.id, item.script); await persist();
   }
+  // Fixed diagnosis and native receipt reconciliation precede every new model
+  // admission. Existing Agent work and human confirmation plans keep ownership.
+  if (config.scriptTriage?.enabled && !dryRun) for (const item of ordered) {
+    if (!['service', 'automation'].includes(item.kind) || !['pending', 'blocked', 'verifying'].includes(item.status)
+      || item.plan?.requiresConfirmation || (config.ignoreUnits || []).includes(item.id)) continue;
+    const attempt = item.attempts.at(-1);
+    let receipt;
+    if (attempt) receipt = await load(attempt.receiptFile);
+    const receiptReady = receipt?.key === item.key && receipt?.requestId === attempt?.requestId
+      && receipt?.checks?.task === true && ['resolved', 'blocked'].includes(receipt.status);
+    if (item.status !== 'pending' && !item.triage && !receiptReady) continue;
+    if (item.kind === 'automation' && item.status === 'blocked' && attempt && item.triage?.disposition === 'agent' && !receiptReady) continue;
+    if (item.triage && stamp(item.triage.nextCheckAt) > now && item.status !== 'pending') continue;
+    if (item.status === 'blocked' && !['blocked', 'wait'].includes(item.triage?.disposition)) {
+      item.triageHeldBlock ||= { at: item.updatedAt, reason: item.reason };
+    }
+    const service = snapshot.services.find(s => s.unit === item.id);
+    if (item.kind === 'service' && service?.status === 'failed'
+      && (state.resources[`service:${item.id}`]?.observations || 0) < serviceConfirmations) continue;
+    let result;
+    try {
+      let task, origin, requestRecord, latestRun, deliveries = [];
+      if (item.kind === 'automation') {
+        task = (await api(`/api/automation-tasks/${item.id}`)).task;
+        origin = item.originRunId ? (await api(`/api/runs/${item.originRunId}`)).run : null;
+        requestRecord = item.originRunId ? await readRequest(item.originRunId) : null;
+        if (item.sessionId) {
+          const latest = await api(`/api/sessions/${item.sessionId}/latest-run`);
+          if (latest.runId) latestRun = latest.runId === origin?.id ? origin : (await api(`/api/runs/${latest.runId}`)).run;
+        }
+        if (attempt) deliveries = await readDeliveries(item.sessionId, attempt.requestId);
+      }
+      result = await triage({ item, snapshot, config: config.scriptTriage, task, origin, requestRecord,
+        receipt, deliveries, latestRun, now,
+        beforeAction: async intent => {
+          if (item.triageAction) throw Error('ACTION_ALREADY_RECORDED');
+          item.triageAction = intent; await persist();
+        } });
+    } catch (error) {
+      result = { disposition: item.triage?.disposition === 'blocked' ? 'blocked' : 'agent', code: 'script_diagnosis_failed',
+        fingerprint: hash(`triage:${item.id}:${error.code || 'UNAVAILABLE'}`),
+        summary: '固定诊断未完成；保留已知阻塞与执行意图，未重放任何业务动作。',
+        humanAction: item.humanAction || null, evidence: { error: error.code || 'UNAVAILABLE' } };
+    }
+    const receiptFile = join(CONFIG_DIR, 'monitoring-recovery-receipts', `${item.key}-triage.json`);
+    // Enabling script reconciliation must not reopen a historical Agent block.
+    // New native completion/delivery proof may close it; diagnosis alone cannot.
+    if (item.triageHeldBlock && result.disposition === 'agent') result = { ...result, disposition: 'blocked',
+      summary: `脚本已复查，原阻塞尚未解除：${item.triageHeldBlock.reason || result.summary}` };
+    item.triageHistory ||= [];
+    if (item.triage?.fingerprint !== result.fingerprint || item.triage?.disposition !== result.disposition) {
+      item.triageHistory.push({ at, code: result.code, disposition: result.disposition, summary: result.summary });
+    }
+    await save(receiptFile, { key: item.key, kind: item.kind, id: item.id, originRunId: item.originRunId,
+      ...result, action: item.triageAction || null, checkedAt: at, history: item.triageHistory });
+    const waitStartedAt = result.disposition === 'wait'
+      ? item.triage?.code === result.code && item.triage.waitStartedAt || at : null;
+    item.triage = { ...result, evidence: undefined, receiptFile, checkedAt: at, waitStartedAt,
+      nextCheckAt: new Date(now + (result.disposition === 'blocked' ? config.scriptTriage.blockedRecheckMs ?? 300000 : 60000)).toISOString() };
+    item.evidence = [...new Set([...(item.evidence || []), receiptFile])];
+    if (result.disposition === 'agent') {
+      if (attempt?.triageFingerprint === result.fingerprint) {
+        item.summary = result.summary;
+        touch(item, 'blocked', '同一故障已交Agent处理且没有新的分流证据；保留回执，不重复唤醒');
+      } else touch(item, 'pending', result.summary);
+    } else {
+      item.summary = result.summary;
+      if (result.humanAction) item.humanAction = result.humanAction;
+      else delete item.humanAction;
+      touch(item, result.disposition === 'wait' ? 'verifying' : result.disposition, result.summary);
+      if (result.disposition === 'resolved') item.resolution = receiptReady
+        && ['agent', 'collaborative', 'spontaneous'].includes(receipt.resolution?.method) && receipt.resolution?.evidence?.length
+        ? receipt.resolution : { method: 'script', evidence: [receiptFile] };
+    }
+    await persist();
+  }
   for (const item of ordered) {
     const heldSlot = item.status === 'admitting';
     if (!['pending', 'admitting'].includes(item.status) || !heldSlot && (active >= maxConcurrent || admitted >= 1)) continue;
@@ -271,7 +367,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     try {
       const brief = taskById.get(item.id);
       if (brief && isStoppedAutomation(brief, now)) { touch(item, 'cancelled', '原任务已停止'); continue; }
-      if (healthy(snapshot, item)) {
+      if (healthy(snapshot, item) && !(config.scriptTriage?.enabled && item.kind === 'service')) {
         item.summary = '本轮独立观测确认已恢复，无需重复补救'; item.evidence = [snapshot.generatedAt];
         touch(item, 'resolved'); continue;
       }
@@ -280,9 +376,12 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
         if (!item.script || item.script.startedAt === at) continue;
       }
       if (item.kind === 'service' && item.status !== 'admitting'
+        && item.triage?.code !== 'business_health_failed'
         && (!failingServices.has(item.id) || (state.resources[`service:${item.id}`]?.observations || 0) < serviceConfirmations)) {
         item.reason = '等待服务持续异常核实，不启动新的补救'; continue;
       }
+      if (config.scriptTriage?.enabled && ['service', 'automation'].includes(item.kind)
+        && item.status !== 'admitting' && item.triage?.disposition !== 'agent') continue;
       if (!item.sessionId) { touch(item, 'blocked', '未配置该资源的恢复会话'); continue; }
       let attempt = item.attempts.at(-1);
       if (item.status !== 'admitting') {
@@ -308,6 +407,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
         if (!model) { touch(item, 'blocked', '没有尚未尝试的备用模型'); continue; }
         const requestId = `monitoring-recovery:${item.key}:${item.attempts.length + 1}`;
         attempt = { requestId, model, effort: session.tool === 'codex' ? 'high' : session.effort || '', mode: item.mode || 'repair',
+          triageFingerprint: item.triage?.fingerprint || null,
           previousRuntime: { tool: session.tool, model: session.model || '', effort: session.effort || '', thinking: session.thinking === true },
           receiptFile: join(CONFIG_DIR, 'monitoring-recovery-receipts', `${item.key}-${item.attempts.length + 1}.json`),
           sourceDelivery: task?.resultDelivery?.mode === 'conversation' ? session.conversation || task.resultDelivery : null };

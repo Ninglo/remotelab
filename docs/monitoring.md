@@ -1299,3 +1299,58 @@ Stopped alert cards also say no human action is needed because the component was
 `node scripts/disk-daily-check.mjs --output-dir <existing-daily-directory>` records local capacity, inode, mount independence, changes from the prior baseline, and the existing observer snapshot as atomic JSON/Markdown. It emits a false script-gate decision: daily collection never starts a model. Risk handling stays with the original minute observer and its bounded cache-maintenance workflow. Prior Agent evidence is preserved before changing latest pointers; failed readings remain unknown and old snapshot timestamps remain explicit.
 
 `recovery.ignoreUnits` suppresses automatic repair admission independently of notification. The observer merges it with `alertDelivery.ignoreUnits` for recovery; it never overwrites the repair-specific exclusions or implicitly silences their resource alerts.
+
+### Script-first recovery
+
+Set `recovery.scriptTriage.enabled` to route service and automation incidents through
+`chat/monitoring-triage.mjs` before any new Agent admission. This uses the existing
+minute observer, incident identity, recovery ledger and original alert card; it
+creates no scheduler, Session or second notification route. Disk incidents retain
+their existing bounded cache-maintenance script before fallback.
+
+The fixed gate returns `resolved`, `cancelled`, `wait`, `blocked` or `agent`:
+
+- Known SSH authentication and host-identity failures retain one actionable external
+  dependency. Feishu quota rejection remains blocked on the affected interface.
+  Explicit missing Feishu scopes can use one Agent for the existing authorized
+  self-service workflow; they are not automatically pushed to the human.
+- Service diagnosis reads bounded systemd fields and up to 60 journal lines from
+  the **current invocation**, classifies fixed reasons and saves no raw journal
+  text. Native startup/recovery gets a two-minute observation window by default
+  (`nativeRecoveryGraceMs`); a running service still needs its stability window.
+- `serviceActions` maps exact already-enrolled service units to an optional
+  `{ "action": "restart", "healthUrl": "http://127.0.0.1:PORT/healthz" }` policy.
+  Only a failed long-running unit with a failure result and no maintenance hold or
+  Agent attempt can receive one restart through its original service manager.
+  The observer persists intent before action. Lost acknowledgement is never
+  replayed. Healthy process state plus the registered JSON `ok: true` check are
+  required to close the incident. Clean manual stops, timers, oneshots and units
+  without an action policy are never automatically restarted. This map does not
+  grant credentials or management permissions. Verify permission from the actual
+  observer process before enabling an action; `NoNewPrivileges=yes` prevents a
+  sudo-based restart even if the interactive operator has sudo. A health-only
+  policy can omit `action` and leave recovery to the existing service manager.
+- Automation checks retain the original Run, read native request/delivery state,
+  wait for existing work, and retire superseded or stopped attempts without
+  claiming business completion. A matching task-acceptance receipt and **all**
+  required final delivery receipts can close a blocked repair without a new Agent.
+  Provider completion alone, a missing source, partial delivery and arbitrary
+  narrative claims cannot close it. Native delivery waiting has a fixed ten-minute
+  deadline; repeated observations do not move it forward.
+
+Each decision writes a private `*-triage.json` receipt and keeps semantic history.
+Blocked external dependencies recheck every five minutes by default
+(`blockedRecheckMs`) using the existing observer; ordinary observation waits use
+its next minute tick and do not occupy Agent slots. Only `agent` decisions enter
+the original recovery Session, with the fixed diagnosis and receipt path supplied.
+An unchanged diagnosis cannot spend another Agent attempt. Existing Agent work,
+confirmation plans and blocked historical attempts keep ownership; enabling the
+gate cannot start a wave of retries. New matching acceptance and delivery evidence
+may still close those historical records. Script verification has an explicit
+attribution rather than claiming an Agent performed it.
+
+The monitor's normal workflow is measurement, incident confirmation, fixed
+diagnosis, bounded authorized action, independent verification and original-card
+update. Agent diagnosis is the exception for unresolved judgment or implementation
+work. Script attempts, Agent attempts, business acceptance and actual delivery
+remain separate evidence.

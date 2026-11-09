@@ -376,8 +376,20 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   let recovery;
   try { recovery = baseline ? { skipped: 'baseline' } : await recover({
     config: { ...config.recovery, ignoreUnits: [...new Set([...(config.recovery?.ignoreUnits || []), ...(config.alertDelivery.ignoreUnits || [])])],
+      scriptTriage: { ...config.recovery?.scriptTriage, services: config.services },
       serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
+  // A running process cannot close a failed registered business-health probe.
+  for (const repair of recovery.incidents || []) if (repair.kind === 'service'
+    && !['resolved', 'cancelled'].includes(repair.status) && repair.triage?.code === 'business_health_failed') {
+    const service = snapshot.services.find(item => item.unit === repair.id);
+    if (service && service.status !== 'paused') { service.status = 'failed'; service.recoveryReady = false; }
+    if (!snapshot.attention.some(item => item.kind === 'service' && item.id === repair.id)) snapshot.attention.push({
+      kind: 'service', id: repair.id, subject: repair.subject, severity: 'critical', detail: repair.triage.summary, businessHealthFailed: true });
+  }
+  snapshot.attention = snapshot.attention.filter(item => !item.businessHealthFailed
+    || !(recovery.incidents || []).some(repair => repair.kind === 'service' && repair.id === item.id
+      && repair.status === 'resolved' && repair.triage?.code === 'service_verified'));
   const alerts = await dispatch({ config: { ...config.alertDelivery, snapshot: config.snapshot, criticalAutomationIds: config.criticalAutomationIds,
     recoveryIncidents: recovery.incidents || snapshot.recovery }, snapshot, baseline, dryRun });
   let sessionDiagnostics;

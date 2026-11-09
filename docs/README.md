@@ -209,3 +209,10 @@ Employee SSH Codex memory: [authenticated account and file evidence](monitoring.
 - [Feishu role-restricted application queries](feishu-bot-setup.md#role-restricted-application-queries):
   distinct HR/non-HR collaborator/interviewer admission, preserved collaborator executor access, signed natural candidate queries, durable per-chat followups, safe backend-error replies and separation from the
   general executor (`connectors/feishu/restricted-access.mjs`).
+
+## Monitoring recovery implementation
+
+[Resource monitoring](monitoring.md#script-first-recovery) documents the fixed
+service/automation gate in `chat/monitoring-triage.mjs`: existing observations and
+receipts resolve known cases before a new Agent request, with durable one-shot
+action intent and independent business-health verification.
