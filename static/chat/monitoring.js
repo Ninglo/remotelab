@@ -6,11 +6,12 @@
   const management = portalQuery.get('monitor') === 'automations' || portalQuery.get('manage') === '1';
   if (portal?.url && !portal.preview && !management) {
     const target = new URL(portal.url);
-    const routes = { overview: 'overview', test: 'overview', usage: 'usage', feedback: 'labor', security: 'safety' };
+    const routes = { overview: 'overview', organization: 'organization', test: 'overview', usage: 'usage', feedback: 'labor', security: 'safety' };
     target.searchParams.set('tab', routes[portalQuery.get('monitor')] || 'overview');
     if (portalQuery.get('monitor') === 'feedback') target.searchParams.set('portfolio', 'claude-tag');
     const panel = document.getElementById('taskCenterPanel');
     panel?.replaceChildren(Object.assign(document.createElement('h2'), {textContent:'监管中心'}),
+      Object.assign(document.createElement('a'), {href:new URL('?tab=organization',portal.url).href,textContent:'Index 使用与效果 →'}),
       Object.assign(document.createElement('a'), {href:target.href,textContent:'打开统一监管中心 →'}));
     const open = () => globalScope.location.assign(target.href);
     globalScope.RemoteLabMonitoring = {onTabShown:open,isOverview:()=>true,loadHandling:()=>{}};
@@ -28,6 +29,7 @@
   const automations = document.getElementById("monitoringAutomations");
   const content = document.getElementById("monitoringContent");
   if (!overview || !automations || !content) return;
+  if(portal?.url){const quick=document.createElement('a');quick.href=new URL('?tab=organization',portal.url).href;quick.textContent='Index 使用与效果 · 查看各项目的持续使用、工作结果与改进方向 →';quick.className='monitoring-note';overview.prepend(quick);}
   const security = document.getElementById("monitoringSecurity");
   const views = ["overview", "usage", "automations", "feedback", ...(security ? ["security"] : [])];
   const feedback = document.getElementById("monitoringFeedback");

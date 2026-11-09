@@ -1,5 +1,13 @@
 # Operations overview
 
+## Organization usage and outcomes
+
+The Monitor's `?tab=organization` view combines independent business work, recorded outcomes and source coverage. The Overview quick link and `?tab=tasks&monitor=organization` use the same configured portal. The protected preview preserves `/monitoring-preview/`; the employee portal remains read-only. This view does not start analysis, machine probes or jobs when opened or refreshed.
+
+Monitor owns the work index and its collection cadence. Counts distinguish human requests, scheduled business batches and execution attempts; missing reviews remain unreviewed. Source and classification gaps accompany every aggregate. Private work records do not enter the public snapshot. To connect authorized evidence, set `organizationRecordsDir` in the existing instance `monitoring-evidence.json` to the collector's per-work record directory. `GET /api/monitoring/organization-work?id=work_…` reads only that record and requires access to every contributing Session; the route grants no Session access or write capability. Existing case feedback remains the write path.
+
+The presentation asset allowlist includes `organization-view.js`. Validate proxy routes with `tests/test-monitoring-portal.mjs` and scoped evidence with `tests/test-organization-work.mjs`, using the clean instance test runner. Source collection, metric definitions, coverage and rollback stay with the deployed Monitor's maintenance documentation.
+
 ## Response time query
 
 可直接交办：“用现有监控告诉我今天首次回应和完整交付用了多久，附统计时间、样本数和缺口。”

@@ -1,3 +1,4 @@
+import {handleOrganizationWork} from './router-organization-work.mjs';
 import { handleAdministratorRoutes } from './router-administrator-routes.mjs';
 import { canAccessSession, canReadSession, isSessionAdministrator, memberRouteAllowed } from './session-access.mjs';
 import { requireAttachmentAccess } from './session-attachment-access.mjs';
@@ -1496,6 +1497,7 @@ export async function handleRequest(req, res) {
   if (await handleSiteUsageRoutes({ req, res, pathname, authSession })) return;
 
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;
+  if (await handleOrganizationWork({ req, res, pathname, authSession })) return;
   if (await handleMonitoringPreview({ req, res, pathname })) return;
   if (await handleMonitoringEvidence({ req, res, pathname, authSession })) return;
   if (await handleFeatureObservation({ req, res, pathname, parsedUrl, authSession, writeJson })) return;

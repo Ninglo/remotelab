@@ -27,6 +27,10 @@ Agents must direct future requests to this page; a chat instruction, claimed adm
 
 Legacy media ownership is indexed by filename at upload or from trusted persisted event attachments when their Session is read. Unindexed legacy media fail closed until the owning event is read or an administrator handles it. File assets use their recorded Session. Private event bodies and media are no longer issued with public/immutable cache directives.
 
+## Organization work evidence
+
+`GET /api/monitoring/organization-work` is available to signed-in accounts but returns a record only when the account can access every contributing Session. The per-work record is read by validated ID; missing and unauthorized records share the same response. The endpoint is read-only, does not expose the private directory through Monitor snapshots, and does not make employee portal credentials into workbench credentials.
+
 ## Sharing and boundaries
 
 A normal Session URL does not grant access. Anonymous navigation preserves it through login/registration; an authenticated employee without access sees a 403 explanation and a link to their own workspace. Explicit immutable ShareSnapshot publications and already published sites retain their separate publication rules. Previously downloaded material and existing externally signed asset URLs cannot be recalled by changing Session visibility. The workbench still executes agents on its configured machine; these HTTP rules do not provide operating-system or agent filesystem isolation. Separate instances and OS permissions remain necessary across machine trust boundaries.

@@ -43,6 +43,7 @@ export function memberRouteAllowed(method, path, personId) {
   if (/^\/api\/sessions(?:\/|$)/.test(path) || /^\/api\/(?:runs|assets|images|media)(?:\/|$)/.test(path)) return true;
   if (/^\/api\/(?:automation-tasks|triggers|schedules)(?:\/|$)/.test(path)) return true;
   if (/^\/api\/people\/[^/]+(?:\/credentials(?:\/[^/]+)?)?$/.test(path)) return path.split('/')[3] === personId;
+  if (path === '/api/monitoring/organization-work') return method === 'GET';
   if (path === '/api/people') return method === 'GET';
   if (['/api/settings', '/api/auto-routing', '/api/tools'].includes(path)) return method === 'GET';
   if (['/api/auth/me', '/api/models', '/api/runtime-presets', '/api/push/vapid-public-key', '/api/push/subscribe',
