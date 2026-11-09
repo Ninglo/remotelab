@@ -29,7 +29,7 @@ export function monitoringNextStep(item, config) {
   const recovery = repairFor(item, config);
   const sessionUrl = link(recovery?.sessionId, config.overviewUrl);
   const ordinary = { type: 'notice', label: '查看处理进展', url: sessionUrl || config.overviewUrl };
-  if (item.recovered) return { ...ordinary, summary: '已恢复，无需操作。' };
+  if (item.recovered) return { ...ordinary, summary: item.recoveryStopped ? '已按登记停用，无需操作。' : '已恢复，无需操作。' };
   if (item.continuity?.lastAccountWarning?.state === 'low') return {
     type: 'input', label: '查看账号与额度', url: config.overviewUrl,
     summary: `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}，请准备重置或购入新账号。`,

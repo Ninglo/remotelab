@@ -34,6 +34,30 @@ function fixture() {
   getState: () => state, getSends: () => sends, getUpdates: () => updates };
 }
 
+test('retired services close as stopped and legacy card wording is corrected once in place', async () => {
+  const f = fixture();
+  const failed = snapshot([{ kind: 'service', id: 'retired.service', subject: 'Retired', severity: 'critical' }]);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: failed });
+  const paused = snapshot([]);
+  paused.services = [{ unit: 'retired.service', status: 'paused' }];
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: paused });
+  const state = f.getState(), incident = Object.values(state.incidents)[0];
+  assert.equal(incident.active, false);
+  assert.equal(incident.event.recoveryStopped, true);
+  const rendered = renderMonitoringAlert([incident.event], {});
+  assert.match(rendered, /已按登记停用，无需操作/);
+  assert.doesNotMatch(rendered, /已恢复，无需操作/);
+  delete incident.event.stoppedNoticeVersion;
+  await f.options.save(null, state);
+  const before = f.getUpdates();
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: paused });
+  assert.equal(f.getUpdates(), before + 1);
+  await dispatchMonitoringAlerts({ ...f.options, snapshot: paused });
+  assert.equal(f.getUpdates(), before + 1);
+  assert.equal(f.getSends(), 1);
+  assert.equal(Object.values(f.getState().incidents)[0].event.stoppedNoticeVersion, 1);
+});
+
 test('normal observations are silent; simultaneous urgent issues send once and survive restart', async () => {
   const f = fixture();
   await dispatchMonitoringAlerts({ ...f.options, snapshot: snapshot([]) }); assert.equal(f.getSends(), 0);

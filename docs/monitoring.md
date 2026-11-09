@@ -1294,6 +1294,8 @@ Pool source failures retain their incident and first failure time across brief s
 
 A service explicitly marked paused by an inactive unit and registered maintenance reason closes its existing alert as stopped, not repaired. The broker retires its pending/blocked/confirmation-waiting repairs, retaining all attempts and evidence. Already running repairs finish normal receipt reconciliation; no replacement repair is admitted.
 
+Stopped alert cards also say no human action is needed because the component was intentionally retired, rather than claiming recovery. The observer corrects the wording on existing stopped cards once in place, preserving their original message, incident and history.
+
 `node scripts/disk-daily-check.mjs --output-dir <existing-daily-directory>` records local capacity, inode, mount independence, changes from the prior baseline, and the existing observer snapshot as atomic JSON/Markdown. It emits a false script-gate decision: daily collection never starts a model. Risk handling stays with the original minute observer and its bounded cache-maintenance workflow. Prior Agent evidence is preserved before changing latest pointers; failed readings remain unknown and old snapshot timestamps remain explicit.
 
 `recovery.ignoreUnits` suppresses automatic repair admission independently of notification. The observer merges it with `alertDelivery.ignoreUnits` for recovery; it never overwrites the repair-specific exclusions or implicitly silences their resource alerts.

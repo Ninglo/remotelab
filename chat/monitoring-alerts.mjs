@@ -237,7 +237,8 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       appendAlertHistory(incident, { at, label: serviceStopped ? '服务已停用' : stopped ? '任务已停止' : recoveredCrashes.get(key)?.state === 'fixed' ? '修复上线已核验' : '复查确认恢复',
         summary: `${observation}；${monitoringProgress(incident.event, repair)}` });
       incident.event = { ...incident.event, ...recoveredCrashes.get(key), recovered: true, recoveredAt: at, observedAt: at, persistentWarningAt: null,
-        recovery: repair, recoveryStopped: stopped, recoveryObservation: observation, history: structuredClone(incident.history) };
+        recovery: repair, recoveryStopped: stopped, stoppedNoticeVersion: stopped ? 1 : undefined,
+        recoveryObservation: observation, history: structuredClone(incident.history) };
       incident.version = hash(`recovered:${incident.event.state || ''}:${incident.event.repair?.commit || ''}`); edits.add(incident.messageId);
     }
     incident.active = false; delete incident.persistence; delete incident.persistentWarningAt; delete incident.firstObservedAt;
@@ -260,11 +261,19 @@ async function dispatchAlerts({ config, snapshot, stateFile,
     && incident.status === 'sent' && incident.messageId && incident.event?.recovered) {
     const repair = config.recoveryIncidents?.findLast(r => r.kind === incident.kind && r.id === incident.event.id
       && (!incident.event.recovery?.originRunId || r.originRunId === incident.event.recovery.originRunId));
-    if (!repair || repairVersion(repair) === repairVersion(incident.event.recovery)) continue;
-    const at = snapshot.generatedAt || new Date(now).toISOString();
-    appendAlertHistory(incident, { at, label: '处理跟进', summary: monitoringProgress(incident.event, repair), status: repair.status });
-    incident.event = { ...incident.event, recovery: repair, history: structuredClone(incident.history) };
-    incident.version = hash(`recovered:${repairVersion(repair)}`); edits.add(incident.messageId);
+    const receiptChanged = repair && repairVersion(repair) !== repairVersion(incident.event.recovery);
+    const stoppedNoticeChanged = incident.event.recoveryStopped && incident.event.stoppedNoticeVersion !== 1;
+    if (!receiptChanged && !stoppedNoticeChanged) continue;
+    if (receiptChanged) {
+      const at = snapshot.generatedAt || new Date(now).toISOString();
+      appendAlertHistory(incident, { at, label: '处理跟进', summary: monitoringProgress(incident.event, repair), status: repair.status });
+      incident.event = { ...incident.event, recovery: repair, history: structuredClone(incident.history) };
+    }
+    // Correct previously sent stopped cards once, without reopening or resending
+    // the incident or claiming that its underlying failure was repaired.
+    if (stoppedNoticeChanged) incident.event.stoppedNoticeVersion = 1;
+    incident.version = hash(`recovered:${repairVersion(incident.event.recovery)}:${incident.event.stoppedNoticeVersion || 0}`);
+    edits.add(incident.messageId);
   }
   for (const batch of Object.values(state.batches)) if (batch.status === 'blocked_dependency'
     && batch.keys.every(key => state.incidents[key]?.active === false || state.incidents[key]?.status === 'sent')) {
