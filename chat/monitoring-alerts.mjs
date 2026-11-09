@@ -72,7 +72,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
   // are not recovery. Rearm only an explicitly observed healthy or stopped item.
   for (const item of snapshot.disks) if (item.status === 'healthy') recovered.add(hash(`disk:${item.path || item.label}`));
   for (const item of snapshot.diskGrowth || []) if (item.status === 'healthy') recovered.add(hash(`diskGrowth:${item.path}`));
-  for (const item of snapshot.services) if (item.status === 'healthy' && item.recoveryReady !== false) recovered.add(hash(`service:${item.unit || item.label}`));
+  for (const item of snapshot.services) if (item.status === 'paused' || item.status === 'healthy' && item.recoveryReady !== false) recovered.add(hash(`service:${item.unit || item.label}`));
   if (snapshot.runtimeHealth && snapshot.runtimeHealth.heapUsed / snapshot.runtimeHealth.heapLimit < 0.75) {
     const service = snapshot.services.find(s => s.pid === snapshot.runtimeHealth.pid);
     if (service) recovered.add(hash(`servicePressure:${service.unit}`));
@@ -228,12 +228,13 @@ async function dispatchAlerts({ config, snapshot, stateFile,
         && (!incident.event.recovery?.originRunId || r.originRunId === incident.event.recovery.originRunId)) || incident.event.recovery;
       const disk = snapshot.disks.find(d => (d.path || d.label) === (incident.event.id || incident.event.subject));
       const task = snapshot.automations.items?.find(t => t.id === incident.event.id);
-      const stopped = incident.event.kind === 'automation' && ['paused', 'cancelled'].includes(task?.state);
+      const serviceStopped = incident.event.kind === 'service' && snapshot.services.some(s => s.unit === incident.event.id && s.status === 'paused');
+      const stopped = serviceStopped || incident.event.kind === 'automation' && ['paused', 'cancelled'].includes(task?.state);
       const observation = recoveredCrashes.get(key)?.recoveryObservation || (disk ? monitoringProblem({ ...disk, kind: 'disk' })
-        : stopped ? '原任务已暂停或取消' : '独立观测已确认恢复');
+        : serviceStopped ? '服务已按登记维护停用' : stopped ? '原任务已暂停或取消' : '独立观测已确认恢复');
       if (!incident.history?.length) appendAlertHistory(incident, { at: incident.event.observedAt,
         label: '既有预警记录', summary: monitoringProblem(incident.event) });
-      appendAlertHistory(incident, { at, label: stopped ? '任务已停止' : recoveredCrashes.get(key)?.state === 'fixed' ? '修复上线已核验' : '复查确认恢复',
+      appendAlertHistory(incident, { at, label: serviceStopped ? '服务已停用' : stopped ? '任务已停止' : recoveredCrashes.get(key)?.state === 'fixed' ? '修复上线已核验' : '复查确认恢复',
         summary: `${observation}；${monitoringProgress(incident.event, repair)}` });
       incident.event = { ...incident.event, ...recoveredCrashes.get(key), recovered: true, recoveredAt: at, observedAt: at, persistentWarningAt: null,
         recovery: repair, recoveryStopped: stopped, recoveryObservation: observation, history: structuredClone(incident.history) };

@@ -142,6 +142,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     (a.kind === 'automation') - (b.kind === 'automation') || stamp(a.createdAt) - stamp(b.createdAt));
   // Reconcile every in-flight attempt before considering a new admission.
   for (const item of ordered) {
+    if (item.kind === 'service' && snapshot.services.some(s => s.unit === item.id && s.status === 'paused')
+      && !['running', 'admitting', 'resolved', 'cancelled'].includes(item.status)) {
+      touch(item, 'cancelled', '服务已按登记维护停用；保留原补救回执，不再启动或轮询旧补救'); continue;
+    }
     if (config.diskScript?.enabled && ['disk', 'diskGrowth'].includes(item.kind)
       && ['pending', 'blocked', 'awaiting_confirmation'].includes(item.status) && healthy(snapshot, item)) {
       item.summary = '本轮独立观测确认指标已恢复；原处置证据及待确认方案保留，未执行待确认动作';

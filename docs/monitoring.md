@@ -1291,3 +1291,7 @@ and a later idle period starts a new clock. This reads the existing shared quota
 snapshot, creates no timer or GPU probe, and never submits training work.
 
 Pool source failures retain their incident and first failure time across brief successful samples. Recovery requires ten minutes (`poolMonitoring.thresholds.sourceRecoveryMs`, default 600000) of fresh continuous checks and an advancing upstream sample timestamp. Repeated retained samples and observation gaps cannot close the incident. Source sampling, task progress and whole-pool idle thresholds remain separate.
+
+A service explicitly marked paused by an inactive unit and registered maintenance reason closes its existing alert as stopped, not repaired. The broker retires its pending/blocked/confirmation-waiting repairs, retaining all attempts and evidence. Already running repairs finish normal receipt reconciliation; no replacement repair is admitted.
+
+`node scripts/disk-daily-check.mjs --output-dir <existing-daily-directory>` records local capacity, inode, mount independence, changes from the prior baseline, and the existing observer snapshot as atomic JSON/Markdown. It emits a false script-gate decision: daily collection never starts a model. Risk handling stays with the original minute observer and its bounded cache-maintenance workflow. Prior Agent evidence is preserved before changing latest pointers; failed readings remain unknown and old snapshot timestamps remain explicit.

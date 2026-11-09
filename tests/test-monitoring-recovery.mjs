@@ -377,3 +377,14 @@ test('flapping active service preserves incident identity and bounded attempts',
   assert.equal(Object.keys(f.getState().incidents).length, 1);
   assert.equal(f.incident().key, key); assert.equal(f.getAdmissions(), 1);
 });
+
+
+test('explicitly retired service stops old pending repairs without erasing evidence or claiming recovery', async () => {
+  const f = fixture({ kind: 'service' });
+  await processMonitoringRecovery(f.options); f.finish('blocked'); await processMonitoringRecovery(f.options);
+  f.snapshot.attention = []; f.snapshot.services = [{ unit: '/', status: 'paused' }];
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.incident().status, 'cancelled'); assert.equal(f.incident().attempts.length, 1);
+  assert.equal(f.incident().evidence[0], 'publication-receipt.json');
+  await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1);
+});
