@@ -657,3 +657,14 @@ test('disk recovery inside thirty minutes sends neither alert nor success, and r
   await dispatchMonitoringAlerts({ ...f.options, config, snapshot: value, now: start + 61 * 60_000 });
   assert.equal(f.getSends(), 1);
 });
+
+
+test('recovery exclusions survive notification configuration without silencing the alert', async () => {
+  await runMonitoringAlerts({ dryRun: true,
+    config: { alertDelivery: { enabled: true, ignoreUnits: ['observer.timer'] }, recovery: { enabled: true, ignoreUnits: ['retired.service'] } },
+    reader: async () => ({ attention: [], services: [], coverage: { gaps: [] } }),
+    collectIncidents: async () => ({ cycles: [], gaps: [] }), poolObserver: async () => null, diagnose: async () => ({}),
+    recover: async ({ config }) => { assert.deepEqual(config.ignoreUnits, ['retired.service', 'observer.timer']); return {}; },
+    dispatch: async ({ config }) => { assert.deepEqual(config.ignoreUnits, ['observer.timer']); return {}; },
+  });
+});

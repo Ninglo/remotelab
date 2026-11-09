@@ -366,7 +366,7 @@ export async function runMonitoringAlerts({ baseline = false, dryRun = false, co
   // incident remains eligible for repair; an uncertain send is never replayed.
   let recovery;
   try { recovery = baseline ? { skipped: 'baseline' } : await recover({
-    config: { ...config.recovery, ignoreUnits: config.alertDelivery.ignoreUnits,
+    config: { ...config.recovery, ignoreUnits: [...new Set([...(config.recovery?.ignoreUnits || []), ...(config.alertDelivery.ignoreUnits || [])])],
       serviceConfirmationObservations: config.alertDelivery.confirmationObservations }, snapshot, dryRun }); }
   catch (error) { recovery = { enabled: config.recovery?.enabled === true, error: error.code || 'RECOVERY_UNAVAILABLE' }; }
   const alerts = await dispatch({ config: { ...config.alertDelivery, snapshot: config.snapshot, criticalAutomationIds: config.criticalAutomationIds,
