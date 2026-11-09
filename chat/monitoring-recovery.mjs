@@ -33,7 +33,7 @@ export function projectRecovery(state) {
 function healthy(snapshot, item) {
   return item.kind === 'disk' ? snapshot.disks.some(d => (d.path || d.label) === item.id && d.status === 'healthy')
     : item.kind === 'diskGrowth' ? snapshot.diskGrowth?.some(d => d.path === item.id && d.status === 'healthy')
-    : item.kind === 'service' ? snapshot.services.some(s => (s.unit || s.label) === item.id && s.status === 'healthy') : false;
+    : item.kind === 'service' ? snapshot.services.some(s => (s.unit || s.label) === item.id && s.status === 'healthy' && s.recoveryReady !== false) : false;
 }
 
 function promptFor(item, attempt, task, config) {

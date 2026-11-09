@@ -33,28 +33,38 @@ test('observation gaps cannot establish or resolve a stalled run', () => {
   const terminal = assessPool(missing, { terminals: [{ run_id: 'run', state: 'stopped' }] }, { now: start + 33 * 60000 });
   assert.ok(terminal.recovered.some(x => x.kind === 'poolTask'));
 });
-test('source grace is elapsed outage time, not repeated page reads; recovery is explicit', () => {
-  let prior = assessPool(null, {}, { now: start });
-  for (let i = 0; i < 10; i++) prior = assessPool(prior, {}, { now: start });
-  assert.equal(prior.attention.length, 0);
-  prior = assessPool(prior, {}, { now: start + 180000 });
+test('source recovery needs ten continuous minutes and advancing samples; flaps keep one incident', () => {
+  let prior = assessPool(null, {}, { now: start, sourceGraceMs: 1800000 });
+  for (let minute = 1; minute <= 30; minute++) {
+    const now = start + minute * 60000;
+    prior = assessPool(prior, minute === 10 ? sample(now) : {}, { now, sourceGraceMs: 1800000 });
+  }
   assert.equal(prior.attention.length, 2);
-  const good = assessPool(prior, sample(start + 240000), { now: start + 240000 });
-  assert.equal(good.attention.length, 0);
-  assert.ok(good.recovered.some(x => x.id === 'controller'));
+  const failedSince = prior.sources.controller.failedSince;
+  for (let minute = 31; minute <= 40; minute++) {
+    const now = start + minute * 60000;
+    prior = assessPool(prior, sample(now), { now });
+    assert.equal(prior.sources.controller.failedSince, failedSince);
+    assert.ok(!prior.recovered.some(x => x.id === 'controller'));
+  }
+  const now = start + 41 * 60000;
+  prior = assessPool(prior, sample(now), { now });
+  assert.ok(prior.recovered.some(x => x.id === 'controller'));
+  assert.equal(prior.sources.controller.failedSince, null);
 });
-test('longer source confirmation waits thirty minutes and a successful sample resets it', () => {
-  const assess = (prior, value, elapsed) => assessPool(prior, value, { now: start + elapsed, sourceGraceMs: 1800000 });
-  let prior = assess(null, {}, 0);
-  prior = assess(prior, {}, 180000);
-  assert.equal(prior.attention.length, 0);
-  prior = assess(prior, sample(start + 240000), 240000);
-  prior = assess(prior, {}, 300000);
-  prior = assess(prior, {}, 2099999);
-  assert.equal(prior.attention.length, 0);
-  prior = assess(prior, {}, 2100000);
-  assert.equal(prior.attention.length, 2);
-  assert.ok(prior.attention.every(event => event.detail.startsWith('数据源持续不可用 30 分钟；')));
+test('a repeated device sample or an observation gap cannot prove stable recovery', () => {
+  const device = now => ({ ...sample(now), resources: { ...sample(now).resources,
+    machines: [{ id: 'dev', observation: { observedAt: iso(start), maxAgeSeconds: 3600 } }] } });
+  let prior = { sources: { 'device:dev': { failedSince: iso(start - 1800000), alerted: true } } };
+  for (let minute = 0; minute <= 11; minute++) {
+    const now = start + minute * 60000;
+    prior = assessPool(prior, device(now), { now });
+  }
+  assert.ok(!prior.recovered.some(x => x.id === 'device:dev'));
+  const now = start + 20 * 60000, next = device(now);
+  next.resources.machines[0].observation.observedAt = iso(now);
+  prior = assessPool(prior, next, { now });
+  assert.ok(!prior.recovered.some(x => x.id === 'device:dev'));
 });
 test('one failed upstream does not suppress the other or forge a new success time', async () => {
   let saved;

@@ -61,7 +61,7 @@ export function projectAccounts(runtime, fleet, now = Date.now()) {
   });
 }
 
-export async function readService(item, execute = exec) {
+export async function readService(item, execute = exec, now = Date.now()) {
   if (!/^[\w@.-]+\.(service|timer)$/.test(item.unit || '') || !['user', 'system'].includes(item.scope)) throw new Error('INVALID_UNIT');
   // systemctl otherwise emits local abbreviations: China's CST is parsed by
   // JavaScript as US Central time, moving a start timestamp fourteen hours ahead.
@@ -72,17 +72,22 @@ export async function readService(item, execute = exec) {
   const known = state.LoadState === 'loaded';
   const neverRan = state.Type === 'oneshot' && state.ActiveState === 'inactive' && !state.ExecMainStartTimestamp;
   const healthy = known && (state.ActiveState === 'active' || !neverRan && state.Type === 'oneshot' && state.ActiveState === 'inactive' && state.Result === 'success');
+  const startedAt = Date.parse(state.ExecMainStartTimestamp || '');
+  const recoveryReady = healthy && (item.unit.endsWith('.timer') || state.Type === 'oneshot'
+    || Number.isFinite(startedAt) && now >= startedAt
+      && now - startedAt >= (item.recoveryStableMs ?? 30 * 60_000));
   const starting = known && state.ActiveState === 'activating' && state.Result === 'success';
   const paused = known && state.ActiveState === 'inactive' && item.maintenance?.reason;
   return { label: text(item.label || item.unit), unit: item.unit, status: paused ? 'paused' : !known || neverRan ? 'unknown' : healthy ? 'healthy' : starting ? 'running' : 'failed',
     ...(paused ? { maintenanceReason: text(item.maintenance.reason), maintenanceSource: text(item.maintenance.source) } : {}),
+    recoveryReady,
     pid: Number(state.MainPID) || null, restartCount: Number(state.NRestarts) || 0,
     state: state.ActiveState, lastResult: state.Result || null, lastRunAt: state.ExecMainStartTimestamp || state.LastTriggerUSec || null,
     ...(item.unit.endsWith('.timer') ? { timer: {
       calendars: [...(state.TimersCalendar || '').matchAll(/OnCalendar=(.*?)\s*;/g)].map(match => match[1]),
       monotonic: state.TimersMonotonic || '', lastTriggeredAt: state.LastTriggerUSec || null,
     } } : {}),
-    observedAt: new Date().toISOString() };
+    observedAt: new Date(now).toISOString() };
 }
 
 export function analyzeResources({ accounts, disks, automations, services, recovery = [], apiHealth, continuity, now = Date.now() }) {

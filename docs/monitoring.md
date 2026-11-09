@@ -552,7 +552,7 @@ executed merely because the script policy was enabled.
 
 When the operator authorizes recovery, extend the same observer instead of adding another timer. Observation, incident notification and repair have separate durable records. Reporting or baselining a problem does not resolve it. The Harness still diagnoses the error, chooses permitted work and verifies business results; this broker supplies incident identity, bounds, admission and receipt reconciliation.
 
-Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts and reset after an explicit healthy observation. An unknown measurement cannot authorize a new service repair. Disk warning investigations and emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
+Service recovery inherits `alertDelivery.confirmationObservations`, so a brief restart cannot start a repair before the configured number of distinct failed snapshots. Counts survive observer restarts. Long-running systemd services only rearm after the current process has remained running for 30 minutes (`services[].recoveryStableMs`); a transient `active` during a restart loop cannot close an alert, reset the failure cycle or replenish recovery attempts. Completed successful oneshots and active timers do not require this uptime window. An unknown measurement cannot authorize a new service repair. Disk warning investigations and emergencies remain immediate, and already admitted work continues normal receipt reconciliation.
 
 Add an explicit instance-local configuration:
 
@@ -1289,3 +1289,5 @@ hours, `poolIdle` sends through the existing group delivery once; it does not ad
 the ten-minute failure escalation. Confirmed allocation closes the original card
 and a later idle period starts a new clock. This reads the existing shared quota
 snapshot, creates no timer or GPU probe, and never submits training work.
+
+Pool source failures retain their incident and first failure time across brief successful samples. Recovery requires ten minutes (`poolMonitoring.thresholds.sourceRecoveryMs`, default 600000) of fresh continuous checks and an advancing upstream sample timestamp. Repeated retained samples and observation gaps cannot close the incident. Source sampling, task progress and whole-pool idle thresholds remain separate.

@@ -262,3 +262,16 @@ test('observer cadence comes from its registered live timer and completion time 
   assert.equal(value.observation.cadenceSeconds, null);
   assert.equal(value.observation.status, 'unknown');
 });
+
+
+test('short-lived active service cannot rearm recovery; stable uptime and completed oneshot can', async () => {
+  const now = Date.parse('2026-11-09T04:30:00Z');
+  const output = start => async () => ({ stdout: `LoadState=loaded\nActiveState=active\nType=simple\nResult=success\nMainPID=42\nNRestarts=5000\nExecMainStartTimestamp=${start}\n` });
+  const item = { unit: 'forward.service', scope: 'system' };
+  const flap = await readService(item, output('Mon 2026-11-09 04:29:58 UTC'), now);
+  assert.equal(flap.status, 'healthy'); assert.equal(flap.recoveryReady, false);
+  assert.equal((await readService(item, output('Mon 2026-11-09 04:00:00 UTC'), now)).recoveryReady, true);
+  assert.equal((await readService(item, output(''), now)).recoveryReady, false);
+  const oneshot = await readService(item, async () => ({ stdout: 'LoadState=loaded\nActiveState=inactive\nType=oneshot\nResult=success\nExecMainStartTimestamp=Mon 2026-11-09 04:29:59 UTC\n' }), now);
+  assert.equal(oneshot.recoveryReady, true);
+});

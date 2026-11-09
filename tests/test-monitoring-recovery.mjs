@@ -361,3 +361,19 @@ test('interrupted script intent is not replayed, and unknown readings do not adm
   await processMonitoringRecovery({ ...f.options, now: f.options.now + 60_000 });
   assert.equal(calls, 1); assert.equal(f.getAdmissions(), 0);
 });
+
+
+test('flapping active service preserves incident identity and bounded attempts', async () => {
+  const f = fixture({ kind: 'service' });
+  await processMonitoringRecovery(f.options); f.finish('blocked');
+  await processMonitoringRecovery(f.options);
+  const key = f.incident().key, failure = f.snapshot.attention[0];
+  for (let minute = 1; minute <= 150; minute++) {
+    f.snapshot.generatedAt = new Date(f.options.now + minute * 60_000).toISOString();
+    f.snapshot.attention = minute % 2 ? [] : [failure];
+    f.snapshot.services = [{ unit: '/', status: minute % 2 ? 'healthy' : 'failed', recoveryReady: false }];
+    await processMonitoringRecovery({ ...f.options, now: f.options.now + minute * 60_000 });
+  }
+  assert.equal(Object.keys(f.getState().incidents).length, 1);
+  assert.equal(f.incident().key, key); assert.equal(f.getAdmissions(), 1);
+});
