@@ -10,7 +10,7 @@ export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview'
  if(publicOrigin)for(const quote of ['"',"'"])text=text.split(quote+publicOrigin+'/?').join(quote+prefix+'/?');
  return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }
-const caseAssets=new Set(['','index.html','case-metadata.js','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
+const caseAssets=new Set(['','index.html','capability-model.js','capability-view.js','capability-review.js','capability.css','case-metadata.js','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
 export async function handleMonitoringPreview({req,res,pathname,configOverride}) {
  const prefix='/monitoring-preview';if(pathname!==prefix&&!pathname.startsWith(prefix+'/'))return false;
  const config=configOverride||await evidenceConfig(),port=config?.previewPort;

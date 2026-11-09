@@ -188,3 +188,12 @@ is introduced. Old local reviews, drafts, assignments, anonymous records and
 exports remain in their original browser spaces. They are not silently uploaded
 or attributed to the currently logged-in person. A failed submit retains its
 client UUID for a safe retry; revisions append instead of overwriting history.
+
+The organization capability rubric appends `rubricVersion: organization-execution-v1`
+with six optional scores (`goal`, `business`, `context`, `outcome`, `autonomy`,
+`timeliness`) and `weightVersion: equal-20261109` (organization/execution 50/50).
+It uses the same case identity, authentication and append-only store. Missing
+scores remain null; legacy four-dimension reviews remain unchanged and are
+filtered separately by the workbench. Public Agent aggregates never silently
+replace their scores with human feedback. The authenticated preview allows only
+the four capability presentation assets in addition to its existing allowlist.

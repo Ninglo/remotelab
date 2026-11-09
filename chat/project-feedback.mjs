@@ -15,6 +15,15 @@ function caseReview(value) {
   if (Object.values(out).some(v=>v===null) || !/^[a-z0-9-]+$/.test(out.projectId) ||
       !['workbench-selected-v1','workbench-v2'].includes(out.space) || !/^[a-zA-Z0-9_-]+$/.test(out.caseId) || !out.category) return null;
   const score = v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100;
+  if (value.rubricVersion === 'organization-execution-v1') {
+    const keys=['goal','business','context','outcome','autonomy','timeliness'];
+    if (value.weightVersion!=='equal-20261109' || value.weights?.organization!==50 || value.weights?.execution!==50) return null;
+    out.rubricVersion=value.rubricVersion;out.weightVersion=value.weightVersion;
+    out.weights={organization:50,execution:50};out.scores={};
+    for(const key of keys){const v=value.scores?.[key];if(v!=null&&!score(v))return null;out.scores[key]=v??null;}
+    return out;
+  }
+  if(value.rubricVersion!==undefined && value.rubricVersion!=='legacy-four-v1')return null;
   if (!caseDimensions.every(d=>score(value.weights?.[d])) || Math.abs(caseDimensions.reduce((sum,d)=>sum+value.weights[d],0)-100)>1e-6) return null;
   out.weights=Object.fromEntries(caseDimensions.map(d=>[d,value.weights[d]]));out.scores={};
   for (const d of caseDimensions) for (const n of [0,1]) {

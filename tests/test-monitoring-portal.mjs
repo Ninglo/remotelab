@@ -25,7 +25,7 @@ try{
  const base='http://127.0.0.1:'+proxy.address().port;
  const response=await fetch(base+'/monitoring-preview/feature-trials.js');assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/javascript/);assert.match(await response.text(),/export const trials/);
  assert.equal((await fetch(base+'/monitoring-preview/group-participation.js')).status,200);
- for(const asset of ['organization-view.js','gpu-pool.js','account-view.js','usage-governance.js','employee-view.js','case-review/case-metadata.js'])assert.equal((await fetch(base+'/monitoring-preview/'+asset)).status,200,asset);
+ for(const asset of ['organization-view.js','gpu-pool.js','account-view.js','usage-governance.js','employee-view.js','case-review/case-metadata.js','case-review/capability-model.js','case-review/capability-view.js','case-review/capability-review.js','case-review/capability.css'])assert.equal((await fetch(base+'/monitoring-preview/'+asset)).status,200,asset);
  assert.equal((await fetch(base+'/monitoring-preview/private.json')).status,405);
 }finally{await Promise.all([new Promise(r=>proxy.close(r)),new Promise(r=>upstream.close(r))])}
 assert.equal(normalizeMonitoringPortal({}),null);

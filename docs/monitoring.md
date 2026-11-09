@@ -1371,3 +1371,12 @@ diagnosis, bounded authorized action, independent verification and original-card
 update. Agent diagnosis is the exception for unresolved judgment or implementation
 work. Script attempts, Agent attempts, business acceptance and actual delivery
 remain separate evidence.
+
+The existing organization page can project `organization-execution-v1` case
+assessments into project summaries with sample coverage and evidence drill-down.
+`/monitoring-preview/case-review/` allows the capability model, view, review and
+CSS assets alongside the existing case workbench. Its six-score human reviews
+use the [existing authenticated feedback store](project-feedback.md#named-case-review);
+legacy four-dimension records and employee read-only access are preserved.
+The separately managed collector and existing daily case review own data updates;
+HTTP reads do not generate assessments or invoke a model.

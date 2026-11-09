@@ -25,5 +25,12 @@ try{
  assert.equal((await call('POST',{...payload,case_review:{...payload.case_review,scores:{quality_0:101}}})).status,400);
  assert.equal((await createProjectFeedbackStore({configFile}).readCases('embodied-evaluation','workbench-v2')).records.length,2);assert.equal((await store.readCases('embodied-evaluation','workbench-selected-v1')).records.length,0);assert.equal((await store.readCases('claude-tag','workbench-v2')).records.length,0);
  assert.equal((await call('POST',{...payload,client_id:'123e4567-e89b-42d3-a456-426614174001',comment:'Revised review'})).status,201);assert.equal((await call('GET')).json.records.length,3);
+ const capability={...payload,client_id:'123e4567-e89b-42d3-a456-426614174002',case_review:{...payload.case_review,rubricVersion:'organization-execution-v1',weightVersion:'equal-20261109',weights:{organization:50,execution:50},scores:{goal:80,business:60,context:80,outcome:0,autonomy:40,timeliness:null}}};
+ const savedCapability=await call('POST',capability);assert.equal(savedCapability.status,201);assert.equal(savedCapability.json.record.case_review.scores.outcome,0);assert.equal(savedCapability.json.record.case_review.scores.timeliness,null);
+ assert.equal((await call('POST',capability)).status,200);
+ assert.equal((await call('POST',{...capability,case_review:{...capability.case_review,weights:{organization:60,execution:40}}})).status,400);
+ assert.equal((await call('POST',{...capability,case_review:{...capability.case_review,rubricVersion:'unknown'}})).status,400);
+ const persisted=(await createProjectFeedbackStore({configFile}).readCases('embodied-evaluation','workbench-v2')).records;
+ assert.equal(persisted.length,4);assert.equal(persisted.filter(r=>r.case_review.rubricVersion==='organization-execution-v1').length,1);assert.equal(persisted.filter(r=>!r.case_review.rubricVersion).length,3);
  console.log('PASS: authenticated author, shared persistence, retry deduplication, append-only revisions, project/material isolation, score validation, service reads, anonymous/service/cross-origin write rejection');
 }finally{await rm(root,{recursive:true,force:true})}
