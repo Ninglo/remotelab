@@ -13,7 +13,7 @@ export async function handleOrganizationWork({req,res,pathname,authSession,confi
  const id=new URL(req.url,'http://local').searchParams.get('id');if(!/^work_[a-f0-9]{20,24}$/.test(id||''))return send(404,'该工作不存在或当前不可见。');
  const config=configOverride||await evidenceConfig();if(!config?.organizationRecordsDir)return send(503,'工作记录尚未接入。');
  let w;try{w=JSON.parse(await readFile(join(config.organizationRecordsDir,id+'.json'),'utf8'))}catch(error){return send(error.code==='ENOENT'?404:503,error.code==='ENOENT'?'该工作不存在或当前不可见。':'工作记录暂不可用，请稍后重试。')}
- const ids=[...new Set((w?.sessions||[]).map(s=>s.id))];
+ const ids=[...new Set([...(w?.sessions||[]).map(s=>s.id),...(w?.sourceRefs||[]).map(r=>r.sessionId)].filter(Boolean))];
  if(!w||!ids.length||!(await Promise.all(ids.map(s=>canRead(authSession,s)))).every(Boolean))return send(404,'该工作不存在或当前不可见。');
  const section=(title,body)=>`<section><h2>${esc(title)}</h2>${body}</section>`,p=t=>`<p>${esc(t||'尚未取得')}</p>`;
  const sources=(w.sourceRefs||[]).map(r=>`<li><a href="/?session=${esc(r.sessionId)}&amp;tab=sessions">原会话${r.seq?' · 事件 '+r.seq:''}</a>${r.seq?` · <a href="/api/sessions/${esc(r.sessionId)}/events?filter=all&amp;afterSeq=${r.seq-1}&amp;limit=1">原事件</a>`:''}</li>`).join('');
