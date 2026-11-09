@@ -450,8 +450,11 @@ export async function handleControlRoutes({
   if (pathname === '/api/memory-context-view' && req.method === 'GET') {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      const people = await listPeopleForClient();
       const personId = typeof parsedUrl.query.personId === 'string' ? parsedUrl.query.personId : authSession?.personId || '';
+      if (authSession?.authKind !== 'service' && personId !== authSession?.personId) {
+        writeJson(res, 403, { error: 'Only your own personal memory is available' }); return true;
+      }
+      const people = (await listPeopleForClient()).filter(p => authSession?.authKind === 'service' || p.id === authSession?.personId);
       writeJson(res, 200, await readMemoryContextView({ people, personId }));
     } catch (error) {
       writeJson(res, error.statusCode === 400 ? 400 : 500, { error: error.statusCode === 400 ? 'Unknown Person' : 'Memory view unavailable' });

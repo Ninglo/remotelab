@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 
 const START = '<!-- remotelab-learning:start -->';
 const END = '<!-- remotelab-learning:end -->';
@@ -49,13 +49,30 @@ function envelope(raw) {
   return { prefix: raw.slice(0, start), suffix: raw.slice(end + END.length), storeKind: match[1], generation: match[2] };
 }
 
-async function storeFor(path, generation, create = false) {
-  const base = `${path}.store`;
+const profileStoreBase = path => join(dirname(path), `.${basename(path)}.store`);
+async function existsDirectory(path) {
+  try { await directory(path); return true; }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
+// Private managed contents stay outside ordinary recursive text searches.
+// Explicit scoped readers support old locations until the locked migration runs.
+async function storeFor(path, generation, create = false, storeKind = 'handbook') {
+  let base = storeKind === 'profile' ? profileStoreBase(path) : `${path}.store`;
+  if (!create && storeKind === 'profile' && !await existsDirectory(base)) base = `${path}.store`;
   await directory(base, create);
   const root = join(base, generation);
   await directory(root, create);
   for (const part of ['current', 'objects']) await directory(join(root, part), create);
   return root;
+}
+
+async function relocateProfileStore(path) {
+  const old = `${path}.store`, next = profileStoreBase(path);
+  if (!await existsDirectory(old)) return false;
+  if (await existsDirectory(next)) throw new Error('Two personal memory stores exist; preserve both for reconciliation');
+  await rename(old, next);
+  return true;
 }
 
 function currentPath(root, id) {
@@ -151,7 +168,7 @@ export async function readHandbook(path, { parseLegacy, details = false, entryId
     if (key) document.entries = document.entries.filter(e => e.key === key || e.id === key);
     return { ...document, raw };
   }
-  const root = await storeFor(path, pointer.generation);
+  const root = await storeFor(path, pointer.generation, false, pointer.storeKind);
   const requestedId = entryId || (/^mem_[a-zA-Z0-9_-]{1,100}$/.test(key || '') ? key : undefined);
   const ids = requestedId ? [requestedId] : (await readdir(join(root, 'current')))
     .filter(name => name.endsWith('.json')).sort().map(name => name.slice(0, -5));
@@ -206,14 +223,15 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
   const existing = envelope(raw);
   if (existing && existing.storeKind !== storeKind) throw new Error('Memory store kind mismatch');
   if (existing) {
-    const root = await storeFor(path, existing.generation);
+    const relocated = storeKind === 'profile' && await relocateProfileStore(path);
+    const root = await storeFor(path, existing.generation, false, storeKind);
     const navigation = renderNavigation({ ...existing, managed: true }, root, existing.generation);
     const changed = raw !== navigation;
     if (changed) {
       if (await regular(path, maxLegacyBytes) !== raw) throw new Error('Memory changed concurrently; retry migration');
       await atomic(path, navigation);
     }
-    return { changed, path, format: 2, generation: existing.generation, ...(changed ? { navigationUpdated: true } : {}) };
+    return { changed: changed || relocated, relocated, path, format: 2, generation: existing.generation, ...(changed ? { navigationUpdated: true } : {}) };
   }
   const document = parseLegacy(raw);
   const ids = new Set();
@@ -223,7 +241,7 @@ export async function migrateHandbook(path, { parseLegacy, maxLegacyBytes = 64 *
     ids.add(entry.id);
   }
   const generation = randomUUID();
-  const root = await storeFor(path, generation, true);
+  const root = await storeFor(path, generation, true, storeKind);
   await immutable(join(root, 'legacy.md'), raw);
   for (const entry of document.entries) await saveEntry(root, entry);
   // Verify every original entry before publishing the directory pointer.

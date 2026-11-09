@@ -36,7 +36,7 @@ export function buildMemoryReviewCard(ref, entry, notice = '', editing = false) 
       ] },
       button('取消修改', 'cancel_edit'),
     ] : [
-      md(entry.content),
+      md(closed ? '这条记忆已删除，不再用于后续任务。' : entry.content),
       ...(!closed ? [rows([...(entry.status !== 'confirmed' ? [button('保留', 'keep')] : []), button('修改', 'open_edit'), button('不记这条', 'discard')])] : []),
     ] } };
 }
@@ -49,17 +49,23 @@ async function patchCard(runtime, messageId, card) {
   if (response?.code !== 0) throw feishuResponseError(response, 'Memory card update failed');
 }
 
-async function current(ref, deps, sessionId) {
+async function current(ref, deps) {
   const authDocument = await (deps.loadAuthDocument || loadAuthDocument)({ persistMigration: false });
   const actor = { personId: ref.personId, identityId: ref.identityId, authDocument, ...(deps.memoryDir ? { memoryDir: deps.memoryDir } : {}) };
   const policy = await loadLearningPolicy(deps.memoryDir);
   const preference = personalMemoryPreference(actor);
   if (!policy.reviewCardPersonIds?.includes(ref.personId) || !preference.enabled || !preference.conversational) throw Object.assign(Error('个人记忆卡片已暂停。'), { code: 'MEMORY_REVIEW_PAUSED' });
-  const snapshot = await inspectLearning(actor);
+  const snapshot = await inspectLearning({ ...actor, key: ref.entryId });
   const entry = snapshot.profile.entries.find(e => e.id === ref.entryId);
   if (!entry || memoryReviewKey(ref.personId, ref.entryId) !== ref.key) throw Error('找不到对应记忆。');
-  if (sessionId && entry.evidence.some(e => e.sessionId !== sessionId)) throw Error('这条记忆已在其他对话更新，请在对应对话查看。');
   return { actor, entry };
+}
+
+const meaning = entry => hash([entry.content || '', entry.conditions || '', entry.exceptions || '']);
+function assertCardVisibility(entry, record, sessionId) {
+  if (entry.status === 'withdrawn' || !entry.evidence.some(e => e.sessionId !== sessionId)) return;
+  const priorMeaning = record?.presented?.meaning || meaning(entry.history?.find(e => e.version === 1) || entry);
+  if (meaning(entry) !== priorMeaning) throw Error('这条记忆已在其他话题修改，请在网页设置的个人记忆中审阅。');
 }
 
 export function sendMemoryReviewCard(runtime, delivery, deps = {}) {
@@ -71,6 +77,7 @@ export function sendMemoryReviewCard(runtime, delivery, deps = {}) {
     let entry;
     try { ({ entry } = await current(ref, deps, delivery.sessionId)); }
     catch (error) { if (error.code === 'MEMORY_REVIEW_PAUSED') return { skipped: true }; throw error; }
+    assertCardVisibility(entry, record, delivery.sessionId);
     if (entry.status === 'withdrawn' && !record?.messageId) return { skipped: true };
     const app = runtime.appClient.im.v1.message;
     const content = JSON.stringify(buildMemoryReviewCard(ref, entry, recordNotice(record, entry)));
@@ -92,6 +99,8 @@ export function sendMemoryReviewCard(runtime, delivery, deps = {}) {
       record = { ...record, creating: false, messageId: response.data.message_id, message_id: response.data.message_id, thread_id: response.data.thread_id || '' };
       await writeDurableJson(path, record);
     }
+    record = { ...record, presented: { version: entry.version, meaning: meaning(entry) } };
+    await writeDurableJson(path, record);
     const verified = await app.get({ path: { message_id: record.messageId } });
     const item = verified.data?.items?.find(m => m.message_id === record.messageId);
     if (verified.code !== 0 || !item || item.deleted || item.msg_type !== 'interactive' || item.chat_id !== record.target.chatId) throw Error('Memory card readback failed');
@@ -119,12 +128,15 @@ export async function handleMemoryReviewCardAction(runtime, raw, { authorize, ..
       const summary = { ...record.target, tenantKey: tenant, sender: { openId, tenantKey: tenant, senderType: 'user' } };
       if (!owner || owner.kind !== 'feishu' || owner.realm !== runtime.config.sourceRouteId || owner.subjectId !== openId
         || tenant !== record.target.tenantKey || !await authorize?.(summary)) throw Error('请由这条记忆的本人操作。');
+      assertCardVisibility(entry, record, record.sessionId);
       if (!['keep', 'edit', 'discard', 'open_edit', 'cancel_edit'].includes(value.action)) throw Error('未知的记忆操作。');
       const render = async (notice = recordNotice(record, entry), editing = false) => {
         const card = buildMemoryReviewCard(record.ref, entry, notice, editing);
         // Persist the visible state through the message API as well as the
         // callback response, which can be lost after a successful mutation.
         await patchCard(runtime, record.messageId, card);
+        record = { ...record, presented: { version: entry.version, meaning: meaning(entry) } };
+        await writeDurableJson(path, record);
         return toast('success', notice || (editing ? '可修改完整内容' : '已收起'), card);
       };
       if (value.action === 'open_edit' || value.action === 'cancel_edit') {

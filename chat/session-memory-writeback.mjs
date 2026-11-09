@@ -38,7 +38,8 @@ const memoryWritebackQueue = createKeyedTaskQueue();
 
 export function assertMemoryWritebackCompleted(result) {
   const conflict = result?.rejected?.find(item => /Stale or missing entry version|changed concurrently|EEXIST/.test(item?.reason || ''));
-  if (result?.error || conflict) throw new Error(result.error || conflict.reason);
+  const cardFailure = result?.rejected?.find(item => item.key === 'memory-review-card');
+  if (result?.error || conflict || cardFailure) throw new Error(result.error || conflict?.reason || `Memory card delivery incomplete: ${cardFailure.reason}`);
   return result;
 }
 

@@ -9,9 +9,11 @@ process.env.REMOTELAB_MEMORY_DIR = join(home, 'memory');
 try {
   const { updateAuthDocument, loadAuthDocument } = await import('../lib/auth-config.mjs');
   await updateAuthDocument(doc => {
+    const bootstrapPeople = doc.people;
     doc.people = ['alice', 'bob'].map(name => ({ id: `person_${name}`, name, credentials: [],
       preferences: { personalMemory: { version: 1, revision: 1, enabled: true, conversational: true } },
       identities: [{ id: `identity_${name}`, kind: 'feishu', realm: 'fixture', subjectId: name }] }));
+    doc.people.push(...bootstrapPeople);
     doc.primaryPersonId = 'person_alice';
   });
   const memoryDir = process.env.REMOTELAB_MEMORY_DIR;
@@ -132,6 +134,46 @@ try {
   assert.equal(JSON.stringify(await requests.byRunId(original.runId)), originalState, 'card interaction must not change the original request, queue input, or await an answer');
   const prompt = await buildPersonalMemoryConversationContext({ ...actor, sourceContext: { connector: 'feishu' } });
   assert.match(prompt, /Review mode: every new personal memory automatically receives an independent confirmation card/); assert.doesNotMatch(prompt, /no separate private message, card/);
+  const { CONFIG_DIR } = await import('../lib/config.mjs');
+  const { createHash } = await import('node:crypto');
+  const { memoryReviewKey } = await import('../chat/memory-review-cards.mjs');
+  const { assertMemoryWritebackCompleted } = await import('../chat/session-memory-writeback.mjs');
+  const faultKey = 'outbox-fault-fixture';
+  const faultId = 'mem_' + createHash('sha256').update('personal:instance::' + faultKey).digest('hex').slice(0,16);
+  const badOrigin = join(CONFIG_DIR, 'memory-review-origins', memoryReviewKey(actor.personId, faultId) + '.json');
+  await mkdir(badOrigin);
+  const faultRequest = (await requests.accept({ sessionId: 'fault-topic', requestId: 'fault-input', text: '请用熟悉的例子解释',
+    deliveryPlan: plan, options: { sourceDelivery: plan, viewPersonId: actor.personId, initiatedByIdentityId: actor.identityId, feishuConnectorAuthenticated: true } })).record;
+  const fault = await m.applyLearningUpdates({ ...actor, updates: [{ ...habit, key: faultKey }],
+    sources: [{ sessionId: 'fault-topic', runId: faultRequest.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  assert.equal(fault.promotedCount, 1);
+  assert.throws(() => assertMemoryWritebackCompleted(fault), /card delivery incomplete/);
+  await rm(badOrigin, { recursive: true });
+  const recovered = await m.reviewMemoryLearning({ ...actor, sessionId: 'fault-topic', session: {}, run: { id: faultRequest.runId },
+    userMessage: '请用熟悉的例子解释', sourceEventSeq: 1, turnEvents: [], runPrompt: async () => { throw Error('Recovery must not call the model'); } });
+  assert.equal(recovered.cardRecovery, true);
+  assert.equal((await listSourceDeliveries({ sessionId: 'fault-topic' })).filter(d => d.memoryReview?.entryId === faultId).length, 1);
+  const again = await m.reviewMemoryLearning({ ...actor, sessionId: 'fault-topic', session: {}, run: { id: faultRequest.runId },
+    userMessage: '请用熟悉的例子解释', sourceEventSeq: 1, turnEvents: [], runPrompt: async () => { throw Error('Recovery must not call the model'); } });
+  assert.equal(again.cardRecovery, true);
+  assert.equal((await listSourceDeliveries({ sessionId: 'fault-topic' })).filter(d => d.memoryReview?.entryId === faultId).length, 1);
+
+  let be = (await m.inspectLearning(bob)).profile.entries[0];
+  const second = (await requests.accept({ sessionId: 'bob-second', requestId: 'bob-second-input', text: '请用熟悉的例子解释',
+    options: { sourceDelivery: plan, viewPersonId: bob.personId, initiatedByIdentityId: bob.identityId, feishuConnectorAuthenticated: true } })).record;
+  await m.applyLearningUpdates({ ...bob, updates: [{ ...habit, expectedVersion: be.version }],
+    sources: [{ sessionId: 'bob-second', runId: second.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  await sendMemoryReviewCard(runtime, bobDeliveries[0]);
+  be = (await m.inspectLearning(bob)).profile.entries[0];
+  const crossClick = raw('keep', be.version, {}, 'bob'); crossClick.event.action.value.key = bobDeliveries[0].memoryReview.key;
+  assert.equal((await action(crossClick)).toast.type, 'success', 'same meaning from another topic remains reviewable on the original card');
+  assert.equal((await m.inspectLearning(bob)).profile.entries[0].status, 'confirmed');
+  be = (await m.inspectLearning(bob)).profile.entries[0];
+  await m.applyLearningUpdates({ ...bob, updates: [{ ...habit, kind: 'preference', action: 'revise', explicit: true,
+    expectedVersion: be.version, content: 'PRIVATE_DIFFERENT_MEANING' }],
+    sources: [{ sessionId: 'bob-second', runId: second.runId, seq: 1, type: 'user', output: '请用熟悉的例子解释' }] });
+  await assert.rejects(sendMemoryReviewCard(runtime, bobDeliveries[0]), /个人记忆中审阅/, 'a private revision must not appear on the old group card');
+
   await updateAuthDocument(doc => { doc.people[0].preferences.personalMemory.enabled = false; });
   assert.equal((await action(raw('keep', (await entry()).version))).toast.type, 'error', 'pause applies to old cards too');
   assert.equal((await sendMemoryReviewCard(runtime, delivery)).skipped, true, 'pause skips pending delivery without a new attention message');

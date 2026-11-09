@@ -459,13 +459,15 @@
             <section class="settings-group" id="settings-personal-memory" data-settings-section>
               <header class="settings-group-header">
                 <h3 data-personal-memory-title>个人记忆</h3>
-                <p id="personalMemoryNote">从与你的协作中发现有用的习惯，在自然对话中补充一句询问是否记住。只影响本人在网页和飞书的消息，不另发私聊核验。</p>
+                <p id="personalMemoryNote">从协作中发现有用的个人习惯。飞书新候选会发送确认卡，也可以在这里审阅。只有本人确认后才按需使用。</p>
               </header>
               <div class="settings-group-body">
                 <div class="settings-app-actions">
                   <button class="settings-app-btn" id="personalMemoryToggle" type="button" aria-pressed="false" disabled>启用个人记忆</button>
                 </div>
                 <p class="settings-section-note" id="personalMemoryStatus" role="status" aria-live="polite">正在读取……</p>
+                <button class="settings-app-btn" id="personalMemoryReview" type="button">查看和整理我的记忆</button>
+                <div id="personalMemoryEntries" hidden></div>
               </div>
             </section>
 

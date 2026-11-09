@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { createRequestCompletion } from '../chat/request-completion.mjs';
+let time=0,record={key:'fixture',postCompletionPending:true},calls=0,errors=[];
+const store={get:async()=>record,mutate:async(_key,fn)=>record=await fn(record),archiveFinished:async()=>{}};
+const effects={memoryWriteback:async()=>{calls++;assert.equal(record.completionEffects.memoryWriteback.attempts,calls);throw Error('Memory review returned no valid updates array');}};
+let complete=createRequestCompletion({store,now:()=>time,retryMs:10,onError:e=>errors.push(e.message)});
+await complete(record,effects);assert.equal(calls,1);assert.equal(record.completionEffects.memoryWriteback.state,'failed');
+await complete(record,effects);assert.equal(calls,1);
+time=10;complete=createRequestCompletion({store,now:()=>time,retryMs:10,onError:e=>errors.push(e.message)});
+await complete(record,effects);assert.equal(calls,2);assert.equal(record.completionEffects.memoryWriteback.state,'exhausted');assert.equal(record.postCompletionPending,false);assert.equal(errors.length,1);
+record.postCompletionPending=true;time=1e9;await complete(record,effects);assert.equal(calls,2,'exhausted work never replays after restart');
+record={key:'crashed',postCompletionPending:true,completionEffects:{memoryWriteback:{state:'running',attempts:6,retryAt:0}}};
+await complete(record,effects);assert.equal(calls,2,'crashed attempts count toward the persisted limit');
+assert.equal(record.completionEffects.memoryWriteback.state,'exhausted');
+record={key:'twice-interrupted',postCompletionPending:true,completionEffects:{memoryWriteback:{state:'running',attempts:2,interruptions:1,retryAt:0}}};
+await complete(record,effects);assert.equal(calls,2);assert.equal(record.completionEffects.memoryWriteback.state,'exhausted');
+console.log('PASS bounded memory retries: durable start, backoff, malformed response limit, crash and restart recovery');

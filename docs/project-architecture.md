@@ -200,7 +200,11 @@ native supplemental Requests retain `postCompletionPending` and per-effect
 effect retains its error/retry deadline, and successful effects are skipped on
 recovery. External effects must still be idempotent across the crash window between
 an external write and saving its receipt. Memory review remains independently
-scheduled rather than blocking the foreground result.
+scheduled rather than blocking the foreground result. Memory attempts are recorded
+before execution: malformed responses stop after two attempts, transient failures
+after six with exponential backoff, and two interrupted executions stop replay.
+An exhausted receipt retains the error and is terminal for automatic completion;
+it never represents successful memory extraction or card delivery.
 
 Feishu question-card network writes are ordered only for the same card. Answer
 reservation uses a short per-card state mutation; HTTP submission occurs outside
@@ -252,7 +256,11 @@ late real results, partial spool records, read-only queries and stop/create race
 - `chat/run-launcher.mjs` and `chat/runner-sidecar.mjs` — detached execution.
 - `chat/run-projection.mjs` — native output to normalized events.
 - `chat/run-reconciler.mjs` — recovery and missing-result settlement.
-- `chat/history.mjs` — canonical append-only Session history.
+- `chat/history.mjs` — canonical append-only Session history. Its short mutation
+  transactions share the OS lock helper in `lib/file-lock.mjs` with the Session
+  catalogue. Connector, CLI and core writers reload the head under that lock;
+  readers notice replaced metadata, and orphan committed events are recovered
+  before assigning the next sequence.
 - `chat/work-awareness.mjs` — bounded work, input and reference-suggestion
   records within Session metadata; symmetric non-exclusive overlap queries.
 - `chat/necessary-background.mjs` and `chat/related-person-context.mjs` —

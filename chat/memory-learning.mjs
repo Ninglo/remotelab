@@ -32,11 +32,13 @@ export async function loadLearningPolicy(memoryDir = MEMORY_DIR) {
     if (!Array.isArray(policy.personIds) || !policy.personIds.every(id => /^person_[a-zA-Z0-9_-]{1,100}$/.test(id))) {
       throw new Error('learning-policy.json requires explicit personIds');
     }
+    if (policy.handbookPersonIds !== undefined && (!Array.isArray(policy.handbookPersonIds)
+      || !policy.handbookPersonIds.every(id => /^person_[a-zA-Z0-9_-]{1,100}$/.test(id)))) throw new Error('Invalid handbookPersonIds');
     // Review cards are part of enabled personal learning, not a second opt-in.
     // Keep the projected field for existing consumers; never use the legacy
     // per-person card list to silently exclude an enrolled learner.
     return { enabled: true, profiles: policy.profiles === true, handbook: policy.handbook === true,
-      context: policy.context === true, reviewCardPersonIds: policy.profiles === true ? [...policy.personIds] : [], personIds: policy.personIds };
+      context: policy.context === true, handbookPersonIds: policy.handbookPersonIds || policy.personIds, reviewCardPersonIds: policy.profiles === true ? [...policy.personIds] : [], personIds: policy.personIds };
   } catch (error) {
     if (error.code !== 'ENOENT') console.error(`[memory-learning] Policy disabled: ${error.message}`);
     return { enabled: false, readStatus: error.code === 'ENOENT' ? 'not-recorded' : 'unavailable' };
@@ -222,12 +224,16 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
   if (!policy.enabled || !person || !policy.personIds.includes(person)) return { promotedCount: 0, promotedFiles: [], rejected: ['learning not enabled for verified Person'] };
   const paths = learningPaths(memoryDir, person);
   const personal = personalMemoryPreference({ personId, identityId, authDocument });
+  const { memoryReviewSource } = await import('./memory-review-cards.mjs');
+  const cardSource = policy.reviewCardPersonIds?.includes(person) && personal.enabled && personal.conversational
+    ? await memoryReviewSource({ personId: person, identityId, sources, memoryDir }) : null;
+  const reviewDelivery = cardSource ? { runId: cardSource.request.runId, sessionId: cardSource.request.sessionId } : undefined;
   const results = [], rejected = [];
   for (const update of (Array.isArray(updates) ? updates : []).slice(0, 12)) {
     try {
       let kind = update.kind;
       if (!['preference', 'habit', 'method'].includes(kind)) throw new Error('Unsupported kind');
-      if (kind === 'method' ? !policy.handbook : !policy.profiles) throw new Error('Target disabled');
+      if (kind === 'method' ? !policy.handbook || !(policy.handbookPersonIds || policy.personIds).includes(person) : !policy.profiles) throw new Error('Target disabled');
       if (kind !== 'method' && !personal.enabled && !(update.action === 'withdraw' && update.explicit === true)) throw new Error('Personal memory is paused');
       if (kind === 'method' && !['instance', 'project'].includes(update.scope)) throw new Error('A method requires explicit valid scope');
       if (!/^[a-z0-9][a-z0-9_-]{1,79}$/.test(update.key || '')) throw new Error('Invalid semantic key');
@@ -280,7 +286,8 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
           || action === 'revise' && current?.status === 'confirmed')) throw new Error('Accepted personal preference or withdrawal requires the owner\'s explicit correction');
         const now = new Date().toISOString();
         const entry = current || { id, key: update.key, kind, scope, project: scope === 'project' ? project : '',
-          version: 0, createdAt: now, evidence: [], counterexamples: [], history: [], outcomes: [] };
+          version: 0, createdAt: now, evidence: [], counterexamples: [], history: [], outcomes: [],
+          ...(kind !== 'method' && reviewDelivery ? { reviewDelivery } : {}) };
         const before = JSON.stringify(entry);
         const old = { version: entry.version, content: entry.content, status: entry.status, updatedAt: entry.updatedAt,
           kind: entry.kind, cues: entry.cues, conditions: entry.conditions, exceptions: entry.exceptions,
@@ -361,7 +368,7 @@ export async function applyLearningUpdates({ updates, sources, personId, identit
         entry.version += 1;
         entry.updatedAt = now;
         if (!current) document.entries.push(entry);
-        return { changed: true, path, id, version: entry.version, status: entry.status };
+        return { changed: true, path, id, version: entry.version, status: entry.status, ...(entry.reviewDelivery ? { reviewDelivery: entry.reviewDelivery } : {}) };
       }, { handbook: kind === 'method', entryId: id }));
     } catch (error) { rejected.push({ key: update?.key, reason: error.message }); }
   }
@@ -576,6 +583,14 @@ export async function reviewMemoryLearning({ sessionId, session, run, userMessag
   if (!sources.length || !userMessage) return { attempted: false, promotedCount: 0, promotedFiles: [] };
   const snapshot = await inspectLearning({ personId, identityId, authDocument, memoryDir, summary: true });
   const personal = personalMemoryPreference({ personId, identityId, authDocument });
+  const pendingCards = personal.enabled && personal.conversational
+    ? snapshot.profile.entries.filter(e => e.reviewDelivery?.runId === run.id && e.status !== 'withdrawn') : [];
+  if (pendingCards.length) {
+    const { queueMemoryReviewCards } = await import('./memory-review-cards.mjs');
+    const results = pendingCards.map(e => ({ path: snapshot.paths.profile, id: e.id, version: e.version, status: e.status, reviewDelivery: e.reviewDelivery }));
+    await queueMemoryReviewCards({ personId, identityId, results, sources, memoryDir });
+    return { attempted: false, promotedCount: 0, promotedFiles: [], results: [], rejected: [], cardRecovery: true, candidateResponse: '{"updates":[]}' };
+  }
   if (!personal.enabled) snapshot.profile = { ...snapshot.profile, entries: [], prefix: '' };
   const project = await resolveLearningProject(session, sourceContext);
   const delivered = learningDeliveryReceipts(turnEvents, run.id);

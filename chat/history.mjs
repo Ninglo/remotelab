@@ -1,5 +1,6 @@
 import { ByteBudgetCache, cacheBudgetBytes } from './byte-budget-cache.mjs';
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
+import { withFileLock } from '../lib/file-lock.mjs';
 import { join } from 'path';
 import { CHAT_HISTORY_DIR } from '../lib/config.mjs';
 import { recordFileEvidence } from './monitoring-file-evidence.mjs';
@@ -46,7 +47,13 @@ const metaCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_META_C
 const eventCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_EVENT_CACHE_MIB', 512),
   event => JSON.stringify(event).length * 2 + 256);
 const bodyCache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_HISTORY_BODY_CACHE_MIB', 1024), text => text.length * 2);
-const runSessionMutation = createKeyedTaskQueue();
+const mutationQueue = createKeyedTaskQueue();
+// One OS lock covers every writer, including connector callbacks and CLI tools.
+const runSessionMutation = (sessionId, task) => mutationQueue(sessionId, () =>
+  withFileLock(join(CHAT_HISTORY_DIR, '.locks', sessionId), async () => {
+    metaCache.delete(sessionId);
+    return task();
+  }));
 
 function clone(value) {
   if (value === null || value === undefined) return value;
@@ -174,11 +181,14 @@ function serializeEventForIndex(event, options = {}) {
 }
 
 async function loadMeta(sessionId) {
-  if (metaCache.has(sessionId)) {
-    return clone(metaCache.get(sessionId));
-  }
+  let info;
+  try { info = await stat(sessionMetaPath(sessionId)); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const stamp = info ? `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}` : '';
+  const cached = metaCache.get(sessionId);
+  if (cached?.stamp === stamp) return clone(cached.meta);
   const meta = await readJson(sessionMetaPath(sessionId), emptyMeta());
-  metaCache.set(sessionId, meta);
+  metaCache.set(sessionId, { stamp, meta });
   return clone(meta);
 }
 
@@ -190,7 +200,7 @@ async function saveMetaUnlocked(sessionId, meta) {
   };
   await ensureSessionDir(sessionId);
   await writeJsonAtomic(sessionMetaPath(sessionId), normalized);
-  metaCache.set(sessionId, normalized);
+  metaCache.delete(sessionId);
   return clone(normalized);
 }
 
@@ -355,9 +365,31 @@ function getUserMessageTimestamp(currentStamp, event) {
   return event.timestamp || currentStamp || Date.now();
 }
 
+async function recoverHistoryHead(sessionId) {
+  let meta = await loadMeta(sessionId), recovered = false;
+  for (;;) {
+    const nextPath = eventPath(sessionId, meta.latestSeq + 1);
+    try { await stat(nextPath); } catch (error) { if (error.code === 'ENOENT') break; throw error; }
+    const event = await readJson(nextPath, null);
+    if (!event) throw new Error('History head disappeared during recovery');
+    if (event.seq !== meta.latestSeq + 1) throw new Error('History sequence mismatch; original preserved');
+    meta = { ...meta, latestSeq: event.seq, size: meta.size + 1,
+      lastEventAt: event.timestamp,
+      lastUserMessageAt: getUserMessageTimestamp(meta.lastUserMessageAt, event),
+      lastAssistantMessageAt: getAssistantMessageTimestamp(meta.lastAssistantMessageAt, event),
+      counts: incrementCounts(meta.counts, event),
+      ...(event.type === 'source_delivery' && event.deliveryId ? {
+        sourceDeliveryReceiptSeqs: { ...meta.sourceDeliveryReceiptSeqs, [event.deliveryId]: event.seq },
+      } : {}) };
+    recovered = true;
+  }
+  if (recovered) await saveMetaUnlocked(sessionId, meta);
+  return meta;
+}
+
 async function appendEventUnlocked(sessionId, event) {
   await ensureSessionDir(sessionId);
-  const meta = await loadMeta(sessionId);
+  const meta = await recoverHistoryHead(sessionId);
   const seq = meta.latestSeq + 1;
   const normalized = normalizeStoredEvent(event, seq);
   normalized.seq = seq;
@@ -379,7 +411,7 @@ async function appendEventUnlocked(sessionId, event) {
 
 async function appendEventsUnlocked(sessionId, events) {
   await ensureSessionDir(sessionId);
-  const meta = await loadMeta(sessionId);
+  const meta = await recoverHistoryHead(sessionId);
   let latestSeq = meta.latestSeq;
   let lastEventAt = meta.lastEventAt;
   let lastUserMessageAt = meta.lastUserMessageAt;

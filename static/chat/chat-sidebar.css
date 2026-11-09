@@ -1293,3 +1293,12 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .reply-preview-step p { white-space: pre-line; margin: 6px 0; }
 .reply-preview-step details { margin-top: 8px; }
 .reply-preview-step summary { cursor: pointer; }
+
+/* Personal entries are loaded only when the owner opens review. */
+.personal-memory-entry { padding: 18px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.personal-memory-entry p { margin: 0 0 10px; white-space: pre-wrap; line-height: 1.6; }
+.personal-memory-entry .settings-app-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.personal-memory-entry label { display: block; margin-bottom: 12px; font-size: 13px; }
+.personal-memory-entry textarea { display: block; box-sizing: border-box; margin-top: 6px; padding: 10px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+.personal-memory-entry form > button { margin-right: 8px; }
+#settings-personal-memory .settings-app-btn { min-height: 40px; }

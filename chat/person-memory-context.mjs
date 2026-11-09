@@ -15,8 +15,7 @@ export function buildPersonMemoryPromptBlock({
     'Person memory pointer (current request identity; file contents are not loaded or certified):',
     JSON.stringify({ personId, index: join(memoryDir, 'reference', 'people', 'index.md'),
       profile: join(memoryDir, 'reference', 'people', `${personId}.md`) }),
-    'Names: `remotelab work people --query 称呼 --json`; preferences: `remotelab memory context --query <topic> --json`. '
-      + 'If omitted, read the needed section separately. Only confirmed preferences guide work; observed/inferred stay candidates. '
-      + 'Keep them here, not in shared AGENTS.md or another Person profile.',
+    'Names: `remotelab work people --query 称呼 --json`; new tasks: `remotelab memory context --query <topic> --json`. '
+    + 'If omitted, read the needed section separately. Only confirmed preferences guide work; keep them here, not in shared AGENTS.md or another Person profile.',
   ].join('\n');
 }

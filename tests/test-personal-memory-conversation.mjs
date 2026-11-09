@@ -10,9 +10,11 @@ process.env.REMOTELAB_MEMORY_DIR = join(home, 'memory');
 try {
   const { loadAuthDocument, updateAuthDocument } = await import('../lib/auth-config.mjs');
   await updateAuthDocument(doc => {
+    const bootstrapPeople = doc.people;
     doc.people = ['alice', 'bob'].map(name => ({ id: `person_${name}`, name, credentials: [],
       preferences: { unrelated: name }, identities: ['web', 'feishu'].map(kind => ({
         id: `${kind}_${name}`, kind, realm: 'fixture', subjectId: name })) }));
+    doc.people.push(...bootstrapPeople);
     doc.primaryPersonId = 'person_alice';
   });
   const memoryDir = process.env.REMOTELAB_MEMORY_DIR;

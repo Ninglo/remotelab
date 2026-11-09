@@ -79,7 +79,8 @@ try{
  let gate=Promise.withResolvers();
  const effects={memoryWriteback:async()=>{calls++;return assertMemoryWritebackCompleted(await gate.promise)}};
  await complete(record,effects,{wait:false});await new Promise(setImmediate);
- assert.equal(record.completionEffects,undefined);
+ assert.equal(record.completionEffects.memoryWriteback.state,'running');
+ assert.equal(record.completionEffects.memoryWriteback.attempts,1,'attempt persisted before external work');
  gate.resolve({error:'No available account'});await complete.idle();
  assert.equal(record.completionEffects.memoryWriteback.state,'failed');assert.equal(record.postCompletionPending,true);
  await complete(record,effects);assert.equal(calls,1);
