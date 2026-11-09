@@ -29,6 +29,12 @@ try {
   assert.equal(redactReviewText('-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----').split('\n').length, 3, 'redaction preserves original evidence line numbers');
   assert.throws(() => validateReviewResult({ ...valid, findings: [{ ...valid.findings[0], startLine: 99 }] }, attack));
   assert.ok(!redactReviewText('Bearer eyJhbGciOiJIUzI1NiJ9.verysecretpayload.secret').includes('verysecret'));
+  const cnSecret = 'synthetic-password-123';
+  for (const text of [`初始密码：${cnSecret}\n下一行`, `**登录密码**：\`${cnSecret}\``,
+    JSON.stringify({ output: `初始密码：${cnSecret}\nnext` }), `访问令牌=${cnSecret}`]) {
+    assert.ok(!redactReviewText(text, text).includes(cnSecret));
+    assert.ok(!redactReviewText(`发现 ${cnSecret} 明文`, text).includes(cnSecret));
+  }
   await put(join(CONFIG_DIR, 'prompt-review.json'), config);
   await put(join(CHAT_RUNS_DIR, 'run_aa', 'manifest.json'), { sessionId: 's1', prompt: '# Shared\nSafe rule\n## Task\nFirst task\n', modelContext: '# Shared\nSafe rule\n' });
   await put(join(CHAT_RUNS_DIR, 'run_bb', 'manifest.json'), { sessionId: 's2', prompt: '# Shared\nSafe rule\n## Task\nSecond task\n', modelContext: 'Independent context' });
@@ -101,6 +107,12 @@ try {
   snapshot.rows = Array.from({ length: 55 }, (_, i) => fixture(`high-${String(i).padStart(2, '0')}`, 'high', new Date(Date.UTC(2026, 0, i + 1)).toISOString()));
   snapshot.rows.push(fixture('critical-old', 'critical', '2025-01-01T00:00:00Z'), fixture('low-new', 'low', '2027-01-01T00:00:00Z'), fixture('high-unknown', 'high', 'invalid'));
   await put(snapshotPath, snapshot);
+  snapshot.rows[0].findings = [{ severity: 'high', category: 'disclosure', startLine: 1, endLine: 1,
+    reason: `发现 ${cnSecret} 明文`, recommendation: '轮换密码', evidence: `初始密码：${cnSecret}` }];
+  await put(snapshotPath, snapshot);
+  const historical = await readPromptReview({ sort: 'time', offset: 50 });
+  assert.ok(!JSON.stringify(historical).includes(cnSecret), 'old cached findings are redacted on read without model calls');
+  assert.ok((await readFile(snapshotPath, 'utf8')).includes(cnSecret), 'original evidence is preserved');
   const severityPage = await readPromptReview({ severity: 'critical,high', state: 'reviewed' });
   assert.equal(severityPage.sort, 'severity'); assert.equal(severityPage.total, 57);
   assert.deepEqual(severityPage.rows.slice(0, 2).map(r => r.id), ['critical-old', 'high-54']);

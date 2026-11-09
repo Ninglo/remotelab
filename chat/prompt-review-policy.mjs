@@ -32,15 +32,22 @@ export function segmentPrompt(text, maxChars = 12000) {
   return result;
 }
 
+// Also recognize Chinese credential labels in plain text, Markdown and
+// JSON-escaped evidence. Preserve line boundaries and never emit their values.
+const chineseCredential = /(?:(?:初始|登录|临时|新|旧)?密码|口令|(?:访问|刷新|认证|授权)?令牌|(?:API)?密钥)\s*(?:\\?["'`*]){0,2}\s*[:=：]\s*(?:\\?["'`*]){0,2}((?:(?!\\[nrt]|\\?["'`*]|[\s,<>;，；。]).)+)/gi;
+
 export function redactReviewText(value, source = '') {
   let text = String(value ?? '');
+  for (const match of source.matchAll(chineseCredential)) {
+    if (match[1].length >= 4) text = text.split(match[1]).join('[REDACTED]');
+  }
   // Mask known source credential values even when the model repeats a short
   // value without its field name. Keep them only in this call's memory.
   for (const match of source.matchAll(/(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization|cookie)\s*["']?\s*[:=]\s*(?:"([^"\n]+)"|'([^'\n]+)'|([^\s,"'<>;]+))/gi)) {
     const secret = match[1] || match[2] || match[3];
     if (secret.length >= 4) text = text.split(secret).join('[REDACTED]');
   }
-  return text
+  return text.replace(chineseCredential, (match, secret) => match.slice(0, -secret.length) + '[REDACTED]')
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g,
       match => '[REDACTED PRIVATE KEY]' + '\n'.repeat((match.match(/\n/g) || []).length))
     .replace(/\b(Bearer|Basic)\s+[^\s"'<>]+/gi, '$1 [REDACTED]')

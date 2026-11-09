@@ -268,7 +268,12 @@ export async function readPromptReview({ offset = 0, severity = '', state = '', 
   const start = Math.max(0, Number.parseInt(offset, 10) || 0);
   return { ...summary, sort: order, total: rows.length, offset: start, rows: rows.slice(start, start + 50).map(row => {
     const ref = row.refs.find(r => r.sourceId === sourceId) || row.refs[0], source = sourceMap.get(ref.sourceId);
-    return { ...row, refs: undefined, occurrences: row.refs.length, source: { id: source.id, kind: source.kind,
+    // Apply current redaction at the API boundary so historical cached findings
+    // are protected without changing their evidence records or rerunning a model.
+    const evidence = (row.findings || []).map(f => f.evidence || '').join('\n');
+    const findings = (row.findings || []).map(f => ({ ...f,
+      ...Object.fromEntries(['reason', 'recommendation', 'evidence'].map(key => [key, redactReviewText(f[key], evidence)])) }));
+    return { ...row, findings, refs: undefined, occurrences: row.refs.length, source: { id: source.id, kind: source.kind,
       sessionId: source.sessionId, runId: source.runId, field: source.field, delivery: source.delivery, startLine: ref.startLine } };
   }) };
 }
