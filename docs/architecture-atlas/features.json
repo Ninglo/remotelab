@@ -588,6 +588,7 @@
             "notes/current/core-domain-contract.md",
             "notes/current/session-conversations.md",
             "chat/parallel-work-policy.mjs",
+            "chat/parallel-display-trial.mjs",
             "chat/message-routing-policy.mjs"
           ],
           "commands": []

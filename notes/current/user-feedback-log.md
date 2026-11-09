@@ -2224,3 +2224,8 @@ scope, preserves private-account roles and original callers, and tests a fresh
 employee browser with no previous Basic login. New publications check GET content,
 not only HEAD health, and reject a second password boundary. The reported new URL
 was unavailable; inspect publication records rather than requiring the user to find it.
+
+
+## 2026-11-09 — Parallel work needs visible message ownership
+
+A parallel-work user reported that parent discussion and child details become mixed in the same conversation. They proposed explicit main/branch progress headings and authorized a personal, time-bounded trial. The first slice preserves current delivery surfaces and cards, labels automatic notices/questions, and gives the Harness fixed branch names for progress and results. Observe message attribution, duplication, whole-task versus branch completion and the user's corrections. This is not authorization to enable the behavior for other people or to create additional progress traffic. Natural readability remains to be evaluated.

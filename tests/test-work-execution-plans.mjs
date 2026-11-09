@@ -427,6 +427,33 @@ try {
   await Promise.all(earlyCompletions);
   assert.equal((await state(rapid.plan.id)).branches[0].state, 'completed', 'late child admission must preserve terminal state');
   assert.equal((await state(rapid.plan.id)).state, 'reviewed');
+  // Personal display is opt-in and frozen on newly created plans only.
+  const { changeParallelDisplayTrial } = await import('../chat/parallel-display-trial.mjs');
+  await changeParallelDisplayTrial({ enabled: true, expectedRevision: 0, confirm: true },
+    { personId: 'person_a', identityId: 'identity_a', requestId: 'display-authorized' });
+  const displayInput = await input('display-plan');
+  const displayed = await act(displayInput, { action: 'start', goal: '展示分支归属', context: '隔离测试', reason: '独立核对',
+    executionMode: 'parallel-sessions', authorization: '本人明确试验', branches: [branch('first'), branch('second')] }, api);
+  const displayPlan = await state(displayed.plan.id);
+  assert.equal(displayPlan.displayTrial.personId, 'person_a');
+  const displayNotices = await listSourceDeliveries({ sessionId: 'source' });
+  const notice = displayNotices.find(d => d.text?.includes('分支 2｜second'));
+  assert(notice?.text.startsWith('**主对话进展**'));
+  const displayChild = await requests.byRequest(displayPlan.branches[1].sessionId, displayPlan.branches[1].requestId);
+  assert.match(displayChild.text, /分支 2｜second进展/);
+  const event = { messageKind: 'user_question', questionState: 'pending', questionId: 'display-question',
+    nativeQuestion: { question: '选哪份资料？', options: [{ label: '原件' }] } };
+  await forwardExecutionQuestions(displayChild, [event]);
+  await forwardExecutionQuestions(displayChild, [event]);
+  const questionDeliveries = (await listSourceDeliveries({ sessionId: 'source' })).filter(d => d.text?.includes('选哪份资料'));
+  assert.equal(questionDeliveries.length, 1, 'replayed events do not send duplicate questions');
+  assert.match(questionDeliveries[0].text, /分支 2｜second｜待你回复/);
+  await complete(displayPlan, 'second');
+  await complete(displayPlan, 'first');
+  const reviewedDisplay = await state(displayPlan.id);
+  const displayReview = await requests.byRequest('source', reviewedDisplay.reviewRequestId);
+  assert.match(displayReview.text, /分支 1｜first.*分支 2｜second/);
+  assert.match(displayReview.text, /主对话结果/);
   console.log('EXECUTION_PLANS_VERIFIED: personal/group scope, cross-group consent, draft/partial approval, direct authorized work, dependencies, failure, amendment, question relay, cancellation, recovery and source result ownership. No real model or group send.');
 } finally {
   // Stop intentionally acknowledges before plan advancement finishes. Let Node

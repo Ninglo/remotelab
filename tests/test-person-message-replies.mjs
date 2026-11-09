@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -8,7 +8,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-person-replies-'));
 setIsolatedTestHome(home);
 after(() => rm(home, { recursive: true, force: true }));
-const { loadAuthDocument, updateAuthDocument } = await import('../lib/auth-config.mjs');
+const { loadAuthDocument } = await import('../lib/auth-config.mjs');
 const { loadPersonMessageReplies, changePersonMessageReplies } = await import('../chat/person-message-replies.mjs');
 const { resolveMessageReplyPolicy } = await import('../chat/message-reply-settings.mjs');
 const { buildSessionDisplayEvents, buildEventBlockEvents } = await import('../chat/session-display-events.mjs');
@@ -16,12 +16,12 @@ const { collectFeishuInstanceWorkboardCycles, buildFeishuWorkboardCard } = await
 const { publishLiveAssistantReplies } = await import('../chat/native-final-publication.mjs');
 const { handleMessageReplySettings } = await import('../chat/router-message-reply-settings.mjs');
 
-await updateAuthDocument(document => {
-  document.people = ['alice', 'bob'].map(name => ({ id: `person_${name}`, name, handle: name, credentials: [],
+// Seed a fresh isolated instance; ordinary mutations cannot replace administrator identities.
+const people = ['alice', 'bob'].map(name => ({ id: `person_${name}`, name, handle: name, credentials: [],
     preferences: { unrelated: name }, identities: ['web', 'feishu'].map(kind => ({ id: `${kind}_${name}`, kind,
       realm: kind === 'web' ? 'remotelab' : 'fixture', subjectId: name })) }));
-  document.primaryPersonId = 'person_alice';
-});
+await mkdir(join(home, '.config/remotelab'), { recursive: true });
+await writeFile(join(home, '.config/remotelab/auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_alice', people }));
 const actor = name => ({ personId: `person_${name}`, identityId: `web_${name}` });
 const input = (surface, name = 'alice') => {
   const origin = { viewPersonId: `person_${name}`, initiatedByIdentityId: `${surface === 'web' ? 'web' : 'feishu'}_${name}` };

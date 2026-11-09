@@ -1,6 +1,7 @@
 // The Harness interprets input and human decisions. This module stores the
 // bounded plan, validates its provenance, and transports accepted work/results.
 import { acceptedParallelWorkPolicy } from './parallel-work-policy.mjs';
+import { captureParallelDisplayTrial, activePlanDisplay, branchDisplayName, parallelDisplayPrompt } from './parallel-display-trial.mjs';
 import { createHash } from 'node:crypto';
 import { createKeyedTaskQueue } from './fs-utils.mjs';
 import { routingPilotScope, isPilotInputSinceActivation } from '../lib/group-routing-pilot.mjs';
@@ -127,6 +128,7 @@ export async function handleExecutionPlan(record, body, deps) {
         sourceSessionId: source.id, sourceRequestId: record.requestId, createdAt: new Date().toISOString(),
         runtimeSelection: record.runtimeSelection, folder: source.folder,
         returnPlan: record.deliveryPlan || record.options.sourceDelivery, controls: [],
+        displayTrial: await captureParallelDisplayTrial(actor.personId),
         branchSurface, ...(branchSurface === 'feishu-thread' ? { branchOrigin: branchOrigin(record) } : {}) };
       if (body.action === 'start') Object.assign(plan, { state: 'approved', selected: branches.map(b => b.id),
         executionMode: branches.length > 1 ? 'parallel-sessions' : 'single-session',
@@ -276,7 +278,7 @@ async function applyControls(sourceId, planId, deps) {
         await save(sourceId, data => {
           data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === id).requestId = requestId;
         });
-        const receipt = await api.submitHttpMessage(b.sessionId, old?.text || `主话题中人的补充（来源 ${sourceId}，输入 ${control.requestId}）：\n${control.text}\n在当前子Session接续原工作，不再创建分支。保持原任务及范围，说明这次补充怎样影响结果。`, [], old?.options || {
+        const receipt = await api.submitHttpMessage(b.sessionId, old?.text || `${parallelDisplayPrompt(await activePlanDisplay(plan), plan, b)}\n\n主话题中人的补充（来源 ${sourceId}，输入 ${control.requestId}）：\n${control.text}\n在当前子Session接续原工作，不再创建分支。保持原任务及范围，说明这次补充怎样影响结果。`, [], old?.options || {
           requestId, ...plan.runtimeSelection, viewPersonId: control.actor.personId,
           initiatedByIdentityId: control.actor.identityId, recordUserMessage: false,
           workPlanChild: { sourceSessionId: sourceId, planId, branchId: b.id },
@@ -338,8 +340,9 @@ async function publishPlanAdmissions(sourceId, planId) {
   const admitted = plan.branches.filter(b => b.sessionId && b.runId && !b.admissionNoticeId && !b.stopRequested);
   if (admitted.length) {
     const id = 'plan-admission:' + hash(plan.id + ':' + admitted.map(b => b.id).join(','));
-    const text = ['已创建并提交以下独立子 Session：', '', ...admitted.map(b =>
-      `- ${b.topicUrl ? `[${b.name}](${b.topicUrl})` : plan.branchSurface === 'feishu-thread' ? `${b.name}（已在当前群创建话题，飞书尚未返回话题链接）` : `[${b.name}](${b.sessionUrl})`}：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
+    const display = await activePlanDisplay(plan);
+    const text = [display ? '**主对话进展**\n\n已启动以下分工：' : '已创建并提交以下独立子 Session：', '', ...admitted.map(b =>
+      `- ${display ? `${branchDisplayName(plan, b)} · ` : ''}${b.topicUrl ? `[${b.name}](${b.topicUrl})` : plan.branchSurface === 'feishu-thread' ? `${b.name}（已在当前群创建话题，飞书尚未返回话题链接）` : `[${b.name}](${b.sessionUrl})`}：${clipCompactionSection(b.task, 240).replace(/\s+/g, ' ').trim()}`),
       '', plan.branchSurface === 'feishu-thread'
         ? '各独立话题承接对应工作；主话题负责协调、核验和汇总。'
         : '子工作在网页后台执行；请继续在本话题补充和回答问题，由主话题协调、核验和汇总。网页链接用于查看执行记录。'].join('\n');
@@ -402,7 +405,7 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
       const delivery = branch.topicDeliveryId ? await getSourceDelivery(branch.topicDeliveryId)
         : await enqueueSourceDelivery({ sessionId: target.id, responseId: `plan-topic:${plan.id}:${branch.id}`,
           sourceDelivery: plan.branchOrigin,
-          text: `${branch.name}\n\n${branch.task}\n\n本话题承接这项分工，可在这里补充要求。原话题负责协调和汇总。` });
+          text: `${await activePlanDisplay(plan) ? branchDisplayName(plan, branch) : branch.name}\n\n${branch.task}\n\n本话题承接这项分工，可在这里补充要求。原话题负责协调和汇总。` });
       await save(sourceId, data => { data.executionPlans.find(p => p.id === planId).branches.find(b => b.id === branch.id).topicDeliveryId = delivery.id; });
       plan = plans(await findSessionMeta(sourceId)).find(p => p.id === planId);
       if (['stopping', 'cancelled'].includes(plan.state) || plan.branches.find(b => b.id === branch.id).stopRequested) {
@@ -422,7 +425,8 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     if (plan.state === 'stopping' || plan.state === 'cancelled' || plan.branches.find(b => b.id === branch.id).stopRequested) continue;
     await validateKickoff(plan);
     const amendments = plan.controls.filter(c => c.action === 'amend' && c.selected.includes(branch.id)).map(c => c.text).join('\n');
-    const text = `经人确认的独立分工。主话题：${sourceId}；方案：${plan.id}；分支：${branch.id}。\n总目标：${plan.goal}\n已确定的背景、约束和来源：\n${plan.context}\n你的任务：${branch.task}\n修改范围：${branch.writeScope}\n${amendments ? '人的后续补充：\n' + amendments : ''}\n${dependencies.length ? '前置结果（需按原证据核对）：\n' + dependencies.map(b => `${b.name} (${b.sessionId}): ${b.result}`).join('\n') : ''}\n仅执行这份分工。不要递归拆分、向其他群发消息或扩大授权。最终返回成果、证据、未解决问题，系统负责回到主话题。需要人补充时使用原生提问，主话题可查到等待状态，不能替人确认。`;
+    const display = parallelDisplayPrompt(await activePlanDisplay(plan), plan, branch);
+    const text = `${display ? display + '\n\n' : ''}经人确认的独立分工。主话题：${sourceId}；方案：${plan.id}；分支：${branch.id}。\n总目标：${plan.goal}\n已确定的背景、约束和来源：\n${plan.context}\n你的任务：${branch.task}\n修改范围：${branch.writeScope}\n${amendments ? '人的后续补充：\n' + amendments : ''}\n${dependencies.length ? '前置结果（需按原证据核对）：\n' + dependencies.map(b => `${b.name} (${b.sessionId}): ${b.result}`).join('\n') : ''}\n仅执行这份分工。不要递归拆分、向其他群发消息或扩大授权。最终返回成果、证据、未解决问题，系统负责回到主话题。需要人补充时使用原生提问，主话题可查到等待状态，不能替人确认。`;
     const prior = await requests.byRequest(target.id, requestId);
     const receipt = await api.submitHttpMessage(target.id, prior?.text || text, [], prior?.options || {
       requestId, ...plan.runtimeSelection, viewPersonId: plan.actor.personId, initiatedByIdentityId: plan.actor.identityId,
@@ -451,7 +455,8 @@ async function advancePlanUnlocked(sourceId, planId, deps) {
     return; // A stop cannot wake the parent or restart its work.
   }
   const requestId = 'work-plan-review:' + plan.id + (plan.reviewRound ? ':' + plan.reviewRound : '');
-  const text = `已确认方案 ${plan.id} 的选定分支已结束，请在主话题核验并汇总。\n原目标：${plan.goal}\n原范围与来源：${plan.context}\n${plan.branches.filter(b => b.state !== 'skipped').map(b => `${b.name} (${b.id}, Session ${b.sessionId || '未启动'})：${b.state}\n${b.result || b.error || '没有成果；不能认定完成。'}`).join('\n\n')}\n这次只核验和整合已有成果，回复原交办者。执行结束不等于业务验收；缺口、冲突和失败必须说明。不要自行重新开工、恢复停止分支或发布到其他群；人的后续决定优先。`;
+  const display = parallelDisplayPrompt(await activePlanDisplay(plan), plan);
+  const text = `${display ? display + '\n\n' : ''}已确认方案 ${plan.id} 的选定分支已结束，请在主话题核验并汇总。\n原目标：${plan.goal}\n原范围与来源：${plan.context}\n${plan.branches.filter(b => b.state !== 'skipped').map(b => `${b.name} (${b.id}, Session ${b.sessionId || '未启动'})：${b.state}\n${b.result || b.error || '没有成果；不能认定完成。'}`).join('\n\n')}\n这次只核验和整合已有成果，回复原交办者。执行结束不等于业务验收；缺口、冲突和失败必须说明。不要自行重新开工、恢复停止分支或发布到其他群；人的后续决定优先。`;
   const prior = await requests.byRequest(sourceId, requestId);
   const receipt = await api.submitHttpMessage(sourceId, prior?.text || text, [], prior?.options || {
     requestId, ...plan.runtimeSelection, viewPersonId: plan.actor.personId, initiatedByIdentityId: plan.actor.identityId,
@@ -549,7 +554,7 @@ export async function forwardExecutionQuestions(record, events) {
     if (!question || question.secret) continue;
     await enqueueSourceDelivery({ sessionId: source.id, responseId: 'plan-question:' + hash(p.id + ':' + e.questionId),
       sourceDelivery: p.returnPlan,
-      text: `分支「${b.name}」需要你的回答：\n${question.question}\n${question.options.map((o, i) => `${i + 1}. ${o.label}${o.description ? '：' + o.description : ''}`).join('\n')}\n\n可在本话题回复，并注明分支名称；其他独立分支继续运行。` });
+      text: `${await activePlanDisplay(p) ? `**${branchDisplayName(p, b)}｜待你回复**` : `分支「${b.name}」需要你的回答：`}\n${question.question}\n${question.options.map((o, i) => `${i + 1}. ${o.label}${o.description ? '：' + o.description : ''}`).join('\n')}\n\n可在本话题回复，并注明分支名称；其他独立分支继续运行。` });
     await appendEvent(source.id, { type: 'work_event', action: 'execution-question', planId: p.id,
       branchId: b.id, targetSessionId: record.sessionId, questionId: e.questionId, question });
   }
@@ -567,10 +572,10 @@ export async function resumeExecutionPlanTopic(delivery, deps) {
     if (!source || source.archived || p?.branchSurface !== 'feishu-thread' || b?.sessionId !== child.id
         || b.topicDeliveryId !== delivery.id || b.stopRequested) return;
     if (delivery.state !== 'delivered') {
-      return () => enqueueSourceDelivery({ sessionId: source.id,
+      return async () => enqueueSourceDelivery({ sessionId: source.id,
         responseId: `plan-topic-issue:${p.id}:${b.id}:${delivery.state}:${delivery.attempts}`,
         sourceDelivery: p.returnPlan,
-        text: `分支「${b.name}」的飞书话题${delivery.state === 'unknown' ? '尚无法确认是否送达' : '创建失败'}，尚未启动执行。原因：${delivery.lastError || '请核对投递状态'}。原分支已保留，核实回执后可接续。` });
+        text: `${await activePlanDisplay(p) ? `**${branchDisplayName(p, b)}进展**\n\n` : ''}分支「${b.name}」的飞书话题${delivery.state === 'unknown' ? '尚无法确认是否送达' : '创建失败'}，尚未启动执行。原因：${delivery.lastError || '请核对投递状态'}。原分支已保留，核实回执后可接续。` });
     }
     return () => advancePlan(source.id, p.id, deps);
   });

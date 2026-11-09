@@ -11,6 +11,8 @@ export function executionTrialPrompt({ decisions = [], plans = [] }) {
     "补充/停止先核最新计划，用amend/stop仅修改选中分支，核对终态才称已停止；continue只接续明确授权的已结束且未停止分支，保留原Session成果。失败不启动依赖分支；resume复用失败方案。answer核对当前问题并传人的原答案，不代替授权决定。完成分支后主话题逐项核验汇总，启动或模型结束不等于完成。",
     "有实质分工安排取舍才用record记录理由。相关补充合并回答，独立问题及时答；统一feishu-response仅列实际回答的requestIds，不再另调work reply登记同一final。已移交输入不重复正文，plan操作不转移原输入责任。",
     JSON.stringify({ recentDecisions: decisions.slice(-3), plans: plans.slice(-4).map(p => ({ id: p.id, version: p.version,
-      state: p.state, branchSurface: p.branchSurface || "web-silent", goal: p.goal, branches: p.branches.map(b => ({ id: b.id, name: b.name, state: b.state, sessionId: b.sessionId })) })) }),
+      state: p.state, branchSurface: p.branchSurface || "web-silent", goal: p.goal,
+      ...(p.displayTrial ? { displayTrial: { personId: p.displayTrial.personId, endsAt: p.displayTrial.endsAt } } : {}),
+      branches: p.branches.map(b => ({ id: b.id, name: b.name, state: b.state, sessionId: b.sessionId })) })) }),
   ].join('\n');
 }

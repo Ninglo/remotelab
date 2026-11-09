@@ -2,6 +2,7 @@ import { readBody } from '../lib/utils.mjs';
 import { loadPersonMessageReplies, changePersonMessageReplies } from './person-message-replies.mjs';
 import { loadInflightTrial, changeInflightTrial } from './inflight-trial.mjs';
 import { requests } from './requests.mjs';
+import { loadParallelDisplayTrial, changeParallelDisplayTrial } from './parallel-display-trial.mjs';
 
 // Conversation-driven changes use the accepted human Request, not the CLI's
 // owner/service credential or a Person supplied by the caller.
@@ -25,14 +26,17 @@ export async function handleMessageReplySettings({ req, res, pathname, parsedUrl
     if (pathname.endsWith('/current-run')) {
       if (!['GET', 'POST'].includes(req.method)) { writeJson(res, 405, { error: 'Method not allowed' }); return true; }
       const input = req.method === 'POST' ? JSON.parse(await readBody(req, 32768) || '{}') : {};
-      if (Object.keys(input).some(key => !['runId', 'setting', 'enabled', 'expectedRevision', 'confirm', 'ruleVersion'].includes(key))) {
+      if (Object.keys(input).some(key => !['runId', 'setting', 'enabled', 'expectedRevision', 'confirm', 'ruleVersion', 'durationDays'].includes(key))) {
         throw new Error('未知的个人试用设置操作。');
       }
       const actor = await currentRunActor(input.runId || parsedUrl?.query?.runId, authSession, req.method === 'POST');
       const setting = input.setting || parsedUrl?.query?.setting || 'strict-start';
-      if (!['strict-start', 'input-trial', 'parallel-work', 'routing', 'self-review'].includes(setting)) throw new Error('Unknown personal trial');
+      if (!['strict-start', 'input-trial', 'parallel-work', 'routing', 'self-review', 'parallel-display'].includes(setting)) throw new Error('Unknown personal trial');
       if (input.ruleVersion !== undefined && setting !== 'strict-start') throw new Error('Rule version only applies to strict-start');
-      const settings = setting === 'input-trial'
+      if (input.durationDays !== undefined && setting !== 'parallel-display') throw new Error('Duration only applies to parallel-display');
+      const settings = setting === 'parallel-display'
+        ? (req.method === 'GET' ? await loadParallelDisplayTrial(actor) : await changeParallelDisplayTrial(input, actor))
+        : setting === 'input-trial'
         ? (req.method === 'GET' ? await loadInflightTrial(actor) : await changeInflightTrial(input, actor))
         : req.method === 'GET' ? await loadPersonMessageReplies(actor)
         : await changePersonMessageReplies({ action: setting, enabled: input.enabled,

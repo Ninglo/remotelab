@@ -354,3 +354,17 @@ The Web and personal Feishu settings show “多项工作并行” without a tri
 `work context` 的 `deliveryReviews` 可读发送、反馈受理、处理结果及关闭状态；自动上下文只带关联元数据和摘要。普通工具已发出的旧消息暂不自动补绑定，需要明确来源与新的授权后再处理，不能把未知来源猜成原工作。隔离测试 `tests/test-delivery-review.mjs` 覆盖实际回执、归属不变、多作者与附件、重复/丢失回执、关闭及原生确认隔离；真实群发送及自然反馈效果单独验收，不由模拟测试替代。
 
 默认主动参与的连接器配置与开工接口共用同一默认值；显式旁听、暂停和禁用设置仍保留。参与模式变化阻止尚未启动的开工，但不取消已完成工作的主话题结果回收。回复位置由主会话判断：简短交流可原地回复，复杂事项或需要持续跟进的讨论用话题，已有话题继续原话题。话题回复不需要转交任务的确认；另建执行会话、跨群转交仍走各自授权流程。
+
+## Personal parallel text presentation trial
+
+A verified person can ask: “Try explicit main/branch progress headings for my new parallel tasks for seven days, then restore the original presentation and review the results.” Use `remotelab message-replies parallel-display on --days 7 --json`; `status` reads the exact window and `off` stops new presentation immediately. The current-run API resolves the accepted human identity. It does not accept another person's ID, change parallel enrollment or alter other reply preferences. The small trial setting and its source/audit live under that person's existing preferences.
+
+Only newly created WorkPlans for the opted-in author capture `displayTrial`. Current WorkPlan admission remains limited to the registered Feishu groups; this trial does not add Web or private-chat plan creation. Background Web children and requested Feishu child topics inherit their actual plan/branch identity. Existing plans, other people in the same group and ordinary work retain their previous presentation. Branch numbers follow the saved plan order, including when a later branch finishes first; concurrent plans include their task names when needed.
+
+The Harness receives `主对话进展` / `分支 N｜名称进展` instructions for progress and corresponding result headings. Admission notices, forwarded questions and topic delivery failures use deterministic labels. Parent review receives the fixed branch mapping and keeps “branch result available” separate from overall acceptance. This is a text-format trial: no new progress relay, card, periodic message, extra model or scheduling policy is introduced; existing progress tags, card disclosure, destinations and delivery deduplication remain authoritative. Model-written progress is evaluated in natural use, not certified by template tests.
+
+New contexts and automatic notices check the wall-clock expiry and current setting. Already accepted model turns retain their input snapshot and may finish using their accepted format; previously delivered text is never rewritten. A later re-enable has a new revision and does not enroll old plans. Disabling the display does not cancel any business work or suppress its results.
+
+For the bounded review, reuse WorkPlan `displayTrial`, existing Request/history and actual delivery receipts. Count eligible plans and branches, inspect main/branch attribution, duplicate notices and mistaken whole-task completion, and link the person's corrections to the original task. Report absent natural samples explicitly. Schedule one end-of-window continuation in the original topic when requested; do not add a periodic watcher or silently renew the trial.
+
+Validation: `tests/test-parallel-display-trial.mjs` and `tests/test-work-execution-plans.mjs` cover identity isolation, preservation of unrelated settings, expiry/off, fixed labels, original routing, duplicate question replay and review mapping using isolated stores.
