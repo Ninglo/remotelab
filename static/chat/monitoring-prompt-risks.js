@@ -72,6 +72,9 @@
     details.append(summary);
     const body = node('div', null, 'prompt-risk-body');
     body.append(node('p', `审阅 ${stamp(row.reviewedAt)} · ${kinds[row.source.kind] || row.source.kind} · 同文段关联 ${row.occurrences} 个来源`, 'meta'));
+    if (row.needsCalibration) body.append(node('p', '旧规则标记，等待按新证据标准复核；失败复核会保留原标记。', 'notice'));
+    if (row.previousReview) body.append(node('p', `已按新标准复核；旧标记为${labels[row.previousReview.severity] || row.previousReview.severity}，原记录保留。`, 'meta'));
+    for (const note of row.contextNotes || []) body.append(node('p', `上下文待核：${note}`, 'meta'));
     body.append(node('p', '模型标记，尚未核实实际后果；原文中的历史操作或已授权行为也可能被标记。', 'meta'));
     for (const finding of row.findings) {
       const article = node('article', null, 'prompt-risk-finding'); article.dataset.severity = finding.severity;
@@ -96,6 +99,7 @@
     if (error) host.append(node('p', error, 'notice'));
     if (!data) { if (!error) host.append(node('p', '正在读取已保存的风险明细…', 'meta')); return; }
     host.append(node('p', `结果更新 ${stamp(data.updatedAt)} · 审阅模型 ${data.model} · 规则 ${data.ruleVersion}。只读取已有结果，不启动模型审阅。`, 'meta'));
+    if (data.calibration) host.append(node('p', `新标准已审 ${data.calibration.currentPolicyReviewed} 段 · 旧高风险待复核 ${data.calibration.pending} 段（其中复核失败 ${data.calibration.failed}）· 仅有上下文疑问 ${data.calibration.contextOnly} 段。待复核仍保留旧等级。`, 'meta'));
     host.append(node('p', '同一文本按指纹去重；关联来源数不等于独立事件数。处置结果尚未关联，旧标记不代表风险仍在发生。', 'meta'));
     host.append(node('p', state.sort === 'time' ? '按审阅时间从新到旧排列；不是任务发生时间。' : '按严重程度从高到低排列，同级按审阅时间从新到旧。', 'meta'));
     const paging = () => {

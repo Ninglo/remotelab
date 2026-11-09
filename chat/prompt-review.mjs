@@ -4,12 +4,12 @@ import { spawn } from 'node:child_process';
 import { CONFIG_DIR, CHAT_RUNS_DIR } from '../lib/config.mjs';
 import { writeDurableJson, readRecord, serialQueue } from '../lib/durable-records.mjs';
 import { estimateUsageCost } from '../lib/model-pricing.mjs';
-import { REVIEW_MODEL, REVIEW_RULE_VERSION, REVIEW_RULE_HASH, fingerprint, segmentPrompt, redactReviewText, validateReviewResult } from './prompt-review-policy.mjs';
+import { REVIEW_MODEL, REVIEW_RULE_VERSION, REVIEW_RULE_HASH, fingerprint, segmentPrompt, redactReviewText, validateReviewResult, REVIEW_STORAGE_KEY, needsRiskCalibration, retainCredentialEvidence } from './prompt-review-policy.mjs';
 import { reviewPromptBatch } from './prompt-review-model.mjs';
 
 export const PROMPT_REVIEW_ROOT = join(CONFIG_DIR, 'prompt-review');
 const captureRoot = join(CONFIG_DIR, 'prompt-captures');
-const versionKey = fingerprint(`${REVIEW_MODEL}:${REVIEW_RULE_VERSION}:${REVIEW_RULE_HASH}`).slice(0, 16);
+const versionKey = REVIEW_STORAGE_KEY;
 const root = join(PROMPT_REVIEW_ROOT, versionKey);
 const rank = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 const now = () => new Date().toISOString();
@@ -53,8 +53,12 @@ export async function scanPromptSources({ runsDir = CHAT_RUNS_DIR, capturesDir =
     const source = { ...ref, id: fingerprint(JSON.stringify(ref)), fingerprint: fingerprint(text), chars: text.length,
       segments: parts.map(({ id, startLine }) => ({ id, startLine })) };
     sources.push(source);
+    let offset = 0;
     for (const segment of parts) {
       const entry = segments.get(segment.id) || { ...segment, refs: [] };
+      if (!entry.context) entry.context = { kind: ref.kind, operation: ref.operation || '',
+        before: text.slice(Math.max(0, offset - 800), offset), after: text.slice(offset + segment.text.length, offset + segment.text.length + 800) };
+      offset += segment.text.length;
       entry.refs.push({ sourceId: source.id, startLine: segment.startLine }); segments.set(segment.id, entry);
     }
   }
@@ -128,6 +132,12 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
     for (const file of (await names(join(root, 'results'))).filter(f => /^[a-f0-9]{64}\.json$/.test(f))) {
       try { const row = await readRecord(join(root, 'results', file)); if (row) results.set(row.id, row); } catch {}
     }
+    for (const segment of scan.segments.values()) {
+      const prior = results.get(segment.id);
+      if (prior?.reviewRuleHash !== REVIEW_RULE_HASH) continue;
+      const guarded = retainCredentialEvidence(prior, segment);
+      if (guarded !== prior) { results.set(segment.id, guarded); await writeDurableJson(join(root, 'results', `${segment.id}.json`), guarded); }
+    }
     // A crash may have spent provider tokens without returning a receipt. Keep
     // the durable admission as unknown usage, and retry its unfinished inputs.
     for (const file of await names(join(root, 'attempts'))) {
@@ -136,10 +146,12 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
       await writeDurableJson(path, { ...attempt, state: 'interrupted', completedAt: now() });
       for (const id of attempt.segments || []) {
         const prior = results.get(id);
-        if (prior?.state === 'reviewed') continue;
-        const attempts = (prior?.attempts || 0) + 1;
-        const row = { id, state: 'failed', attempts, error: 'interrupted_usage_unknown',
+        const recalibrating = needsRiskCalibration(prior);
+        if (prior?.state === 'reviewed' && !recalibrating) continue;
+        const attempts = ((recalibrating ? prior.calibration : prior)?.attempts || 0) + 1;
+        let row = { id, state: 'failed', attempts, error: 'interrupted_usage_unknown',
           retryAt: new Date(Date.now() + attempts * 15 * 60000).toISOString() };
+        if (recalibrating) row = { ...prior, calibration: row };
         results.set(id, row); await writeDurableJson(join(root, 'results', `${id}.json`), row);
       }
     }
@@ -151,7 +163,8 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
         const row = results.get(s.id);
         return { id: s.id, chars: s.text.length, refs: s.refs, state: row?.state || 'pending',
           severity: row?.state === 'reviewed' ? row.findings.reduce((a, f) => rank[f.severity] > rank[a] ? f.severity : a, 'none') : null,
-          findings: row?.findings || [], attempts: row?.attempts || 0, error: row?.error || '', reviewedAt: row?.reviewedAt || '' };
+          findings: row?.findings || [], contextNotes: row?.contextNotes || [], reviewRuleVersion: row?.reviewRuleVersion || 'agent-prompt-safety-v1',
+          reviewRuleHash: row?.reviewRuleHash || null, needsCalibration: needsRiskCalibration(row), calibration: row?.calibration || null, previousReview: row?.previousReview ? { severity: row.previousReview.severity, reviewedAt: row.previousReview.reviewedAt } : null, attempts: row?.attempts || 0, error: row?.error || '', reviewedAt: row?.reviewedAt || '' };
       });
       // Attempt records survive model/parse failures and are counted once across restarts.
       const attempts = [];
@@ -171,14 +184,24 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
     await checkpoint();
     const eligible = [...scan.segments.values()].filter(s => {
       const row = results.get(s.id);
-      return row?.state !== 'reviewed' && (row?.attempts || 0) < 3 && (!row?.retryAt || Date.parse(row.retryAt) <= Date.now());
+      const retry = needsRiskCalibration(row) ? row.calibration : row;
+      return (row?.state !== 'reviewed' || needsRiskCalibration(row)) && (retry?.attempts || 0) < 3 && (!retry?.retryAt || Date.parse(retry.retryAt) <= Date.now());
     });
-    const batches = []; let batch = [], chars = 0;
+    eligible.sort((a, b) => {
+      const priority = s => { const r = results.get(s.id); return needsRiskCalibration(r) ? Math.max(...r.findings.map(f => rank[f.severity])) : 0; };
+      return priority(b) - priority(a);
+    });
+    const batches = []; let batch = [], chars = 0, itemLimit = config.batchItems;
     for (const segment of eligible) {
-      if (batch.length && (batch.length >= config.batchItems || chars + segment.text.length > config.batchChars)) {
-        batches.push(batch); batch = []; chars = 0;
+      const prior = results.get(segment.id);
+      const failures = (needsRiskCalibration(prior) ? prior.calibration : prior)?.attempts || 0;
+      const nextLimit = Math.max(1, Math.floor(config.batchItems / (2 ** failures)));
+      const wireChars = segment.text.length + JSON.stringify(segment.context || {}).length + segment.text.split('\n').length * 8 + 128;
+      if (batch.length && (batch.length >= Math.min(itemLimit, nextLimit) || chars + wireChars > config.batchChars)) {
+        batches.push(batch); batch = []; chars = 0; itemLimit = config.batchItems;
       }
-      batch.push(segment); chars += segment.text.length;
+      itemLimit = Math.min(itemLimit, nextLimit);
+      batch.push(segment); chars += wireChars;
     }
     if (batch.length) batches.push(batch);
     const limit = maxBatches ?? config.maxBatches;
@@ -207,18 +230,21 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
           usage, cost: usage ? estimateUsageCost({ model: REVIEW_MODEL, ...usage }) : null,
           segments: items.map(s => s.id), state: error ? 'failed' : 'completed' });
         for (const segment of items) {
-          const attempts = (results.get(segment.id)?.attempts || 0) + 1; let row;
+          const prior = results.get(segment.id), recalibrating = needsRiskCalibration(prior);
+          const attempts = ((recalibrating ? prior.calibration : prior)?.attempts || 0) + 1; let row;
           try {
             if (error) throw error;
             const matching = parsed.filter(r => r.id === segment.id);
             if (matching.length !== 1) throw Error('Missing or duplicate review result');
-            row = { ...validateReviewResult(matching[0], segment), attempts, reviewedAt: now(), attemptId };
+            row = { ...validateReviewResult(matching[0], segment), attempts, reviewedAt: now(), attemptId,
+              ...(recalibrating ? { previousReview: { ...prior, severity: prior.findings.reduce((a, f) => rank[f.severity] > rank[a] ? f.severity : a, 'none') } } : {}) };
           } catch (validationError) {
             // Never persist provider/model errors verbatim: they can contain credentials.
             const messages = { 'Empty evidence': 'empty_evidence', 'Invalid finding or evidence location': 'invalid_evidence_location',
               'Missing or duplicate review result': 'missing_or_duplicate_result', 'Invalid result schema or missing segment': 'invalid_schema' };
             row = { id: segment.id, state: 'failed', attempts, error: error ? 'model_or_json_failure' : messages[validationError.message] || 'invalid_result',
               retryAt: new Date(Date.now() + attempts * 15 * 60000).toISOString(), attemptId };
+            if (recalibrating) row = { ...prior, calibration: row };
           }
           results.set(row.id, row);
           await writeDurableJson(join(root, 'results', `${row.id}.json`), row);
@@ -228,7 +254,7 @@ export async function runPromptReview({ review = reviewPromptBatch, maxBatches, 
           reviewed: [...results.values()].filter(r => r.state === 'reviewed').length });
       }
     }));
-    snapshot.state = snapshot.rows.some(r => r.state !== 'reviewed') ? 'incomplete' : 'completed';
+    snapshot.state = snapshot.rows.some(r => r.state !== 'reviewed' || r.needsCalibration) ? 'incomplete' : 'completed';
     snapshot.finishedAt = now(); await checkpoint();
     return summarizePromptReview(snapshot, config);
   } finally { await release(); }
@@ -247,6 +273,10 @@ export function summarizePromptReview(snapshot, config) {
       deduplicatedOccurrences: rows.reduce((n, r) => n + r.refs.length - 1, 0),
       unreadable: snapshot.gaps.length, gaps: snapshot.gaps.slice(0, 100), unknownWireCoverage: true,
       bySource: ['manifest','native-input','background'].map(kind => ({ kind, sources: snapshot.sources.filter(s => s.kind === kind).length })) },
+    calibration: { currentPolicyReviewed: rows.filter(r => r.reviewRuleHash === REVIEW_RULE_HASH).length,
+      pending: rows.filter(r => r.needsCalibration).length, failed: rows.filter(r => r.needsCalibration && r.calibration?.state === 'failed').length,
+      carriedForward: rows.filter(r => r.state === 'reviewed' && r.reviewRuleHash !== REVIEW_RULE_HASH && !r.needsCalibration).length,
+      contextOnly: rows.filter(r => r.contextNotes?.length && !r.findings?.length).length },
     risks: Object.fromEntries(Object.keys(rank).map(severity => [severity, rows.filter(r => r.state === 'reviewed' && r.severity === severity).length])) };
 }
 

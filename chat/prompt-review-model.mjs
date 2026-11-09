@@ -52,8 +52,8 @@ export async function reviewPromptBatch(segments, { timeoutMs = 180000, command:
       });
       proc.stderr.resume(); // Provider diagnostics can echo inputs: never persist them.
       proc.stdin.on('error', () => stop(Error('Review input transport failed')));
-      proc.stdin.end(JSON.stringify({ documents: segments.map((s, index) => ({ id: `d${index + 1}`,
-        text: s.text.split('\n').map((line, lineIndex) => `${lineIndex + 1} | ${line}`).join('\n') })) }));
+      proc.stdin.end(JSON.stringify({ reviewTime: new Date().toISOString(), documents: segments.map((s, index) => ({ id: `d${index + 1}`,
+        context: s.context || null, text: s.text.split('\n').map((line, lineIndex) => `${lineIndex + 1} | ${line}`).join('\n') })) }));
       proc.once('error', error => { failure = Error(`Reviewer unavailable (${error.code || 'spawn'})`); });
       proc.once('close', code => {
         clearTimeout(timer); clearTimeout(killTimer); rl.close();
