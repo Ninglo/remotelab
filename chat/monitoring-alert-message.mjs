@@ -65,6 +65,10 @@ export function monitoringProblem(item) {
     : brief(item.detail || '原记录未提供具体数值，详见处理记录');
 }
 export function monitoringProgress(item, recovery) {
+  if (item.kind === 'poolSource') return item.recovered ? '脚本已确认采样连续稳定恢复。'
+    : item.signals?.recovering ? '已取得有效采样；脚本继续核验连续恢复。'
+    : item.signals?.errorCode === 'ssh_authentication_failed' ? '已定位到 SSH 认证失败；现有授权尚未恢复。'
+    : '采集器按原周期自动重试；尚未取得连续稳定的有效采样。';
   if (item.kind === 'poolIdle') return item.recovered ? '云平台已确认资源重新被分配。' : '已根据连续有效的云配额观测确认整池空闲。';
   if (item.kind === 'serviceCrash' && item.state === 'fixed') return item.recoveryObservation + '。';
   if (item.kind === 'serviceCrash' && item.recovered) return '已连续稳定运行30分钟，根因修复待确认。';
@@ -87,7 +91,8 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
   return events.map(item => {
     const recovery = repairFor(item, config), next = monitoringNextStep(item, config);
     const resolved = item.recovered === true;
-    const status = item.kind === 'poolIdle' ? resolved ? '资源已重新使用' : '训练资源持续空闲'
+    const status = item.kind === 'poolSource' && !resolved ? item.signals?.recovering ? '恢复观察中' : '采样不可用'
+      : item.kind === 'poolIdle' ? resolved ? '资源已重新使用' : '训练资源持续空闲'
       : resolved ? item.kind === 'serviceCrash' ? '服务已稳定恢复，根因修复待确认' : item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
     const decision = color && next.type !== 'notice' ? `<font color="red">${next.summary}</font>` : next.summary;
     return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
@@ -95,7 +100,7 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
       + `预警原因：${text(item.kind === 'diskGrowth' && !resolved ? monitoringProblem(item) : item.triggerReason || monitoringProblem(item), 200)}\n`
       + (item.kind === 'diskGrowth' && !resolved ? `观测时间：${alertTime(item.observedAt)}（北京时间）\n` : '')
       + (item.kind === 'serviceCrash' ? `崩溃记录：累计${item.crashCount || 1}次；最近 ${alertTime(item.lastOccurredAt || item.occurredAt)}\n` : '')
-      + (!resolved && item.persistentWarningAt ? `**持续告警：连续10分钟未见改善。**（${alertTime(item.persistentWarningAt)}）\n` : '')
+      + (!resolved && !item.signals?.recovering && item.persistentWarningAt ? `**持续告警：连续10分钟未见改善。**（${alertTime(item.persistentWarningAt)}）\n` : '')
       + (resolved ? `处理方式：${item.recoveryStopped ? '任务停止，保留历史记录' : resolutionAttribution(recovery)}\n`
         + `处理结果：${monitoringProgress(item, recovery)}${item.recoveryObservation ? `；复查：${text(item.recoveryObservation, 160)}` : ''}\n`
         + `确认时间：${alertTime(item.recoveredAt || item.observedAt)}\n`

@@ -1,6 +1,11 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { dispatchMonitoringAlerts, renderMonitoringAlert, runMonitoringAlerts, renderMonitoringAlertCard, updateMonitoringAlert } from '../chat/monitoring-alerts.mjs';
+const fixtureDir = await mkdtemp(join(tmpdir(), 'monitoring-alert-tests-'));
+after(() => rm(fixtureDir, { recursive: true, force: true }));
 
 test('the current journal collection replaces stale reader coverage and receives live service status', async () => {
   const services = [{ unit: 'app.service', status: 'healthy' }];
@@ -42,7 +47,7 @@ const snapshot = attention => ({ generatedAt: '2026-10-03T06:00:00Z', attention,
 
 function fixture() {
   let state = null, sends = 0, updates = 0;
-  return { options: { config: {}, now: Date.parse('2026-10-03T06:00:00Z'), load: async () => structuredClone(state), save: async (_file, value) => { state = structuredClone(value); },
+  return { options: { stateFile: join(fixtureDir, 'alerts.json'), config: {}, now: Date.parse('2026-10-03T06:00:00Z'), load: async () => structuredClone(state), save: async (_file, value) => { state = structuredClone(value); },
     send: async (_events, _config, id) => { sends++; assert.ok(id.length <= 50); return `om_batch_${sends}`; },
     update: async (_events, _config, id) => { updates++; return id; } },
   getState: () => state, getSends: () => sends, getUpdates: () => updates };
@@ -640,6 +645,25 @@ test('confirmed pool issues reuse the existing incident card and require explici
   await dispatchMonitoringAlerts({...options, snapshot: value});
   assert.equal(Object.values(f.getState().incidents)[0].active, false);
   assert.equal(f.getSends(), 1); assert.equal(f.getUpdates(), 1);
+});
+test('pool recovery observations update an existing card without sending a new alert', async () => {
+  const f = fixture(), options = { ...f.options, config: { noisePolicy: { mode: 'risk_only' } } };
+  const down = { kind: 'poolSource', id: 'device:qy8', subject: 'qy8', severity: 'warning', confirmed: true,
+    detail: '设备采样失败', signals: { unavailable: true, recovering: false } };
+  const recovering = { ...down, detail: '已取得有效采样，观察恢复', signals: { unavailable: false, recovering: true } };
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([recovering]) });
+  assert.equal(f.getSends(), 0);
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([down]) });
+  assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({ ...options, snapshot: snapshot([recovering]) });
+  assert.equal(f.getSends(), 1);
+  assert.equal(f.getUpdates(), 1);
+  const item = Object.values(f.getState().incidents)[0];
+  assert.equal(item.active, true);
+  const body = renderMonitoringAlert([item.event], options.config);
+  assert.match(body, /恢复观察中/); assert.match(body, /脚本继续核验/);
+  assert.doesNotMatch(body, /尚无本轮|需按任务与资源归属处理/);
+  assert.match(renderMonitoringAlert([{ ...down, signals: { unavailable: true, errorCode: 'ssh_authentication_failed' } }], {}), /恢复现有 SSH 授权/);
 });
 
 test('six-hour training idle notices send directly once and close the same card when allocated', async () => {

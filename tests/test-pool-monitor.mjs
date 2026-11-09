@@ -66,6 +66,21 @@ test('a repeated device sample or an observation gap cannot prove stable recover
   prior = assessPool(prior, next, { now });
   assert.ok(!prior.recovered.some(x => x.id === 'device:dev'));
 });
+test('a first valid sample at the failure grace threshold does not create an alert', () => {
+  let prior;
+  for (let minute = 0; minute < 30; minute++) prior = assessPool(prior, {}, {
+    now: start + minute * 60000, sourceGraceMs: 1800000 });
+  const now = start + 30 * 60000;
+  prior = assessPool(prior, sample(now), { now, sourceGraceMs: 1800000 });
+  assert.equal(prior.attention.length, 0);
+  assert.equal(prior.sources.controller.alerted, false);
+  prior = assessPool(prior, {}, { now: now + 60000, sourceGraceMs: 1800000 });
+  assert.equal(prior.attention[0].sourceState, 'unavailable');
+  prior = assessPool(prior, sample(now + 120000), { now: now + 120000 });
+  assert.equal(prior.attention[0].signals.unavailable, false);
+  assert.equal(prior.attention[0].signals.recovering, true);
+  assert.equal(prior.recovered.length, 0);
+});
 test('one failed upstream does not suppress the other or forge a new success time', async () => {
   let saved;
   const old = sample(start);

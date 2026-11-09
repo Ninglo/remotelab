@@ -11,6 +11,15 @@ import { metricAlertBundles, metricBundleCard } from '../lib/metric-alert-bundle
 import { processSessionDiagnostics } from '../chat/session-diagnostics.mjs';
 
 const start = Date.parse('2026-10-31T01:00:00Z');
+test('fresh pool recovery clears the persistence warning without resolving the incident', () => {
+  const owner = { active: true, persistence: { since: new Date(start).toISOString() },
+    persistentWarningAt: new Date(start + 600000).toISOString() };
+  observePersistentAlert(owner, { kind: 'poolSource', severity: 'warning', signals: { recovering: true } }, { now: start + 1200000 });
+  assert.equal(owner.active, true);
+  assert.equal(owner.persistentWarningAt, undefined);
+  observePersistentAlert(owner, { kind: 'poolSource', severity: 'warning', signals: { unavailable: true } }, { now: start + 1260000 });
+  assert.equal(owner.persistentWarningAt, undefined);
+});
 const stateDir = await mkdtemp(join(tmpdir(), 'alert-notification-policy-'));
 after(() => rm(stateDir, { recursive: true, force: true }));
 const disk = { kind: 'disk', id: '/', subject: 'Disk', severity: 'critical', availableBytes: 1024 ** 3, usedPercent: 99 };

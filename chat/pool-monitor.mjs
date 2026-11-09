@@ -13,7 +13,7 @@ const healthy = (source, now) => source && !source.failed && !source.stale && fr
 export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs = 180000, sourceRecoveryMs = 600000, stallMs = 1800000, errorIncrease = 10,
   trainingIdle = {} } = {}) {
   const time = new Date(now).toISOString(), attention = [], recovered = [], sources = {}, tasks = {}, idle = {};
-  function source(id, label, ok, detail, sampledAt) {
+  function source(id, label, ok, detail, sampledAt, errorCode = null) {
     const old = previous?.sources?.[id];
     const continuous = ok && old?.ok && fresh(old.checkedAt, now);
     const healthySince = ok ? continuous ? old.healthySince : time : null;
@@ -21,12 +21,14 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
     const stable = ok && (!old?.failedSince || now - at(healthySince) >= sourceRecoveryMs
       && at(sampledAt) > at(firstHealthySampleAt));
     const failedSince = stable ? null : old?.failedSince || (!ok ? time : null);
-    const alerted = !stable && !!(old?.alerted || failedSince && now - at(failedSince) >= sourceGraceMs);
+    const alerted = !stable && !!(old?.alerted || !ok && failedSince && now - at(failedSince) >= sourceGraceMs);
     sources[id] = { ok, failedSince, healthySince, firstHealthySampleAt, checkedAt: time, alerted };
     if (stable) recovered.push({ kind: 'poolSource', id });
     else if (alerted) attention.push({ kind: 'poolSource', id,
       subject: label, severity: 'warning', confirmed: true,
-      detail: `数据源故障尚未持续恢复 ${Math.floor((now - at(failedSince)) / 60000)} 分钟；${ok ? '已取得新采样，等待连续稳定恢复。' : detail}`, signals: { unavailable: true } });
+      detail: `${ok ? '已取得有效采样，正在观察是否持续恢复' : '采样异常尚未稳定恢复'}；距本轮首次失败 ${Math.floor((now - at(failedSince)) / 60000)} 分钟。${ok ? '' : detail}`,
+      sourceState: ok ? 'recovering' : 'unavailable', lastSuccessAt: sampledAt || null,
+      signals: { unavailable: !ok, recovering: ok, errorCode: ok ? null : errorCode } });
   }
   const resources = sample.resources, queue = sample.queue;
   source('controller', '卡池控制面', !resources?.controllerStale && fresh(resources?.observedAt, now),
@@ -35,7 +37,8 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
   source('queue', '评测队列状态', queueFresh, '未取得有效队列状态；暂停卡顿判断，保留上次成功时间。', queue?._readAt);
   for (const machine of resources?.machines || []) {
     if (machine.observation) source(`device:${machine.id}`, machine.name || machine.id, healthy(machine.observation, now),
-      `设备采样持续不可用，占用显示未知；${machine.observation.error || '采样已过期'}。任务与云配额按各自来源判断。`, machine.observation.observedAt);
+      `设备采样不可用，占用显示未知；${machine.observation.error || '采样已过期'}。任务与云配额按各自来源判断。`, machine.observation.observedAt,
+      machine.observation.errorCode || (/SSH认证失败/.test(machine.observation.error || '') ? 'ssh_authentication_failed' : null));
     if (machine.cloudObservation) source(`cloud:${machine.id}`, `${machine.name || machine.id} 云队列`, healthy(machine.cloudObservation, now),
       '云配额与任务列表持续不可用；旧数据保留原采样时间，不计作当前空闲容量。', machine.cloudObservation.observedAt);
   }

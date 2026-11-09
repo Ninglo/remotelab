@@ -1277,9 +1277,9 @@ warm-up response never changes known capacity to zero.
 Source notices use `poolMonitoring.thresholds.sourceGraceMs` (default 180000).
 For less interruption from transient collection failures, the deployment may set
 1800000: notify only after 30 continuous minutes classified as unavailable,
-while continuing minute sampling. A successful sample resets the confirmation
-window. This grace follows source freshness/TTL checks, so total time since the
-last good sample can be longer. Notice text uses the actual unavailable duration.
+while continuing minute sampling. A successful sample starts the stable-recovery
+window described below. This grace follows source freshness/TTL checks, so total time since the
+last good sample can be longer. Notice text reports elapsed incident age separately from current availability.
 A running
 Run needs 30 minutes of consecutive fresh samples without an accepted result and
 either at least 10 additional infrastructure-failed episodes or a continuous
@@ -1307,7 +1307,7 @@ the ten-minute failure escalation. Confirmed allocation closes the original card
 and a later idle period starts a new clock. This reads the existing shared quota
 snapshot, creates no timer or GPU probe, and never submits training work.
 
-Pool source failures retain their incident and first failure time across brief successful samples. Recovery requires ten minutes (`poolMonitoring.thresholds.sourceRecoveryMs`, default 600000) of fresh continuous checks and an advancing upstream sample timestamp. Repeated retained samples and observation gaps cannot close the incident. Source sampling, task progress and whole-pool idle thresholds remain separate.
+Pool source failures retain their incident and first failure time across brief successful samples. Recovery requires ten minutes (`poolMonitoring.thresholds.sourceRecoveryMs`, default 600000) of fresh continuous checks and an advancing upstream sample timestamp. Repeated retained samples and observation gaps cannot close the incident. Source sampling, task progress and whole-pool idle thresholds remain separate. Recovery-phase samples never create a new source alert; they only update an existing open card and reset its ten-minute persistence warning. Cards distinguish unavailable, recovering and stable recovery, report native collector retries, and identify SSH authorization blockers without admitting another Agent. Brief healthy samples do not turn elapsed incident age into continuous downtime.
 
 A service explicitly marked paused by an inactive unit and registered maintenance reason closes its existing alert as stopped, not repaired. The broker retires its pending/blocked/confirmation-waiting repairs, retaining all attempts and evidence. Already running repairs finish normal receipt reconciliation; no replacement repair is admitted.
 
