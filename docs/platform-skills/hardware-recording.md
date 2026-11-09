@@ -331,6 +331,29 @@ actual color, smoothness, key events, cues and the complete delivery chain on th
 target device. Existing short-recording, retention and publication policies remain
 with the recorder.
 
+Bluetooth lighting is an optional, separate transport from Bluetooth keyboard
+input. Supply both `--bluetooth COREBLUETOOTH_UUID` and `--ble-helper PATH` to
+the installed ANTICATER `ble_helper` executable. Resolve the exact returned
+device's CoreBluetooth UUID from a successful official-helper query; a keyboard
+MAC address, a cached UUID or a displayed name alone is not that binding. The
+bridge prefers the exact USB vendor interface when present, otherwise reads all
+six configuration reports through AE42 and opens the AE41 write session. It
+uses 64-byte Bluetooth packets and leaves press remapping to USB. A disconnect
+surfaces as a controller failure for the existing service manager to restart.
+
+For macOS Bluetooth permission, compile `scripts/recording-knob-host-macos.swift`
+into a separate `.app` with a stable bundle identity and
+`NSBluetoothAlwaysUsageDescription`. Launch it with
+`--log ABSOLUTE_PATH -- NODE_PATH CONTROLLER_PATH ...`; the child controller and
+official helper inherit that app's permission owner. Preserve the existing
+recording app responsible for microphone and input permissions. [HUMAN] Accept
+the normal macOS Bluetooth permission prompt once. Never edit the TCC database.
+Install the light app under the existing service manager after pure-Bluetooth
+configuration readback and a successful bounded preview. Verify visible light
+and real recording start/stop before declaring physical acceptance. A GATT
+write acknowledgement does not establish visible light
+or firmware support. Test with USB unplugged, then verify reconnect behavior.
+
 ## Acceptance boundary
 
 Automated tests use synthetic audio, two receiver streams, real local asset uploads, RemoteLab message admission and a fake Harness. They cover independent start/stop, receiver failure isolation, segment repair, disk bounds, interrupted data, retry identity and instance-local daemon control. For changes to the macOS helper, compile it locally on macOS without accessing devices. These are software evidence.

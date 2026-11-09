@@ -6,13 +6,15 @@ import { watch } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createConnection } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { RecordingKnobLight, knobStatusSignature } from '../lib/recording/knob-light.mjs';
 
 const options = {}, args = process.argv.slice(2);
 for (let i = 0; i < args.length; i++) {
   const name = args[i].slice(2);
   if (name === 'help') {
-    console.log('ANTICATER USB recording light:\n  --root PATH --lane ID --serial USB_SERIAL --helper COMPILED_SWIFT_PATH\n'
+    console.log('ANTICATER recording light:\n  --root PATH --lane ID --serial USB_SERIAL --helper COMPILED_SWIFT_PATH\n'
+      + '  [--bluetooth COREBLUETOOTH_UUID --ble-helper OFFICIAL_HELPER_PATH]\n'
       + '  [--probe | --configure-button | --demo] [--cue PATH (demo only)]\n'
       + 'Compile recording-knob-hid-macos.swift with swiftc. --probe is read-only.\n'
       + '--configure-button saves the original six reports and maps only press to F13.\n'
@@ -20,11 +22,13 @@ for (let i = 0; i < args.length; i++) {
     process.exit(0);
   }
   if (['probe', 'configure-button', 'demo'].includes(name)) { options[name] = true; continue; }
-  if (!['root', 'lane', 'serial', 'helper', 'cue'].includes(name) || !args[i + 1] || args[i + 1].startsWith('--')) throw Error(`Invalid option ${args[i]}`);
+  if (!['root', 'lane', 'serial', 'helper', 'cue', 'bluetooth', 'ble-helper'].includes(name) || !args[i + 1] || args[i + 1].startsWith('--')) throw Error(`Invalid option ${args[i]}`);
   options[name] = args[++i];
 }
 for (const name of ['root', 'lane', 'serial', 'helper']) if (!options[name]) throw Error(`Missing --${name}`);
 if (!/^[A-Za-z0-9_-]+$/.test(options.serial)) throw Error('Invalid USB serial');
+if (Boolean(options.bluetooth) !== Boolean(options['ble-helper'])) throw Error('Bluetooth UUID and helper must be configured together');
+if (options.bluetooth && !/^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(options.bluetooth)) throw Error('Invalid CoreBluetooth UUID');
 if (['probe', 'configure-button', 'demo'].filter(key => options[key]).length > 1) throw Error('Choose only one operation');
 const root = resolve(options.root), log = value => console.log(JSON.stringify({ at: new Date().toISOString(), ...value }));
 const projection = new RecordingKnobLight(options.lane), pending = new Map();
@@ -32,10 +36,10 @@ let child, lines, watcher, healthTimer, frameTimer, stopping = false, connected 
 let lastFrame = '', frameBusy = false, refreshing = false, signature = '', seenPhase = '', queryCollector;
 let readyResolve, readyReject;
 const ready = new Promise((accept, reject) => { readyResolve = accept; readyReject = reject; });
-const readyTimeout = setTimeout(() => readyReject(Error('Knob USB interface did not appear')), 8000);
+const readyTimeout = setTimeout(() => readyReject(Error('Knob light interface did not appear')), options.bluetooth ? 45000 : 8000);
 
 function send(action) {
-  if (!connected) return Promise.reject(Error('Knob USB disconnected'));
+  if (!connected) return Promise.reject(Error('Knob light interface disconnected'));
   return new Promise((accept, reject) => {
     const id = ++sequence;
     const timeout = setTimeout(() => { pending.delete(id); reject(Error('Knob command timed out')); }, 1500);
@@ -114,7 +118,11 @@ async function shutdown(error) {
 try {
   const config = JSON.parse(await readFile(join(root, 'config.json'), 'utf8'));
   if (!config.lanes.some(lane => lane.id === options.lane)) throw Error('Selected recording lane is not configured');
-  child = spawn(resolve(options.helper), ['--serial', options.serial], { stdio: ['pipe', 'pipe', 'inherit'] });
+  child = options.bluetooth
+    ? spawn(process.execPath, [fileURLToPath(new URL('./recording-knob-bridge.mjs', import.meta.url)),
+      '--serial', options.serial, '--usb-helper', resolve(options.helper),
+      '--bluetooth', options.bluetooth, '--ble-helper', resolve(options['ble-helper'])], { stdio: ['pipe', 'pipe', 'inherit'] })
+    : spawn(resolve(options.helper), ['--serial', options.serial], { stdio: ['pipe', 'pipe', 'inherit'] });
   child.once('error', error => { readyReject(error); shutdown(error); });
   child.stdin.on('error', error => { if (!stopping) shutdown(error); });
   lines = createInterface({ input: child.stdout });
@@ -127,7 +135,7 @@ try {
       else if (pending.has(event.id)) {
         const request = pending.get(event.id); pending.delete(event.id); clearTimeout(request.timeout);
         event.code === 0 ? request.accept(event) : request.reject(Error(event.error || `Knob HID error ${event.code}`));
-      } else if (event.error) shutdown(Error(event.error));
+      } else if (event.error) { const error = Error(event.error); readyReject(error); shutdown(error); }
     } catch (error) { shutdown(error); }
   });
   child.once('exit', (code, signal) => {

@@ -44,6 +44,9 @@ IOHIDManagerRegisterDeviceRemovalCallback(manager, { _, _, _, removed in
 IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
 let opened = IOHIDManagerOpen(manager, IOOptionBits(0))
 guard opened == kIOReturnSuccess else { emit(["error":"Cannot open knob vendor interface", "code":opened]); exit(1) }
+if (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>)?.isEmpty ?? true {
+    emit(["event":"usb-absent"])
+}
 
 func command(_ line: Data) {
     do {
