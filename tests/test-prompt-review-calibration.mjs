@@ -36,6 +36,17 @@ test('fixed credential evidence retains a missed short literal without treating 
   const row = retainCredentialEvidence({ state: 'reviewed', findings: [] }, s);
   assert.equal(row.findings.length, 1); assert.equal(retainCredentialEvidence(row, s), row);
 });
+test('a high label cannot contradict an explicit conditional audience or missing authority rationale', () => {
+  const base = { state: 'reviewed', findings: [{ severity: 'high', category: 'disclosure', reason: '若群成员并非预期登录受众，该链接可暴露账户。' }] };
+  const qualified = retainCredentialEvidence(base, segment);
+  assert.equal(qualified.findings[0].severity, 'medium');
+  assert.equal(qualified.findings[0].modelSeverity, 'high');
+  assert.equal(retainCredentialEvidence(qualified, segment), qualified);
+  const authority = { state: 'reviewed', findings: [{ severity: 'high', category: 'authority', reason: '不能证明其有权修改服务级策略。' }] };
+  assert.equal(retainCredentialEvidence(authority, segment).findings[0].severity, 'medium');
+  const real = { state: 'reviewed', findings: [{ severity: 'high', category: 'disclosure', reason: '私有凭据已发布到公开网页，无法确认凭据现在是否有效。' }] };
+  assert.equal(retainCredentialEvidence(real, segment), real);
+});
 
 test('calibration reuses screening, prioritizes old severe findings and retains failed and superseded evidence', async () => {
   const severeText = 'Old severe fixture', ordinaryText = 'Already screened ordinary fixture';

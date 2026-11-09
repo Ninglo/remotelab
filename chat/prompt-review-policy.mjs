@@ -61,6 +61,18 @@ export function credentialEvidence(segment) {
 }
 
 export function retainCredentialEvidence(row, segment) {
+  // A claimed "direct" label cannot outrank the reviewer's own explicit
+  // admission that the alleged boundary violation is only conditional.
+  const findings = (row.findings || []).map(f => {
+    if (!['high', 'critical'].includes(f.severity)) return f;
+    const conditionalAudience = f.category === 'disclosure'
+      && /(?:若|如果)[^。；]{0,45}(?:非预期|非必要|未授权|无权)[^。；]{0,20}(?:受众|成员|读者|访问)/u.test(f.reason);
+    const absentAuthority = f.category === 'authority'
+      && /(?:无法|不能|未能)证明[^。；]{0,24}(?:有权|获授权|已授权)/u.test(f.reason);
+    return conditionalAudience || absentAuthority ? { ...f, severity: 'medium', modelSeverity: f.modelSeverity || f.severity,
+      calibration: 'conditional_or_missing_boundary', detector: 'boundary-claim-v1' } : f;
+  });
+  if (findings.some((f, i) => f !== row.findings[i])) row = { ...row, findings };
   if (row.state !== 'reviewed' || row.findings?.some(f => f.category === 'disclosure')) return row;
   const finding = credentialEvidence(segment);
   return finding ? { ...row, findings: [...(row.findings || []), finding] } : row;
