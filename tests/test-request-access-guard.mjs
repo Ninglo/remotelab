@@ -32,6 +32,7 @@ try {
   const sourceContext = { connector: 'feishu', sourceRouteId: 'fixture', tenantKey: 'tenant', chatType:'p2p',
     sender: { senderType: 'user', openId: 'ou_allowed' } };
   assert.equal(await check('Vault salary', { sourceContext, feishuConnectorAuthenticated: true }), null);
+  assert.equal((await check('Vault salary', { sourceContext:{...sourceContext,chatType:'group'}, feishuConnectorAuthenticated: true })).reason,'private_channel_required');
   assert.equal((await check('Vault salary', { sourceContext })).blocked, true);
   assert.equal((await check('Vault salary', { sourceContext: { ...sourceContext, tenantKey: 'other' }, feishuConnectorAuthenticated: true })).blocked, true);
   policy.rules.push({category:'bypass',all:['change whitelist']});

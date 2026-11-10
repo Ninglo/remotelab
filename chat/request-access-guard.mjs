@@ -73,13 +73,16 @@ export async function evaluateRequestAccess(input, {
       && entry.personId === pair[0] && entry.identityId === pair[1]);
     const privilegedBypass = (allowed || connectorAllowed) && !maintenance && compiled.find(rule =>
       rule.category === 'bypass' && rule.patterns.every(pattern => pattern.test(normalizeAccessText(input.text))));
+    const privateOnly = (allowed || connectorAllowed) && options.feishuConnectorAuthenticated === true
+      && source.connector === 'feishu' && !['p2p', 'private'].includes(source.chatType)
+      && compiled.find(rule => !rule.continuation && rule.patterns.every(pattern => pattern.test(normalizeAccessText(input.text))));
     const businessActor = options.feishuConnectorAuthenticated === true && source.connector === 'feishu'
       && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(actor =>
         actor.route === source.sourceRouteId && actor.tenant === source.tenantKey && actor.openId === source.sender.openId);
     const business = config.interview && isLimitedInterviewQuestion(String(input.text || ''))
       && (!(allowed || connectorAllowed) || businessActor) && !maintenance
       && !options.internalOperation && !options.deliveryOnly;
-    if ((allowed || connectorAllowed) && !privilegedBypass && !business) return null;
+    if ((allowed || connectorAllowed) && !privilegedBypass && !privateOnly && !business) return null;
     // Existing internal operations retain their scopes; scheduled exceptions are exact.
     if ((config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
         && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()))) return null;
@@ -95,7 +98,7 @@ export async function evaluateRequestAccess(input, {
     const previous = await readRecord(statePath);
     const continuation = Boolean(previous && now - previous.at >= 0 && now - previous.at < (config.contextSeconds || 86400) * 1000);
     const text = normalizeAccessText(input.text);
-    let matched = privilegedBypass || compiled.find(rule => (!rule.continuation || continuation) && rule.patterns.every(pattern => pattern.test(text)));
+    let matched = privilegedBypass || privateOnly || compiled.find(rule => (!rule.continuation || continuation) && rule.patterns.every(pattern => pattern.test(text)));
     // Connector history is useful only when the same authenticated sender wrote
     // the earlier input. Bot replies, quotes and other people's text confer no authority.
     if (!matched && options.feishuConnectorAuthenticated && source.sender?.openId) {
@@ -107,7 +110,7 @@ export async function evaluateRequestAccess(input, {
         && rule.patterns.every(pattern => pattern.test(normalizeAccessText(item.text)))));
       if (hadTarget) matched = compiled.find(rule => rule.continuation && rule.patterns.every(pattern => pattern.test(text)));
     }
-    if ((allowed || connectorAllowed) && !privilegedBypass) matched = null;
+    if ((allowed || connectorAllowed) && !privilegedBypass && !privateOnly) matched = null;
     if (business) {
       interviewConfig = config.interview;
       if (!matched) return { blocked: true, business: true, policyId: config.policyId, reply: '' };
@@ -118,7 +121,8 @@ export async function evaluateRequestAccess(input, {
     if (!matched) return null;
     await writeDurableJson(statePath, { version: 1, at: now, policyId: config.policyId });
     return persistDenial(input, { blocked: true, category: matched.category, policyId: config.policyId,
-      reason: 'restricted_request', reply: ACCESS_REFUSAL }, stateRoot, now);
+      reason: privateOnly ? 'private_channel_required' : 'restricted_request',
+      reply: privateOnly ? '这类内部资料不能发到当前渠道，请在已核验的私聊中查询。' : ACCESS_REFUSAL }, stateRoot, now);
   });
   if (!decision?.business) return decision;
   // Network work must not hold the short local decision-commit queue.
