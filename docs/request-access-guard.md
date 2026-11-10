@@ -31,8 +31,9 @@ enforce current role and candidate assignment. Missing bindings refuse lookup.
 Mixed requests receive only the closed safe-field response plus a refusal and
 denial event for the protected part. Backend text, feedback and extra fields are
 never forwarded. Protocol v1 reports the absence of a separate question record;
-it does not infer historical questions from interview evaluations. Five-person
-confidential-data exceptions retain their existing access and business workflows.
+it does not infer historical questions from interview evaluations. Explicitly
+mapped business actors use this limited route even when they have broader
+confidential-data access. Their other authorized workflows remain available.
 
 Every denial also commits a metadata-only outbox file under
 `CONFIG_DIR/request-access-guard/denials/pending`. It contains the decision,

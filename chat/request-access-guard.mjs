@@ -73,9 +73,13 @@ export async function evaluateRequestAccess(input, {
       && entry.personId === pair[0] && entry.identityId === pair[1]);
     const privilegedBypass = (allowed || connectorAllowed) && !maintenance && compiled.find(rule =>
       rule.category === 'bypass' && rule.patterns.every(pattern => pattern.test(normalizeAccessText(input.text))));
-    if ((allowed || connectorAllowed) && !privilegedBypass) return null;
+    const businessActor = options.feishuConnectorAuthenticated === true && source.connector === 'feishu'
+      && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(actor =>
+        actor.route === source.sourceRouteId && actor.tenant === source.tenantKey && actor.openId === source.sender.openId);
     const business = config.interview && isLimitedInterviewQuestion(String(input.text || ''))
+      && (!(allowed || connectorAllowed) || businessActor) && !maintenance
       && !options.internalOperation && !options.deliveryOnly;
+    if ((allowed || connectorAllowed) && !privilegedBypass && !business) return null;
     // Existing internal operations retain their scopes; scheduled exceptions are exact.
     if ((config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
         && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()))) return null;
@@ -103,6 +107,7 @@ export async function evaluateRequestAccess(input, {
         && rule.patterns.every(pattern => pattern.test(normalizeAccessText(item.text)))));
       if (hadTarget) matched = compiled.find(rule => rule.continuation && rule.patterns.every(pattern => pattern.test(text)));
     }
+    if ((allowed || connectorAllowed) && !privilegedBypass) matched = null;
     if (business) {
       interviewConfig = config.interview;
       if (!matched) return { blocked: true, business: true, policyId: config.policyId, reply: '' };

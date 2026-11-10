@@ -76,6 +76,10 @@ try {
     const noAccess = await check('候选人面试进度',{...businessOptions,sourceContext:{...sourceContext,
       sender:{senderType:'user',openId:'ou_revoked'}}});
     assert.match(noAccess.reply,/未核验/); assert.equal(businessCalls,2,'no borrowing another actor identity');
+    policy.interview.actors.push({...policy.interview.actors[0],openId:'ou_allowed'});
+    await writeFile(path,JSON.stringify(policy));
+    assert.equal((await check('候选人面试进度',{...businessOptions,requestId:'business-boss',sourceContext:{...sourceContext,messageId:'synthetic-boss'}})).business,true,
+      'a mapped business actor still uses the field-limited route despite broader data access');
     globalThis.fetch = async()=>({ok:false,status:403});
     assert.match((await check('候选人面试进度',{...businessOptions,requestId:'business-3'})).reply,/未核验/);
   } finally { globalThis.fetch=originalFetch; delete policy.interview; }
