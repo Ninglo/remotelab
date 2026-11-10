@@ -12,6 +12,7 @@ export async function limitedInterviewReply(config, input, { fetchImpl = fetch, 
     && source.connector === 'feishu' && source.sender?.senderType === 'user'
     && actor.route === source.sourceRouteId && actor.tenant === source.tenantKey && actor.openId === source.sender.openId);
   if (!actor) return INTERVIEW_NO_ACCESS;
+  if (!['p2p', 'private'].includes(source.chatType)) return '候选人信息仅限本人在已核验的私聊中查询。';
   if (!source.messageId || !config.endpoint?.startsWith('https://')) throw new Error('Invalid controlled interview configuration');
   const credentials = JSON.parse(await readFile(config.credentialsPath, 'utf8'));
   if (!credentials.apiKey || !credentials.signingKey) throw new Error('Missing controlled interview credential');

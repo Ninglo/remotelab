@@ -29,7 +29,7 @@ try {
   assert.equal((await check('Vault salary', { viewPersonId: 'allowed', initiatedByIdentityId: 'forged' })).blocked, true);
   assert.equal((await check(Buffer.from('Vault private logs').toString('base64'))).blocked, true);
   assert.equal((await check('Vau\u200blt private logs')).blocked, true);
-  const sourceContext = { connector: 'feishu', sourceRouteId: 'fixture', tenantKey: 'tenant',
+  const sourceContext = { connector: 'feishu', sourceRouteId: 'fixture', tenantKey: 'tenant', chatType:'p2p',
     sender: { senderType: 'user', openId: 'ou_allowed' } };
   assert.equal(await check('Vault salary', { sourceContext, feishuConnectorAuthenticated: true }), null);
   assert.equal((await check('Vault salary', { sourceContext })).blocked, true);
@@ -80,6 +80,9 @@ try {
     await writeFile(path,JSON.stringify(policy));
     assert.equal((await check('候选人面试进度',{...businessOptions,requestId:'business-boss',sourceContext:{...sourceContext,messageId:'synthetic-boss'}})).business,true,
       'a mapped business actor still uses the field-limited route despite broader data access');
+    const previousCalls = businessCalls;
+    assert.match((await check('候选人面试进度',{...businessOptions,sourceContext:{...businessOptions.sourceContext,chatType:'group'}})).reply,/私聊/);
+    assert.equal(businessCalls,previousCalls,'group output cannot expose a privately authorized candidate');
     globalThis.fetch = async()=>({ok:false,status:403});
     assert.match((await check('候选人面试进度',{...businessOptions,requestId:'business-3'})).reply,/未核验/);
   } finally { globalThis.fetch=originalFetch; delete policy.interview; }
