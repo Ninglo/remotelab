@@ -102,6 +102,8 @@ try {
   const first = await manager.submitHttpMessage(session.id, 'Vault private logs', [], options);
   assert.equal(first.accessDenied, true);
   assert.equal(await getRun(first.run.id), null, 'no model run is created');
+  assert.equal((await manager.getRunState(first.run.id)).state,'completed','native run polling resolves the completed Request');
+  assert.equal((await manager.getSessionReplyPublication(session.id,first.response.id)).state,'ready');
   const duplicate = await manager.submitHttpMessage(session.id, 'Vault private logs', [], options);
   assert.equal(duplicate.duplicate, true);
   const record = await requests.byRequest(session.id, options.requestId);
