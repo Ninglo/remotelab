@@ -216,3 +216,5 @@ Employee SSH Codex memory: [authenticated account and file evidence](monitoring.
 service/automation gate in `chat/monitoring-triage.mjs`: existing observations and
 receipts resolve known cases before a new Agent request, with durable one-shot
 action intent and independent business-health verification.
+
+[Request admission guard](request-access-guard.md) documents optional deployment policies, pre-model refusal, scoped business responses and metadata-only denial delivery.

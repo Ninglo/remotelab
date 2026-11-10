@@ -79,7 +79,8 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
       ...(input.runtimeSelection ? { runtimeSelection: input.runtimeSelection } : {}),
       ...(input.deliveryPlan ? { deliveryPlan: input.deliveryPlan } : {}),
       ...(input.boundConversation ? { boundConversation: true } : {}),
-      acceptedAt: new Date().toISOString(), result: null, releasedAt: null, deliveries: [],
+      acceptedAt: new Date().toISOString(), result: null,
+      releasedAt: input.releaseWithoutExecution && input.result ? new Date().toISOString() : null, deliveries: [],
     };
     if (!input.result) initial.deliveries = appendDeliveries(initial, feishuProcessingReaction(initial, 'active'));
     // Indices are immutable addresses, published before the accepted record.
@@ -94,7 +95,11 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
       if (!first) await index('first-user-request', sessionId, 'first', key);
       if (!first || first.key === key) initial.deliveries = appendDeliveries(initial, input.initialDeliveries || []);
     }
-    const record = publishPendingDeliveries(await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial), true);
+    const record = publishPendingDeliveries(await records.mutate(key, () => {
+      const next = input.result ? withResult(initial, input.result, input.plans || []) : initial;
+      if (input.releaseWithoutExecution && input.result) next.postCompletionPending = false;
+      return next;
+    }), true);
     return { record, duplicate: false };
   });
   return {

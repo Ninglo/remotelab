@@ -68,7 +68,7 @@ export function parseInterviewQuery(text) {
 export const INTERVIEW_QUERY_UNAVAILABLE = '面试查询服务暂时不可用，请稍后重试；无需重新授权。';
 
 export function restrictedInterviewOptions(runtime) {
-  return { store: runtime.interviewConversationStore ||= createRecordStore(
+  return { sourceRouteId: runtime.config.sourceRouteId, store: runtime.interviewConversationStore ||= createRecordStore(
     join(runtime.config.storageDir, 'interview-conversations')) };
 }
 
@@ -88,7 +88,7 @@ function resolvedQuery(result, original) {
     ...(q.action === 'answer' ? {question: original.question, ...(original.context ? {context:original.context} : {})} : {}) };
 }
 
-export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store } = {}) {
+export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store, sourceRouteId } = {}) {
   if (feishuAccessRole(policy, summary) !== 'interviewer') throw new Error('Interviewer identity required');
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
     return null;
@@ -96,6 +96,13 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   // Normalized rich text and plain text share the restricted backend; arbitrary
   // wording never enters the general executor or grants object access.
   if (!['text', 'post'].includes(summary.messageType)) return null;
+  const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
+  const denied = await evaluateRequestAccess({ sessionId: 'interviewer:' + summary.chatId,
+    text: summary.messageText, options: { requestId: 'feishu:' + summary.messageId,
+      feishuConnectorAuthenticated: true, usageSurface: 'feishu-restricted-interview',
+      sourceContext: { connector: 'feishu', sourceRouteId,
+        tenantKey: summary.tenantKey, messageId: summary.messageId, sender: summary.sender } } });
+  if (denied?.blocked) return denied.reply;
   let query = parseInterviewQuery(summary.messageText);
   if (!query) return null;
   if ((query.question?.length || 0) > 4000) return '问题较长，请分成几条发送，每条不超过4000字。';

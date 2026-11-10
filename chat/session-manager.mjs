@@ -1,3 +1,4 @@
+import { evaluateRequestAccess } from './request-access-guard.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
 import { applyRecordingIntakePolicy } from '../lib/recording/intake-policy.mjs';
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
@@ -3497,6 +3498,48 @@ const requestRuntime = createRequestRuntime({
   onError: (error, sessionId) => console.error(`[requests] ${sessionId}: ${error.stack || error}`),
 });
 
+const runAccessRefusal = createKeyedTaskQueue();
+
+async function refuseRestrictedRequest(session, text, options, decision, prior) {
+  return runAccessRefusal(session.id, async () => {
+    prior ||= await requests.byRequest(session.id, options.requestId);
+    if (prior && (prior.text !== text || !prior.options?.accessGuard?.blocked)) throw new Error('requestId already accepted with different content');
+    const plan = prior?.deliveryPlan || resolveSessionDeliveryPlan(session, options);
+    const guardOptions = prior?.options || { ...options, accessGuard: decision };
+    const payload = prior?.result?.payload || { text: decision.reply, attachments: [] };
+    const accepted = prior ? { record: prior, duplicate: true } : await requests.accept({
+      sessionId: session.id, requestId: options.requestId, text, images: [], options: guardOptions,
+      deliveryPlan: plan, releaseWithoutExecution: true,
+      result: { state: 'completed', payload, error: null },
+      plans: buildReplyDeliveries(plan, payload, { running: false, surfaceKind: 'final' }),
+    });
+    let record = accepted.record;
+    if (!record.accessGuardHistoryPublished) {
+      if (record.accessGuardHistoryBaseSeq == null) {
+        const baseSeq = await getHistoryHeadSeq(session.id);
+        record = await requests.mutate(record.key, current => ({
+          ...current, accessGuardHistoryBaseSeq: current.accessGuardHistoryBaseSeq ?? baseSeq,
+        }));
+      }
+      const events = await readEventsAfter(session.id, record.accessGuardHistoryBaseSeq);
+      if (options.recordUserMessage !== false && !events.some(event => event.role === 'user' && event.requestId === record.requestId)) {
+        await appendEvent(session.id, messageEvent('user', text, [], {
+          requestId: record.requestId, responseId: record.responseId, sourceContext: options.sourceContext,
+        }));
+      }
+      if (!events.some(event => event.role === 'assistant' && event.requestId === record.requestId && event.source === 'access_guard')) {
+        await appendAssistantMessage(session.id, payload.text, [], { source: 'access_guard', requestId: record.requestId, responseId: record.responseId });
+      }
+      await requests.mutate(record.key, current => ({ ...current, accessGuardHistoryPublished: true }));
+    }
+    await requests.archiveFinished(record.key);
+    broadcastSessionInvalidation(session.id);
+    return { requestId: record.requestId, duplicate: accepted.duplicate, queued: false, accessDenied: Boolean(decision.category),
+      run: { id: record.runId, sessionId: session.id, requestId: record.requestId, state: 'completed' },
+      response: { id: record.responseId, state: 'ready' }, session: await enrichSessionMeta(session) };
+  });
+}
+
 export async function submitHttpMessage(sessionId, text, images, options = {}) {
   // An explicitly requested reply route is part of admission's durable contract.
   // Never accept work and silently discard its final-delivery responsibility.
@@ -3506,6 +3549,15 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   await ensureRequestSchema(CONFIG_DIR);
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
+  const guardPrior = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  if (guardPrior?.options?.accessGuard?.blocked) {
+    if (guardPrior.text !== text?.trim()) throw new Error('requestId already accepted with different content');
+    return refuseRestrictedRequest(session, guardPrior.text, guardPrior.options, guardPrior.options.accessGuard, guardPrior);
+  }
+  if (!guardPrior) {
+    const decision = await evaluateRequestAccess({ sessionId, text, options });
+    if (decision?.blocked) return refuseRestrictedRequest(session, text?.trim(), options, decision);
+  }
   if (options.workReference) {
     const head = requestRuntime.active(sessionId)[0];
     if (!head || head.options?.internalOperation || session.archived) throw new Error('Reference retained in work inbox; target is not running');

@@ -359,3 +359,13 @@ For a change touching this architecture, exercise at least:
 - anonymous workbench routes reject access;
 - ShareSnapshot remains readable and immutable;
 - restart-gate, smoke, integration, and trigger suites remain green.
+
+### Optional request admission policy
+
+`submitHttpMessage` evaluates an explicitly enabled deployment access policy before
+routing, attachments or native in-flight forwarding. A refusal is a completed,
+released Request with the native reply outbox and history; it never creates a Run.
+A metadata-only denial outbox supports independent notification. Restricted business
+queries may use a closed field protocol without entering a general model. Source
+identities and resource ACL remain authoritative; this does not isolate host files.
+See [request admission guard](request-access-guard.md) for configuration and limits.
