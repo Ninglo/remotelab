@@ -101,7 +101,7 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
     text: summary.messageText, options: { requestId: 'feishu:' + summary.messageId,
       feishuConnectorAuthenticated: true, usageSurface: 'feishu-restricted-interview',
       sourceContext: { connector: 'feishu', sourceRouteId,
-        tenantKey: summary.tenantKey, messageId: summary.messageId, sender: summary.sender } } });
+        tenantKey: summary.tenantKey, messageId: summary.messageId, chatType: summary.chatType, sender: summary.sender } } });
   if (denied?.blocked) return denied.reply;
   let query = parseInterviewQuery(summary.messageText);
   if (!query) return null;
