@@ -160,6 +160,10 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       ...(item.continuity.lastAccountWarning ? { lastAccountWarning: {
         threshold: item.continuity.lastAccountWarning.threshold, state: item.continuity.lastAccountWarning.state,
         accountId: item.continuity.lastAccountWarning.account?.id,
+        resetInventory: item.continuity.lastAccountWarning.resetInventory && {
+          ...item.continuity.lastAccountWarning.resetInventory,
+          accounts: item.continuity.lastAccountWarning.resetInventory.accounts.map(({ remainingPercent, ...account }) => account),
+        },
       } } : {}),
     } : null }));
     const decisionVersion = repair?.plan?.requiresConfirmation ? hash(JSON.stringify(repair.plan)) : null;

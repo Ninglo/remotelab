@@ -82,8 +82,10 @@ function harness(options = {}, onQuestion) {
   await tick(); h.reply('turn/steer', { turnId: 'turn-1' }); await steer;
   h.notify('turn/completed', { turn: { id: 'turn-1', status: 'completed' } });
   assert.equal(h.settled.length, 1, 'pending quota read cannot postpone model settlement');
-  h.reply('account/rateLimits/read', { rateLimits: { primary: { usedPercent: 91, windowDurationMins: 300 } } });
+  h.reply('account/rateLimits/read', { rateLimits: { primary: { usedPercent: 91, windowDurationMins: 300 } },
+    rateLimitResetCredits: { availableCount: 2, credits: [] } });
   assert.equal((await one).buckets[0].primary.remainingPercent, 9);
+  assert.equal((await one).resetCredits.availableCount, 2);
   assert.deepEqual(await two, await one);
   h.driver.close();
 }

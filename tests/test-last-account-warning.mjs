@@ -37,8 +37,43 @@ test('first valid low observation sends immediately, survives repetition and say
   const s=snapshot([account('last',30),account('old',0)]);
   await dispatchMonitoringAlerts({...f.options,snapshot:s});assert.equal(f.getSends(),1);
   await dispatchMonitoringAlerts({...f.options,snapshot:s});assert.equal(f.getSends(),1);
-  assert.match(f.rendered[0],/账号即将耗尽，请准备重置或购入新账号/);assert.match(f.rendered[0],/last 剩余 30%/);
+  assert.match(f.rendered[0],/reset 数量未知/);assert.match(f.rendered[0],/last 剩余 30%/);
  }
+});
+
+const withResets = (entry, count, overrides = {}) => {
+ entry.usage.resetCreditsCheckedAt = new Date(now).toISOString();
+ entry.usage.resetCredits = { availableCount: count, credits: Array.from({length:count}, () => ({
+  status:'available', resetType:'codexRateLimits', expiresAt:new Date(now+86400000).toISOString(),
+ })), ...overrides }; return entry;
+};
+test('warning includes deduplicated per-account reset counts and recommends depleted accounts first',async()=>{
+ const f=fixture();
+ const last=withResets(account('last',30),1), old=withResets(account('old',0),2);
+ await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([last,old,withResets(account('alias',0,{identityId:'old'}),2)])});
+ assert.match(f.rendered[0],/共 3 张（last 1 张；old 2 张）/);
+ assert.match(f.rendered[0],/建议优先给 old 使用 reset/);
+ assert.doesNotMatch(f.rendered[0],/alias|建议.*last.*使用 reset/);
+ // Inventory changes update the existing card without another notification.
+ const updates=[];
+ const next=snapshot([last,withResets(account('old',0),1)]);
+ await dispatchMonitoringAlerts({...f.options,snapshot:next,update:async(events,config,id)=>{updates.push(renderMonitoringAlert(events,config));return id;}});
+ assert.equal(f.getSends(),1);assert.equal(updates.length,1);assert.match(updates[0],/共 2 张/);
+ await dispatchMonitoringAlerts({...f.options,snapshot:next,update:async()=>{throw Error('unchanged inventory must not update');}});
+ assert.equal(f.getState().incidents[Object.keys(f.getState().incidents)[0]].status,'sent');
+});
+test('zero, unavailable, expired and inconsistent reset inventory remain distinct',()=>{
+ const render=entries=>renderMonitoringAlert([{kind:'accountContinuity',continuity:continuity(entries)}],{});
+ const zero=render([withResets(account('last',30),0)]);
+ assert.match(zero,/共 0 张/);assert.match(zero,/没有可用 reset/);assert.doesNotMatch(zero,/建议.*使用 reset/);
+ const partial=render([withResets(account('last',30),1),account('old',0)]);
+ assert.match(partial,/已确认 1 张（last 1 张；old 未知）/);assert.match(partial,/建议给 last 使用 reset/);
+ const expired=withResets(account('last',30),1);expired.usage.resetCredits.credits[0].expiresAt=new Date(now-1).toISOString();
+ assert.match(render([expired]),/共 0 张/);
+ const inconsistent=withResets(account('last',30),2,{credits:[]});
+ assert.match(render([inconsistent]),/last 未知/);assert.doesNotMatch(render([inconsistent]),/建议.*使用 reset/);
+ const stale=withResets(account('last',30),2);stale.usage.checkedAt=new Date(now-61000).toISOString();
+ assert.equal(continuity([stale]).lastAccountWarning.resetInventory.accounts[0].availableCount,null);
 });
 test('unknown samples and default switches do not rearm; real replenishment does',async()=>{
  const f=fixture();await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([account('a',30),account('b',0)])});
@@ -46,7 +81,9 @@ test('unknown samples and default switches do not rearm; real replenishment does
  await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([stale,account('b',0)])});
  await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([account('b',0),account('a',28)])});assert.equal(f.getSends(),1);
  await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([account('a',80),account('b',0)])});
- await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([account('a',30),account('b',0)])});assert.equal(f.getSends(),2);
+ await dispatchMonitoringAlerts({...f.options,snapshot:snapshot([account('a',30),account('b',0)])});
+ assert.equal(f.getSends(),1,'recovery and recurrence within three hours reuse the existing card');
+ assert.equal(Object.values(f.getState().incidents)[0].cycle,2,'real replenishment opens a new incident cycle');
 });
 test('pre-existing baseline cannot swallow the newly configured advance warning',async()=>{
  const f=fixture();const old=snapshot([account('a',20)]);old.accountContinuity=continuity([account('a',20)],{});old.attention=continuityAttention(old.accountContinuity);

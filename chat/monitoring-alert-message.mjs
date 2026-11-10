@@ -3,7 +3,7 @@ import { alertTime, alertHistoryPanel, alertEvidenceImage, resolutionAttribution
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { monitoringDisposition } from '../lib/monitoring-policy.mjs';
-import { recoveryHumanAction } from '../lib/monitoring-actions.mjs';
+import { recoveryHumanAction, accountResetAdvice } from '../lib/monitoring-actions.mjs';
 import { buildFeishuPostContent } from '../connectors/feishu/index.mjs';
 
 const text = (value, limit = 1200) => String(value || '').replace(/[\r\n]+/g, ' ').slice(0, limit)
@@ -32,7 +32,7 @@ export function monitoringNextStep(item, config) {
   if (item.recovered) return { ...ordinary, summary: item.recoveryStopped ? '已按登记停用，无需操作。' : '已恢复，无需操作。' };
   if (item.continuity?.lastAccountWarning?.state === 'low') return {
     type: 'input', label: '查看账号与额度', url: config.overviewUrl,
-    summary: `${item.continuity.lastAccountWarning.remainingPercent === 0 ? '账号额度已耗尽' : '账号即将耗尽'}，请准备重置或购入新账号。`,
+    summary: text(accountResetAdvice(item.continuity.lastAccountWarning)),
   };
   if (['running', 'waiting', 'admitting', 'pending', 'verifying'].includes(recovery?.status)) {
     const progress = recovery.status === 'running' ? '我在处理'
@@ -91,6 +91,9 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
   return events.map(item => {
     const recovery = repairFor(item, config), next = monitoringNextStep(item, config);
     const resolved = item.recovered === true;
+    const inventory = item.continuity?.lastAccountWarning?.resetInventory;
+    const resetLine = !resolved && inventory ? `可用 reset：${inventory.unknownCount ? '已确认 ' : '共 '}${inventory.availableCount} 张`
+      + `（${inventory.accounts.map(a => `${text(a.label)} ${a.availableCount ?? '未知'}${a.availableCount === null ? '' : ' 张'}`).join('；')}）。\n` : '';
     const status = item.kind === 'poolSource' && !resolved ? item.signals?.recovering ? '恢复观察中' : '采样不可用'
       : item.kind === 'poolIdle' ? resolved ? '资源已重新使用' : '训练资源持续空闲'
       : resolved ? item.kind === 'serviceCrash' ? '服务已稳定恢复，根因修复待确认' : item.recoveryStopped ? '原任务已停止，不再预警；未认定故障已修复' : '当前问题已解决' : '预警处理中';
@@ -98,6 +101,7 @@ export function renderMonitoringAlert(events, config, { color = false, links = t
     return `**${text(item.subject || monitoringTitle(item), 120)}**\n当前状态：${status}\n`
       + `上次预警：${alertTime(item.lastAlertAt || item.triggeredAt)}（北京时间）\n`
       + `预警原因：${text(item.kind === 'diskGrowth' && !resolved ? monitoringProblem(item) : item.triggerReason || monitoringProblem(item), 200)}\n`
+      + resetLine
       + (item.kind === 'diskGrowth' && !resolved ? `观测时间：${alertTime(item.observedAt)}（北京时间）\n` : '')
       + (item.kind === 'serviceCrash' ? `崩溃记录：累计${item.crashCount || 1}次；最近 ${alertTime(item.lastOccurredAt || item.occurredAt)}\n` : '')
       + (!resolved && !item.signals?.recovering && item.persistentWarningAt ? `**持续告警：连续10分钟未见改善。**（${alertTime(item.persistentWarningAt)}）\n` : '')

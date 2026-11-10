@@ -167,7 +167,18 @@ try {
   assert.equal(completed.loggedIn, true);
   const current = await pool.account();
   assert.equal(completed.accountRevision, codexAccountRevision((await readCodexAuthMetadata(current.home)).revision, current.account));
+  await pool.observeUsage(current.id, { ...usage(80), resetCredits: { availableCount: 2, credits: [] } },
+    { checkedAt: stamp });
+  const resetSample = (await pool.account(current.id)).usage.resetCreditsCheckedAt;
   await pool.observeUsage(current.id, usage(75));
+  assert.equal((await pool.account(current.id)).usage.resetCredits.availableCount, 2,
+    'quota-only notifications preserve inventory');
+  assert.equal((await pool.account(current.id)).usage.resetCreditsCheckedAt, resetSample,
+    'quota-only notifications do not freshen reset inventory');
+  await pool.mutate(data => { data.accounts.find(a => a.id === current.id).usage.resetCreditsCheckedAt = new Date(now - 61000).toISOString(); });
+  const beforeResetRefresh = queries;
+  await pool.refresh(current.id, 'fake', { maxAgeMs: 30000 });
+  assert.equal(queries, beforeResetRefresh + 1, 'fresh quota cannot suppress a stale reset inventory read');
   assert.equal((await facade.getRateLimits()).accountRevision, (await facade.getStatus()).accountRevision,
     'live quota and the saved account share the same credential revision');
   assert.equal(logoutCalls, 0, 'adding a second account never logs out the first');

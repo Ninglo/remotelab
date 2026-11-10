@@ -1,6 +1,6 @@
 import { codexRuleRecoveryHook } from '../codex-rule-recovery.mjs';
 import { buildCodexArgs, codexErrorMessage } from '../adapters/codex.mjs';
-import { normalizeLimits } from '../../lib/codex-account-status.mjs';
+import { normalizeLimits, normalizeResetCredits } from '../../lib/codex-account-status.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 import { nativeQuestionAnswers } from '../native-user-questions.mjs';
@@ -95,7 +95,8 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const observeUsage = result => {
     if (!options.observeCodexUsage) return;
     const buckets = normalizeLimits(result);
-    if (buckets.length) onEvent({ type: 'remotelab.codex_usage', usage: { status: 'ready', buckets } });
+    if (buckets.length) onEvent({ type: 'remotelab.codex_usage', usage: { status: 'ready', buckets,
+      ...(Object.hasOwn(result || {}, 'rateLimitResetCredits') ? { resetCredits: normalizeResetCredits(result) } : {}) } });
   };
   const readUsage = async () => {
     if (!initialization) throw new Error('Codex driver has not started');
@@ -104,7 +105,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     // reads share this RPC without joining the model-input acknowledgement tail.
     usagePending ||= request('account/rateLimits/read', {}).then(result => {
       const buckets = normalizeLimits(result);
-      return { status: buckets.length ? 'ready' : 'unavailable', buckets };
+      return { status: buckets.length ? 'ready' : 'unavailable', buckets, resetCredits: normalizeResetCredits(result) };
     }).finally(() => { usagePending = null; });
     return usagePending;
   };

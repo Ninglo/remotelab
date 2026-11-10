@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { chmod, copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCodexAccountStatus } from '../lib/codex-account-status.mjs';
+import { readCodexAccountStatus, normalizeResetCredits } from '../lib/codex-account-status.mjs';
 import { createCodexAuthManager } from '../chat/codex-auth.mjs';
 import { handleCodexAuthRoutes } from '../chat/router-codex-auth-routes.mjs';
 
@@ -17,7 +17,9 @@ const provider = data => writeFile(join(home, 'provider.json'), JSON.stringify(d
 const login = (name = 'Test Name', email = 'test@example.com') => writeFile(join(home, 'auth.json'), JSON.stringify({
   tokens: { id_token: `header.${Buffer.from(JSON.stringify({ name, email })).toString('base64url')}.signature`, access_token: 'SECRET access', refresh_token: 'SECRET refresh' },
 }));
-const limits = { rateLimitsByLimitId: {
+const limits = { rateLimitResetCredits: { availableCount: 1, credits: [
+  {id:'PRIVATE_CARD_ID', resetType:'codexRateLimits', status:'available', expiresAt:1900000000, access_token:'SECRET'},
+] }, rateLimitsByLimitId: {
   codex: { primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1900000000 }, secondary: { usedPercent: 105, windowDurationMins: 10080, resetsAt: 1901000000 } },
   extra: { limitName: '<b>Extra</b>', primary: { usedPercent: 0, windowDurationMins: 60 } },
   missing: { primary: { usedPercent: null, windowDurationMins: 60 } },
@@ -40,7 +42,13 @@ try {
   assert.equal(first.usage.buckets[0].primary.remainingPercent, 75);
   assert.equal(first.usage.buckets[0].secondary.remainingPercent, 0);
   assert.equal(first.usage.buckets[1].primary.resetsAt, null);
-  assert.doesNotMatch(JSON.stringify(first), /SECRET|id_token|access_token|refresh_token/);
+  assert.deepEqual(first.usage.resetCredits,{availableCount:1,credits:[{
+    resetType:'codexRateLimits',status:'available',expiresAt:new Date(1900000000000).toISOString(),
+  }]});
+  assert.equal(normalizeResetCredits({}),null);
+  assert.equal(normalizeResetCredits({rateLimitResetCredits:{availableCount:-1}}),null);
+  assert.deepEqual(normalizeResetCredits({rateLimitResetCredits:{availableCount:0,credits:[]}}),{availableCount:0,credits:[]});
+  assert.doesNotMatch(JSON.stringify(first), /SECRET|id_token|access_token|refresh_token|PRIVATE_CARD_ID/);
   await provider({ account: { type: 'chatgpt', email: 'different@example.com' } });
   assert.equal((await query()).account.name, '', 'never combine names from different accounts');
   await provider({ error: true });

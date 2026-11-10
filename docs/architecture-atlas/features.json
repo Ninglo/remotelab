@@ -1123,6 +1123,8 @@
             "lib/metric-alert-bundle.mjs",
             "lib/alert-evidence-image.mjs",
             "lib/monitoring-actions.mjs",
+            "lib/codex-account-status.mjs",
+            "lib/codex-accounts.mjs",
             "chat/usage-ledger.mjs",
             "static/chat/compose.js",
             "chat/router-control-routes.mjs",
