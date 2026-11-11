@@ -5,10 +5,12 @@ import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord, writeDurableJson, serialQueue } from '../lib/durable-records.mjs';
 import { isLimitedInterviewQuestion, limitedInterviewReply } from './limited-interview.mjs';
+import { confidentialActorAllowed } from '../lib/hr-access-authorization.mjs';
+import { explicitAccessIntents } from './access-intent.mjs';
 
 const queue = serialQueue();
 const hash = value => createHash('sha256').update(value).digest('hex');
-export const ACCESS_REFUSAL = '这项内容属于内部 HR 资料，你当前没有对应访问权限，无法提供。请勿通过改写、角色扮演或修改权限继续索取。';
+export const ACCESS_REFUSAL = '这项内容属于内部 HR 资料，当前未核验到对应访问权限，无法提供。';
 
 export function normalizeAccessText(text) {
   let result = String(text || '').slice(0, 65536).normalize('NFKC').replace(/\p{Cf}/gu, '');
@@ -24,12 +26,67 @@ export function normalizeAccessText(text) {
 }
 
 function rules(config) {
-  if (config.version !== 1 || !config.policyId || !Array.isArray(config.allowPairs)
+  if (![1, 2].includes(config.version) || !config.policyId || !Array.isArray(config.allowPairs)
       || !Array.isArray(config.rules) || !config.rules.length) throw new Error('Invalid request access guard configuration');
   return config.rules.map(rule => {
     if (!['protected', 'indirect', 'bypass'].includes(rule.category)) throw new Error('Invalid guard category');
+    if (config.version === 2 && (!rule.id || !Array.isArray(rule.all) || !rule.all.length)) throw new Error('Invalid operation rule');
     return { ...rule, patterns: rule.all.map(pattern => new RegExp(pattern, 'iu')) };
   });
+}
+
+function operationGranted(config, input, category) {
+  const options = input.options || {}, source = options.sourceContext || {};
+  return (config.operationGrants || []).some(grant => grant.sessionId === input.sessionId
+    && grant.requestId === options.requestId && grant.textSha256 === hash(String(input.text || '').trim())
+    && grant.operations?.includes(category) && grant.approvalRef
+    && (options.feishuConnectorAuthenticated === true && source.connector === 'feishu'
+      ? source.sender?.senderType === 'user' && grant.actor?.route === source.sourceRouteId
+        && grant.actor?.tenant === source.tenantKey && grant.actor?.openId === source.sender.openId
+        && grant.actor?.chatId === source.chatId
+      : grant.personId && grant.identityId && grant.personId === options.viewPersonId
+        && grant.identityId === options.initiatedByIdentityId));
+}
+
+async function contentOperationDecision(input, config, compiled, stateRoot, now) {
+  const options = input.options || {}, source = options.sourceContext || {};
+  const actor = options.feishuConnectorAuthenticated === true && source.connector === 'feishu'
+    ? ['feishu', source.sourceRouteId, source.tenantKey, source.sender?.openId || 'unverified']
+    : [options.viewPersonId || '', options.initiatedByIdentityId || ''];
+  const statePath = join(stateRoot, 'scopes', hash(JSON.stringify([input.sessionId, actor])) + '.json');
+  const previous = await readRecord(statePath);
+  const active = previous?.version === 2 && previous.policyId === config.policyId
+    && now >= previous.at && now - previous.at < (config.contextSeconds || 86400) * 1000 ? previous : null;
+  // normalizeAccessText's compact duplicate is useful to v1 regexes, but v2
+  // whole-utterance continuations must inspect each decoded view separately.
+  const normalized = normalizeAccessText(input.text);
+  const intents = [...explicitAccessIntents(String(input.text || '').normalize('NFKC'), compiled, active),
+    ...explicitAccessIntents(normalized.split('\n').filter(Boolean).slice(0, -1).join('\n'), compiled, active)];
+  const allowed = confidentialActorAllowed(config, options);
+  const privateChannel = !(options.feishuConnectorAuthenticated === true && source.connector === 'feishu')
+    || ['p2p', 'private'].includes(source.chatType);
+  const businessActor = options.feishuConnectorAuthenticated === true && source.connector === 'feishu'
+    && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(entry =>
+      entry.route === source.sourceRouteId && entry.tenant === source.tenantKey && entry.openId === source.sender.openId);
+  const business = Boolean(config.interview && isLimitedInterviewQuestion(String(input.text || ''))
+    && (!allowed || businessActor) && !options.internalOperation && !options.deliveryOnly);
+  const automation = (config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
+    && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()));
+  const matched = !automation && intents.find(intent => !(intent.category === 'bypass'
+    ? operationGranted(config, input, 'bypass') : allowed && privateChannel));
+  const denied = Boolean(matched);
+  // Every unrelated turn clears the prior target. No conversation-history
+  // substring search and no same-person 24-hour taint inheritance.
+  await writeDurableJson(statePath, { version: 2, policyId: config.policyId, at: now,
+    targetId: denied ? matched.targetId : null, targetCategory: denied ? matched.category : null });
+  if (!denied) return business ? { blocked: true, business: true, policyId: config.policyId, reply: '' } : null;
+  const reason = matched.category === 'bypass' ? 'operation_not_granted'
+    : allowed && !privateChannel ? 'private_channel_required' : 'restricted_request';
+  return persistDenial(input, { blocked: true, ...(business ? { business: true } : {}), category: matched.category,
+    policyId: config.policyId, policyVersion: 2, targetId: matched.targetId, reason,
+    reply: reason === 'operation_not_granted' ? '该权限或防护变更尚无对应操作授权，未执行。'
+      : reason === 'private_channel_required' ? '该资料尚未核验当前群的接收权限，请在已核验的私聊中查询。' : ACCESS_REFUSAL,
+  }, stateRoot, now);
 }
 
 async function persistDenial(input, decision, stateRoot, now) {
@@ -62,6 +119,13 @@ export async function evaluateRequestAccess(input, {
     try { config = JSON.parse(await readFile(configPath, 'utf8')); compiled = rules(config); }
     catch { return persistDenial(input, { blocked: true, category: 'protected', policyId: 'guard-unavailable', reason: 'policy_unavailable',
       reply: '资料访问检查暂时不可用，本条请求未交给模型。请稍后重试。' }, stateRoot, now); }
+    if (config.version === 2) {
+      if (String(input.text || '').length > 65536) return persistDenial(input, { blocked: true,
+        category: 'protected', policyId: config.policyId, reason: 'inspection_limit', reply: '消息过长，请拆分后重新发送。' }, stateRoot, now);
+      const result = await contentOperationDecision(input, config, compiled, stateRoot, now);
+      if (result?.business) interviewConfig = config.interview;
+      return result;
+    }
     const options = input.options || {};
     const pair = [options.viewPersonId || '', options.initiatedByIdentityId || ''];
     const source = options.sourceContext || {};

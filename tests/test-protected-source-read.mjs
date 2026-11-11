@@ -3,6 +3,7 @@ import { mkdtemp, writeFile, readFile, readdir, rm, symlink } from 'node:fs/prom
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createLocalAuditWriter, readProtectedSource, digest } from '../lib/protected-source-read.mjs';
+import { checkHrSourceCaller } from '../lib/hr-access-authorization.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'protected-read-'));
 const sourcePath = join(root, 'synthetic.txt');
@@ -38,6 +39,34 @@ try {
   const expired = structuredClone(policy); expired.grants[0].expiresAt = '2000-01-01T00:00:00Z';
   await assert.rejects(read({ policy: expired }), /read_not_granted/);
   log = await events(); assert.equal(log.filter(e => e.phase === 'denied').length, 7);
+  const hrPolicy = structuredClone(policy);
+  hrPolicy.resources[0].classification = 'hr-confidential';
+  hrPolicy.grants[0].identityId = caller.identityId;
+  const guardPath = join(root, 'guard.json');
+  await writeFile(guardPath, JSON.stringify({ version: 2, policyId: 'synthetic-hr',
+    allowPairs: [[caller.personId, caller.identityId]], allowFeishu: [{ route: 'fixture', tenant: 'tenant', openId: 'ou_hr' }] }));
+  const authorizeHr = value => checkHrSourceCaller(value, guardPath);
+  const hrRead = changes => read({ policy: hrPolicy, authorizeHr, reloadPolicy: async () => hrPolicy, ...changes });
+  assert.ok((await hrRead()).content);
+  const forbidden = structuredClone(hrPolicy);
+  forbidden.resources[0].path = join(root, 'never-opened.txt');
+  forbidden.grants[0].identityId = 'shared-admin';
+  await assert.rejects(hrRead({ policy: forbidden, caller: { ...caller, identityId: 'shared-admin' } }), /hr_identity_not_authorized/);
+  const deniedRead = (await events()).filter(e => e.reason === 'hr_identity_not_authorized').at(-1).readId;
+  assert.ok(!(await events()).some(e => e.readId === deniedRead && e.phase === 'authorized_attempt'), 'denied before opening the source');
+  const feishuCaller = { ...caller, feishuConnectorAuthenticated: true, sourceContext: {
+    connector: 'feishu', sourceRouteId: 'fixture', tenantKey: 'tenant', chatType: 'p2p', sender: { senderType: 'user', openId: 'ou_hr' } } };
+  assert.equal(await authorizeHr(feishuCaller), true);
+  assert.equal(await authorizeHr({ ...feishuCaller, sourceContext: { ...feishuCaller.sourceContext, tenantKey: 'forged' } }), false);
+  assert.equal(await authorizeHr({ ...feishuCaller, sourceContext: { ...feishuCaller.sourceContext, chatType: 'group' } }), false);
+  let revoked = false;
+  await assert.rejects(hrRead({ reloadPolicy: async () => revoked ? { ...hrPolicy, grants: [] } : hrPolicy,
+    audit: async event => { const receipt = await audit(event); if (event.phase === 'release_ready') revoked = true; return receipt; },
+  }), /authorization_revoked/, 'revocation during output audit returns no bytes');
+  let identityRevoked = false;
+  await assert.rejects(hrRead({ authorizeHr: async () => !identityRevoked,
+    audit: async event => { const receipt = await audit(event); if (event.phase === 'authorized_attempt') identityRevoked = true; return receipt; },
+  }), /hr_identity_not_authorized/, 'HR eligibility is checked again after source I/O');
   await writeFile(sourcePath, Buffer.alloc(content.length, 65));
   await assert.rejects(read(), /source_unavailable_or_changed/);
   await writeFile(sourcePath, content);

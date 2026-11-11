@@ -273,12 +273,28 @@
           "sources": [
             "docs/protected-source-reading.md",
             "lib/protected-source-read.mjs",
+            "lib/hr-access-authorization.mjs",
             "chat/router-protected-sources.mjs",
             "lib/protected-source-command.mjs"
           ],
           "commands": [
             "source-read"
           ]
+        },
+        {
+          "id": "request-access-guard",
+          "name": "模型前资料与操作访问检查",
+          "purpose": "按已核验身份、明确索取的资料和操作授权，在模型启动前拒绝受限请求；普通维护与防护讨论可继续处理。",
+          "entry": "Core 与连接器通过 REMOTELAB_REQUEST_ACCESS_GUARD 加载实例私有策略。",
+          "condition": "v2 只继承明确延续的同一目标，权限变更另核精确授权；不是任意 shell、历史或外部副本的完整隔离。观察器暂停时不恢复通知或补发。",
+          "example": "用合成数据验证普通配置维护可通过、未授权资料读取被拒绝、无关话题不继承旧判定。",
+          "sources": [
+            "docs/request-access-guard.md",
+            "chat/request-access-guard.mjs",
+            "chat/access-intent.mjs",
+            "lib/hr-access-authorization.mjs"
+          ],
+          "commands": []
         }
       ]
     },

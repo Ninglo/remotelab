@@ -73,7 +73,7 @@ try {
     assert.equal(safe.business,true); assert.equal(safe.category,undefined); assert.match(safe.reply,/二面/);
     assert.ok(!safe.reply.includes('SECRET')); assert.match(safe.reply,/不从面评推测/);
     const mixed = await check('候选人面试进度，Vault private salary',{...businessOptions,requestId:'business-2'});
-    assert.equal(mixed.category,'protected'); assert.match(mixed.reply,/二面/); assert.match(mixed.reply,/没有对应访问权限/);
+    assert.equal(mixed.category,'protected'); assert.match(mixed.reply,/二面/); assert.match(mixed.reply,/对应访问权限/);
     const noAccess = await check('候选人面试进度',{...businessOptions,sourceContext:{...sourceContext,
       sender:{senderType:'user',openId:'ou_revoked'}}});
     assert.match(noAccess.reply,/未核验/); assert.equal(businessCalls,2,'no borrowing another actor identity');
@@ -99,7 +99,7 @@ try {
     sender: { senderType: 'user', tenantKey: 'tenant', openId: 'ou_other' } }, {
     sourceRouteId: 'fixture', fetchImpl: () => { fetched++; throw new Error('must not fetch'); },
   });
-  assert.match(restricted, /没有对应访问权限/); assert.equal(fetched, 0, 'restricted business route rejects before credentials or backend access');
+  assert.match(restricted, /对应访问权限/); assert.equal(fetched, 0, 'restricted business route rejects before credentials or backend access');
   const manager = await import('../chat/session-manager.mjs');
   const { loadHistory } = await import('../chat/history.mjs');
   const { getRun } = await import('../chat/runs.mjs');
@@ -128,5 +128,11 @@ try {
   await runtime.recover(); await runtime.idle(); runtime.stop();
   assert.equal(started, 0, 'restart cannot dispatch a released refusal');
   await assert.rejects(manager.submitHttpMessage(session.id, 'different text', [], options), /different content/);
+  policy.version = 2;
+  policy.rules.forEach((rule, i) => { rule.id = 'target-' + i; });
+  await writeFile(path, JSON.stringify(policy));
+  const v2 = await manager.submitHttpMessage(session.id, 'read Vault private logs', [], { ...options, requestId: 'v2-denied' });
+  assert.equal(v2.accessDenied, true);
+  assert.equal(await getRun(v2.run.id), null, 'v2 denial also precedes model creation and attachment processing');
   console.log('PASS: guard identity, encodings, scoped continuations, automation scope, failure closure, durable denials, no execution, reply outbox, concurrent retry and restart');
 } finally { delete process.env.REMOTELAB_REQUEST_ACCESS_GUARD; await rm(home, { recursive: true, force: true }); }

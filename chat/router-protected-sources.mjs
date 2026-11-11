@@ -4,6 +4,7 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { requests } from './requests.mjs';
 import { createLocalAuditWriter, loadProtectedSourcePolicy, readProtectedSource } from '../lib/protected-source-read.mjs';
+import { protectedSourceAttribution } from '../lib/hr-access-authorization.mjs';
 
 export function protectedSourceCaller(auth, record) {
   const personId = record?.options?.viewPersonId;
@@ -12,6 +13,7 @@ export function protectedSourceCaller(auth, record) {
   if (auth?.authKind !== 'service' && auth?.personId !== personId) return null;
   return { authKind: auth.authKind, personId, identityId: record.options.initiatedByIdentityId,
     sessionId: record.sessionId, requestId: record.requestId, runId: record.runId,
+    ...protectedSourceAttribution(record.options),
     attribution: auth.authKind === 'service' ? 'service_referencing_accepted_request' : 'authenticated_request_owner' };
 }
 
@@ -28,7 +30,8 @@ export async function handleProtectedSourceRoutes({ req, res, pathname, authSess
     const caller = protectedSourceCaller(authSession, record);
     const policy = await loadProtectedSourcePolicy(join(CONFIG_DIR, 'protected-sources.json'));
     admitted = true;
-    const result = await readProtectedSource({ policy, caller, authenticatedCaller, input, audit });
+    const result = await readProtectedSource({ policy, caller, authenticatedCaller, input, audit,
+      reloadPolicy: () => loadProtectedSourcePolicy(join(CONFIG_DIR, 'protected-sources.json')) });
     writeJson(res, 200, result);
   } catch (error) {
     if (!admitted) {
