@@ -37,6 +37,12 @@ A normal Session URL does not grant access. Anonymous navigation preserves it th
 
 ## Verification and recovery
 
+Authentication and Session access checks share a deeply frozen, in-process read
+snapshot of the loaded auth document. Each committed update or reload replaces
+that snapshot immediately; role revocation has no time-based cache delay. The
+existing mutable-copy getter remains available to other callers. No credentials
+or role configuration change as part of this read-path optimization.
+
 `node scripts/run-with-clean-instance-env.mjs node tests/test-session-access.mjs` exercises real HTTP login, ordinary/admin/service accounts, lists and refs, direct links, event/body APIs, media/assets, search, forged identities, forks, task controls, role changes, fresh-password/origin/token checks, fail-closed audit writes, blocked credential/identity bypasses and WebSocket hints. Optional `REMOTELAB_TEST_PLAYWRIGHT_MODULE` and `REMOTELAB_TEST_CHROMIUM_PATH` run three isolated headless browser logins and the actual administrator form (failed confirmation, grant, revoke and password clearing). These are test fixtures, not evidence that human users have completed browser acceptance. Scheduler lifecycle and connector tests retain their own isolated fixtures.
 
 Before rollout, retain the current auth configuration privately and record the previous commit. Inventory every long-running consumer of the shared auth normalizer, including a separately managed display server: an old process can remove fields it does not recognize. Load the new normalizer in those authorized consumers, then verify the exact administrator IDs remain stored and `/api/auth/me` reports both the named administrator and an ordinary primary account correctly. On a policy/configuration issue, use the existing service credential to inspect ownership; a verified administrator uses the dedicated procedure for roles, while exceptional administrator sign-in recovery uses independently verified host maintenance; restart/reload the authorized service and recheck both positive and negative paths. A code rollback is a new revert commit of this change followed by deployment, retaining all new Session/history/auth state and concurrent commits. Reverting the policy restores broad authenticated access; do not restore an old data backup over newly accepted work.

@@ -1,8 +1,8 @@
-import { findIdentity, getCachedAuthDocument, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
+import { findIdentity, getAuthReadSnapshot, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 
 // The service credential is an execution/connector capability, never a human role.
-export function isSessionAdministrator(actor, document = getCachedAuthDocument()) {
+export function isSessionAdministrator(actor, document = getAuthReadSnapshot()) {
   return Boolean(actor && (actor.authKind === 'service'
     || document?.administratorPersonIds?.includes(actor.personId)));
 }
@@ -15,7 +15,7 @@ export function sessionCreatorIdentity(session) {
   return session.initiatedByIdentityId || '';
 }
 
-export function canReadSession(actor, session, document = getCachedAuthDocument()) {
+export function canReadSession(actor, session, document = getAuthReadSnapshot()) {
   if (!actor || !session) return false;
   if (isSessionAdministrator(actor, document)) return true;
   const identityId = sessionCreatorIdentity(session);
@@ -23,7 +23,7 @@ export function canReadSession(actor, session, document = getCachedAuthDocument(
     && findIdentity(document, identityId)?.person.id === actor.personId);
 }
 
-export function sessionAccessFilter(actor, document = getCachedAuthDocument()) {
+export function sessionAccessFilter(actor, document = getAuthReadSnapshot()) {
   return session => canReadSession(actor, session, document);
 }
 
@@ -32,7 +32,7 @@ export async function canAccessSession(actor, id) {
   return isSessionAdministrator(actor) || canReadSession(actor, await findSessionMeta(id));
 }
 
-export function canReadAutomation(actor, task, document = getCachedAuthDocument()) {
+export function canReadAutomation(actor, task, document = getAuthReadSnapshot()) {
   return canReadSession(actor, task && { creatorIdentityId: task.createdByIdentityId || '' }, document);
 }
 

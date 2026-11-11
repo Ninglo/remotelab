@@ -101,6 +101,8 @@
             "chat/router-session-main-routes.mjs",
             "chat/session-meta-store.mjs",
             "lib/session-catalog.mjs",
+            "lib/file-lock.mjs",
+            "lib/file-lock-broker.mjs",
             "scripts/session-catalog.mjs",
             "docs/session-catalog.md",
             "docs/project-architecture.md",
@@ -950,6 +952,7 @@
           "example": "检查我的网页与飞书身份是否对应同一个人员档案。",
           "sources": [
             "lib/auth-config.mjs",
+            "lib/auth.mjs",
             "chat/session-access.mjs",
             "chat/session-attachment-access.mjs",
             "docs/session-access.md",

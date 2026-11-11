@@ -260,7 +260,12 @@ late real results, partial spool records, read-only queries and stop/create race
   transactions share the OS lock helper in `lib/file-lock.mjs` with the Session
   catalogue. Connector, CLI and core writers reload the head under that lock;
   readers notice replaced metadata, and orphan committed events are recovered
-  before assigning the next sequence.
+  before assigning the next sequence. A small, process-local
+  `lib/file-lock-broker.mjs` launches the existing kernel `flock` holders so each
+  write does not fork the multi-GB core process. Lock paths and cross-process
+  exclusion remain compatible with offline writers; independent paths acquire
+  concurrently. Parent disconnect closes holder pipes, and an idle helper does
+  not keep a CLI alive. This changes no stored format or service configuration.
 - `chat/work-awareness.mjs` — bounded work, input and reference-suggestion
   records within Session metadata; symmetric non-exclusive overlap queries.
 - `chat/necessary-background.mjs` and `chat/related-person-context.mjs` —
