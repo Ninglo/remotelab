@@ -22,7 +22,8 @@ requests. Its rules also have a stable `id` identifying the protected target.
 `protected` rules describe confidential resources and require a data acquisition
 or disclosure request; `bypass` rules require a protection/permission change.
 Paths, letter fragments, quoted alerts, policy discussion and ordinary maintenance
-do not independently cause a refusal. Mixed requests are inspected clause by
+do not independently cause a refusal. Technical metadata allowances do not
+exempt simultaneous confidential-data targets. Mixed requests are inspected clause by
 clause. Encoded data requests retain the same checks. This is deterministic
 recognition of explicit requests, not complete semantic understanding; an
 unrecognized input never authorizes a resource read or disclosure.

@@ -30,7 +30,8 @@ export function explicitAccessIntents(text, compiled, previous) {
       && !/(?:能否|能不能|告诉我|发给我|给我|吗$|么$)/u.test(clause);
     if (discussing || normative || /^(?:不要|别|禁止|不能|不得)/u.test(clause)) continue;
     const technicalMetadata = /(?:服务.{0,12}(?:启动|错误|运行|诊断|状态)|systemctl|journalctl|\.bashrc)/iu.test(clause)
-      && !/(?:薪[资酬]|工资|方案|候选人|工作日志|内部(?:任务|日志|资料)|真实(?:日志|资料))/u.test(clause);
+      && !/(?:薪[资酬]|工资|方案|候选人|工作日志|内部(?:任务|日志|资料)|真实(?:日志|资料)|(?:当麻|\bHR\b|人事).{0,12}(?:日志|资料|记忆))/iu.test(
+        clause.replace(/(?:当麻|\bHR\b|人事)?服务.{0,12}?(?:日志|状态)/giu, '技术元数据'));
     for (const rule of compiled.filter(rule => !rule.continuation)) {
       if (technicalMetadata && rule.category !== 'bypass' && rule.technicalMetadataAllowed === true) continue;
       const operation = rule.category === 'bypass' ? mutation.test(clause) : dataAction.test(clause) || implicitData.test(clause);
