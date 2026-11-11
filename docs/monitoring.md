@@ -1325,6 +1325,12 @@ Stopped alert cards also say no human action is needed because the component was
 
 ### Script-first recovery
 
+Uncertain alert sends for incidents independently observed inactive, or a prior
+generation superseded by the current incident, remain in the original delivery
+ledger as `historicalUnresolved`. They no longer create current delivery alarms.
+Missing incident evidence still creates an alarm. No uncertain message is resent,
+deleted or reclassified as delivered; `unresolved` keeps the total historical count.
+
 Set `recovery.scriptTriage.enabled` to route service and automation incidents through
 `chat/monitoring-triage.mjs` before any new Agent admission. This uses the existing
 minute observer, incident identity, recovery ledger and original alert card; it

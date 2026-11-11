@@ -1,12 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createMonitoringReader, projectAccounts, analyzeResources, readService } from '../chat/monitoring.mjs';
+import { createMonitoringReader, projectAccounts, analyzeResources, readService, summarizeAlertDelivery } from '../chat/monitoring.mjs';
 
 const now = Date.parse('2026-10-03T06:00:00Z');
 const at = new Date(now).toISOString();
 const quota = remainingPercent => [{ id: 'codex', primary: { remainingPercent, windowDurationMins: 10080, resetsAt: '2026-10-07T00:00:00Z' } }];
 const sample = (remainingPercent, overrides = {}) => ({ identityId: 'account', label: 'owner@example.com', status: 'ready', quota: quota(remainingPercent), observedAt: at, ...overrides });
 const entry = subscriptions => ({ receivedAt: at, snapshot: { subscriptions } });
+
+test('inactive or superseded alert deliveries remain uncertain history without a current alarm', () => {
+  const state = { incidents: { old: { active: false }, reopened: { active: true, triggeredAt: at } },
+    batches: {
+      inactive: { status: 'needs_review', keys: ['old'] },
+      superseded: { status: 'needs_review', keys: ['reopened'], events: { reopened: { triggeredAt: '2026-10-01T00:00:00Z' } } },
+      unknown: { status: 'needs_review', keys: ['missing'] },
+      current: { status: 'blocked_dependency', keys: ['reopened'], events: { reopened: { triggeredAt: at } } },
+    } };
+  const before = JSON.stringify(state);
+  assert.deepEqual(summarizeAlertDelivery(state), { unresolved: 4, currentUnresolved: 2, historicalUnresolved: 2, blocked: 1, uncertain: 1 });
+  assert.equal(JSON.stringify(state), before, 'delivery evidence is never rewritten');
+});
 
 test('verified recovery clears only that failed Run from attention, and a later failure still alerts', () => {
   const task = { id: 'sch_test', state: 'active', lastExecution: { state: 'failed', runId: 'run_original' } };

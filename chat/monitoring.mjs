@@ -14,6 +14,19 @@ import { isStoppedAutomation, currentAutomationStatus, isCurrentRecovery } from 
 import { monitoringPolicies, monitoringDestinations } from '../lib/monitoring-policy.mjs';
 import { accountContinuity, continuityAttention } from '../lib/monitoring-actions.mjs';
 
+export function summarizeAlertDelivery(state) {
+  const issues = Object.values(state?.batches || {}).filter(b => ['needs_review', 'blocked_dependency'].includes(b.status));
+  const current = issues.filter(b => !b.keys?.length || b.keys.some(key => {
+    const incident = state?.incidents?.[key], event = b.events?.[key];
+    if (!incident) return true;
+    if (incident.active === false) return false;
+    return !(event?.triggeredAt && incident.triggeredAt && Date.parse(event.triggeredAt) < Date.parse(incident.triggeredAt));
+  }));
+  return { unresolved: issues.length, currentUnresolved: current.length, historicalUnresolved: issues.length - current.length,
+    blocked: current.filter(b => b.status === 'blocked_dependency').length,
+    uncertain: current.filter(b => b.status === 'needs_review').length };
+}
+
 import { serviceIncidentAttention } from './service-incidents.mjs';
 import { assessDiskGrowth, diskGrowthAttention, DISK_GROWTH_FILE } from './disk-growth.mjs';
 const exec = promisify(execFile);
@@ -236,10 +249,8 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     analysis.attention.push(...serviceIncidentAttention(savedIncidents?.cycles || savedIncidents?.events || [], services, { now: now(), gaps, repairs: config.serviceIncidents?.repairs }).filter(item => !item.recovered));
     if (runtimeFresh && runtimeHealth.heapUsed / runtimeHealth.heapLimit >= 0.85) analysis.attention.push({ kind: 'servicePressure', id: runtimeService.unit, unit: runtimeService.unit, subject: runtimeService.label, severity: 'critical', detail: `堆用量 ${(runtimeHealth.heapUsed / GiB).toFixed(2)} / ${(runtimeHealth.heapLimit / GiB).toFixed(2)} GiB`, signals: { pid: runtimeHealth.pid } });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
-    const deliveryIssues = Object.values(alertState?.batches || {}).filter(batch => ['needs_review', 'blocked_dependency'].includes(batch.status));
-    const alertDelivery = { unresolved: deliveryIssues.length, blocked: deliveryIssues.filter(batch => batch.status === 'blocked_dependency').length,
-      uncertain: deliveryIssues.filter(batch => batch.status === 'needs_review').length };
-    if (deliveryIssues.length) analysis.attention.push({ kind: 'alertDelivery', severity: 'warning', id: 'monitoring-alerts', subject: '监管告警投递',
+    const alertDelivery = summarizeAlertDelivery(alertState);
+    if (alertDelivery.currentUnresolved) analysis.attention.push({ kind: 'alertDelivery', severity: 'warning', id: 'monitoring-alerts', subject: '监管告警投递',
       detail: `${alertDelivery.blocked} 批因外部依赖未发送；${alertDelivery.uncertain} 批发送结果待核对。不会自动重发不确定消息。` });
     const registration = background?.mechanisms?.find(item => item.id === 'resource-alerts');
     const timer = registration?.source?.kind === 'systemd'
