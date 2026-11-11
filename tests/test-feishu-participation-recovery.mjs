@@ -68,7 +68,7 @@ try {
     assert.deepEqual(effects.observed, []);
     assert.equal(effects.runs.length, 0, `${topic || 'main'} muted input must not run`);
     await send('invitation', '@_bot 帮忙回答', { mentions: [{ openId: 'bot' }] });
-    assert.equal(effects.runs.at(-1).participationOnce, true);
+    assert.equal(effects.runs.at(-1).participationOnce, topic ? undefined : true);
     assert.equal((await runtime.participation.state(base)).mode, 'paused');
     await send('complex-invitation', '@_bot 帮忙调查', { mentions: [{ openId: 'bot' }] }, {
       classifyJevReaction: async () => ({ decision: 'reply', workMode: 'complex', invited: true }),
@@ -145,12 +145,14 @@ try {
     assert.ok(!effects.removed.includes('other-conversation'), 'pause cannot clear another conversation');
     await send('paused-at', '@_bot 帮忙看一下', { mentions: [{ openId: 'bot' }] });
     assert.equal(effects.runs.at(-1).messageId, 'paused-at');
-    assert.equal(effects.runs.at(-1).participationOnce, true);
+    assert.equal(effects.runs.at(-1).participationOnce, topic ? undefined : true);
     assert.equal((await runtime.participation.state(base)).mode, 'paused');
     const pausedInvite = effects.runs.at(-1);
     const pausedPrepared = { ...prepared, payload: { text: 'paused invitation', sourceDelivery: { target: { participationEpoch: pausedInvite.participationEpoch } } } };
     assert.equal((await submitRemoteLabRequest(runtime, pausedInvite, { prepared: pausedPrepared })).runId, 'fixture-run');
-    assert.equal((await send('paused-chat', '继续闲聊')).reason, 'participation_paused');
+    const continued = await send('paused-chat', '继续讨论');
+    if (topic) assert.equal(continued.sessionId, 's', 'invited topic continues without another mention');
+    else assert.equal(continued.reason, 'participation_paused', 'mainline invitation does not resume the whole group');
     assert.ok(!effects.observed.includes('paused-chat'));
     let pausedSent = false;
     await processSourceDeliveryOnce(runtime, {
@@ -164,7 +166,7 @@ try {
     const suppressed = await processSourceDeliveryOnce(runtime, {
       requestRemoteLab: async (path, options) => path === '/api/source-deliveries/claim'
         ? { response: { ok: true }, json: { claim: { leaseId: 'unsent-lease', delivery: {
-          id: 'srcd_000000000000000000000001_0', target: { ...base, messageId: 'suppressed' }, kind: 'content', text: 'old reply',
+          id: 'srcd_000000000000000000000001_0', target: { ...base, messageId: 'suppressed', participationEpoch: String(ongoingEpoch) }, kind: 'content', text: 'old reply',
         } } } } : request(path, options),
       sendFeishuText: async () => { throw new Error('paused delivery must never call the provider'); },
     });
@@ -306,6 +308,7 @@ try {
   await writeJsonAtomic(CHAT_SESSIONS_FILE, [{ id: 'outbox-session', conversation }]);
   const plan = summary => ({ ...conversation, target: buildFeishuRequestDeliveryTarget(summary) });
   const sent = [];
+  let deliveredThreadId = 'learned-thread';
   const helpers = {
     requestRemoteLab: async (path, { body } = {}) => {
       const value = path.endsWith('/claim') ? { claim: await claimSourceDelivery(body) }
@@ -315,7 +318,7 @@ try {
     },
     sendFeishuText: async (_runtime, target) => {
       sent.push(target);
-      return { message_id: 'sent-' + sent.length, thread_id: 'learned-thread' };
+      return { message_id: 'sent-' + sent.length, thread_id: deliveredThreadId };
     },
   };
   const deliver = async (name, summary) => {
@@ -341,6 +344,25 @@ try {
   assert.equal((await deliver('stale-origin', root)).state, 'cancelled',
     'pause/resume still invalidates a genuinely old mainline result');
   assert.equal(sent.length, 3, 'blocked results must never reach the provider');
+
+  // A mainline invitation also authorizes continuation in the actual thread
+  // returned by the provider. An unrelated automatically opened thread does not.
+  await runtime.participation.change(source, 'paused', { controlId: 'invitation-pause' });
+  await runtime.participation.assess(source, { mentioned: true });
+  const invitedRoot = { ...root, participationEpoch: String((await runtime.participation.state(source)).epoch) };
+  deliveredThreadId = 'invited-new-thread';
+  assert.equal((await deliver('invited-opening', invitedRoot)).state, 'delivered');
+  const inherited = { ...followup, threadId: 'invited-new-thread', messageId: 'unmentioned-continuation' };
+  assert.equal((await runtime.participation.state(inherited)).receptionMode, 'active');
+  assert.equal(await runtime.participation.assess(inherited), true);
+  const restarted = createParticipationController(runtime);
+  assert.equal(await restarted.assess(inherited), true, 'mainline invitation survives restart in the thread');
+  assert.equal(await restarted.assess({ ...inherited, threadId: 'unrelated-thread' }), false);
+  assert.equal((await runtime.participation.state(followup)).receptionMode, 'paused', 'an old delivery cannot undo a topic stop');
+  await runtime.participation.change(source, 'paused', { controlId: 'end-invited-discussion' });
+  await runtime.participation.inheritDiscussionInvitation(buildFeishuRequestDeliveryTarget(invitedRoot), 'late-thread');
+  assert.equal(await restarted.assess(inherited), false, 'a new pause ends the inherited invitation');
+  assert.equal(await restarted.assess({ ...inherited, threadId: 'late-thread' }), false, 'late old delivery cannot re-invite');
   console.log('Feishu mute recovery: mainline/topic invitation, queued and in-flight fencing, scoped THINKING cleanup and unsent delivery cancellation pass');
 } finally {
   await new Promise(resolve => server.close(resolve));

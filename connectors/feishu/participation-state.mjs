@@ -18,8 +18,12 @@ const hasModeOverride = record => record?.modeOverride === true
   || (record?.modeOverride === undefined && Boolean(record?.updatedAt || ['listening', 'paused'].includes(record?.mode)));
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 24);
 
-export const participationAllowsMessage = (state, summary) => state.mode === 'active'
+export const participationAllowsMessage = (state, summary) => (state.receptionMode ?? state.mode) === 'active'
   || state.invitedMessages?.includes(summary.messageId) === true;
+
+// Group pause changes default reception, not the delivery rights of accepted work.
+export const participationAllowsDelivery = (state, summary) => state.mode === 'active'
+  || state.discussionInvited === true || state.invitedMessages?.includes(summary.messageId) === true;
 
 export function participationEnabled(runtime, summary) {
   if (!summary?.chatId || isFeishuTopicGroup(summary) || ['p2p', 'private'].includes(summary.chatType)) return false;
@@ -45,23 +49,24 @@ export function parseParticipationText(text) {
 
 export function buildParticipationCard(record, configuration = null) {
   if (configuration && !record.source.topicId) return buildGroupConfigurationCard(record, configuration);
+  const mode = record.receptionMode ?? record.mode;
   const scope = record.source.topicId ? '这个话题' : '本群';
-  const detail = { active: record.source.topicId ? '群和当前话题均开启接收时，话题消息继续交给 Agent。'
+  const detail = { active: record.source.topicId ? '当前讨论正常接续；群暂停时，明确 @我可邀请我参加这个讨论。'
     : '持续接收群消息，按讨论需要参与。',
-    paused: '普通消息不进入 Session；@我可单次邀请，之后仍保持暂停。' }[record.mode];
-  const actions = [...MODES].map(mode => ({ tag: 'button', type: mode === record.mode ? 'primary' : 'default',
+    paused: '默认不参与；@我可邀请我参加当前讨论，同一话题后续无需重复 @。' }[mode];
+  const actions = [...MODES].map(mode => ({ tag: 'button', type: mode === (record.receptionMode ?? record.mode) ? 'primary' : 'default',
     text: { tag: 'plain_text', content: LABELS[mode] }, value: {
       namespace: 'participation', key: record.key, mode, epoch: record.epoch || 0,
     } }));
   return { config: { wide_screen_mode: true, update_multi: true }, header: {
-    template: record.mode === 'active' ? 'green' : 'grey',
-    title: { tag: 'plain_text', content: `Agent 状态 · ${LABELS[record.mode]}` },
+    template: mode === 'active' ? 'green' : 'grey',
+    title: { tag: 'plain_text', content: `Agent 状态 · ${LABELS[mode]}` },
   }, elements: [
     ...(record.cardRenewalNotice ? [{ tag: 'div', text: { tag: 'plain_text', content: record.cardRenewalNotice } }] : []),
     { tag: 'div', text: { tag: 'lark_md', content: `**${scope} · 直到明确切换**\n${detail}` } },
     ...(record.stopPending ? [{ tag: 'div', text: { tag: 'plain_text', content: '正在停止当前任务。' } }] : []),
     { tag: 'action', actions },
-    { tag: 'note', elements: [{ tag: 'plain_text', content: '/mute 暂停当前范围，/unmute 恢复接收。群暂停时，话题内也需逐条 @我。' }] },
+    { tag: 'note', elements: [{ tag: 'plain_text', content: '/mute 暂停当前范围，/unmute 恢复接收。群暂停后，未受邀请的话题保持静默。' }] },
   ] };
 }
 
@@ -83,6 +88,8 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     if (!queues.has(key)) queues.set(key, serialQueue());
     return queues.get(key)(fn);
   };
+  const mainline = summary => ({ ...summary, chatMode: 'group', groupMessageType: 'group',
+    conversationKind: 'main', threadId: '', topicId: '', rootId: '', parentId: '', messageId: '' });
   async function state(summary) {
     const key = keyFor(summary);
     let existing = await records.get(key);
@@ -98,8 +105,15 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     const mode = muted ? 'paused' : override ? currentMode(existing.mode) : initial;
     const epoch = existing?.epoch || 0;
     const deliveryEpochFloor = existing?.deliveryEpochFloor ?? epoch;
+    const parent = source.topicId && participationEnabled(runtime, summary) ? await state(mainline(summary)) : null;
+    const groupPauseEpoch = parent?.deliveryEpochFloor ?? null;
+    const discussionInvited = Boolean(parent && !muted && existing?.discussionInvitation
+      && existing.discussionInvitation.groupPauseEpoch === groupPauseEpoch
+      && existing.discussionInvitation.topicPauseEpoch === deliveryEpochFloor);
+    const receptionMode = discussionInvited || (mode === 'active' && (!parent || parent.mode === 'active'))
+      ? 'active' : 'paused';
     return { invitedMessages: [], processedControls: [], ...existing, key, source, mode, epoch, deliveryEpochFloor,
-      modeOverride: override };
+      modeOverride: override, receptionMode, discussionInvited, groupPauseEpoch };
   }
 
   async function remember(summary, sessionId, recent = [], { refreshCard = true } = {}) {
@@ -266,6 +280,9 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         // if reception resumes before the old reply reaches the outbox.
         deliveryEpochFloor: mode === 'active' ? prior.deliveryEpochFloor : (prior.epoch || 0) + 1,
         invitedMessages: [],
+        discussionInvitation: mode === 'active' && prior.source.topicId ? {
+          messageId: controlId, groupPauseEpoch: prior.groupPauseEpoch, topicPauseEpoch: prior.deliveryEpochFloor,
+        } : null,
         stopPending: mode !== 'active', updatedAt: new Date().toISOString(),
         ...((prior.mode === 'paused' && mode !== 'paused') || (prior.mode !== 'active' && mode === 'active')
           ? { contextAfterMs: Date.now() } : {}),
@@ -299,29 +316,43 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   async function assess(summary, { mentioned = false } = {}) {
     const key = keyFor(summary);
     return exclusive(key, async () => {
-      let record = await state(summary);
-      if (record.mode === 'active') return true;
-      const forOther = summary.mentions?.length && !mentioned;
-      const invited = !forOther && mentioned;
-      record = await records.mutate(key, current => ({ ...current, ...record,
-        ...(invited ? { invitedMessages: [...new Set([...(current?.invitedMessages || []), summary.messageId])].slice(-100) }
-          : {}),
+      const record = await state(summary);
+      if (!mentioned) return participationAllowsMessage(record, summary);
+      // An invitation joins this discussion. Group defaults and other topics
+      // stay untouched; a later pause advances its revision and ends the grant.
+      if (record.source.topicId) await setFeishuConversationMuted(runtime, summary, false);
+      await records.mutate(key, current => ({ ...current, ...record,
+        invitedMessages: [...new Set([...(current?.invitedMessages || []), summary.messageId])].slice(-100),
+        ...(record.source.topicId ? { discussionInvitation: {
+          messageId: summary.messageId, groupPauseEpoch: record.groupPauseEpoch,
+          topicPauseEpoch: record.deliveryEpochFloor,
+        } } : {}),
       }));
-      return invited;
+      return participationAllowsMessage(await state(summary), summary);
+    });
+  }
+  async function inheritDiscussionInvitation(summary, threadId) {
+    if (summary.participationScopeTopicId !== 'main' || summary.conversationKind !== 'thread') return;
+    const parent = await state(mainline(summary));
+    const messageId = summary.participationScopeMessageId;
+    const epoch = Number(summary.participationEpoch);
+    if (!parent.invitedMessages.includes(messageId) || !Number.isSafeInteger(epoch)
+        || epoch < parent.deliveryEpochFloor || epoch > parent.epoch) return;
+    const topic = { ...summary, threadId: threadId || buildFeishuTopicId(summary) || summary.rootId || messageId };
+    if (!topic.threadId) return;
+    return exclusive(keyFor(topic), async () => {
+      const record = await state(topic);
+      // A later topic stop must not be undone by an old delivery acknowledgement.
+      if (record.mode !== 'active' || record.deliveryEpochFloor > 0) return;
+      return records.mutate(record.key, current => ({ ...current, ...record, discussionInvitation: {
+        messageId, groupPauseEpoch: parent.deliveryEpochFloor, topicPauseEpoch: record.deliveryEpochFloor,
+      } }));
     });
   }
   async function intake(summary, snapshot = null) {
     if (!participationEnabled(runtime, summary) || ['app', 'bot'].includes(summary.sender?.senderType)) return null;
     const record = await state(summary);
     const addressed = mentionsFeishuBot(runtime, summary);
-    // Group pause gates every new thread input, including already bound or
-    // explicitly active threads. Keep thread epochs/delivery independent so
-    // accepted work can finish and a mention never resumes the group.
-    if (record.source.topicId && !addressed) {
-      const parent = await state({ ...summary, chatMode: 'group', groupMessageType: 'group',
-        conversationKind: 'main', threadId: '', topicId: '', rootId: '', parentId: '', messageId: '' });
-      if (parent.mode === 'paused') return { ignored: true, reason: 'participation_paused' };
-    }
     if (record.processedControls?.includes(summary.messageId)) {
       void publish(record).catch(error => console.warn(`[feishu-participation] mode card: ${error.message}`));
       return { participationControl: true, duplicate: true };
@@ -335,10 +366,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         || (record.contextAfterMs && messageTime && messageTime < record.contextAfterMs)) {
       return { ignored: true, reason: 'participation_before_resume' };
     }
-    if (record.mode === 'paused') {
-      if (!addressed) return { ignored: true, reason: 'participation_paused' };
-      await assess(summary, { mentioned: true });
-    }
+    if (!await assess(summary, { mentioned: addressed })) return { ignored: true, reason: 'participation_paused' };
     return null;
   }
   async function action(raw) {
@@ -377,7 +405,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
         else {
           if (record.mode !== 'active') await exclusive(record.key, async () => {
             const current = await state(source);
-            if (shouldContinue() && current.mode !== 'active' && (current.epoch || 0) === (record.epoch || 0)) {
+            if (shouldContinue() && current.receptionMode !== 'active' && (current.epoch || 0) === (record.epoch || 0)) {
               await cleanup?.(current);
             }
           });
@@ -390,6 +418,6 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       }
     }
   }
-  return { state, remember, change, assess, intake, action, restore, publish, record: key => records.get(key),
+  return { state, remember, change, assess, inheritDiscussionInvitation, intake, action, restore, publish, record: key => records.get(key),
     idle: async () => { await Promise.all([...queues.values(), ...publishQueues.values()].map(queue => queue.idle())); await records.idle(); } };
 }

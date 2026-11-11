@@ -11,7 +11,7 @@ import { buildFeishuTableCard } from '../connectors/feishu/table-card.mjs';
 
 import { startFeishuWorkboards } from '../connectors/feishu/workboard-component.mjs';
 import { defaultFeishuGroupParticipation, normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
-import { participationEnabled, participationAllowsMessage, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
+import { participationEnabled, participationAllowsMessage, participationAllowsDelivery, createParticipationController, parseParticipationText } from '../connectors/feishu/participation-state.mjs';
 import { createPersonalSettingsController, summarizePersonalChatEntered } from '../connectors/feishu/personal-settings-card.mjs';
 import { createGroupConfigurationController } from '../connectors/feishu/group-configuration.mjs';
 import { startProjectGroupCards } from '../connectors/feishu/project-group-cards.mjs';
@@ -1230,10 +1230,10 @@ async function submitRemoteLabRequest(runtime, summary, {
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
   };
   if (effectiveSummary.participationOnce) {
-    payload.text = '[当前范围已暂停接收。用户仅邀请你处理这一次；完成后保持暂停。]\n' + payload.text;
+    payload.text = '[本群默认暂停参与。用户已邀请你参加当前讨论，正常处理并接续同一话题；其他未受邀请的讨论保持静默。]\n' + payload.text;
     payload.sourceContext.feishuParticipationMode = 'paused';
   } else if (participationStatus) {
-    payload.sourceContext.feishuParticipationMode = participationStatus.mode;
+    payload.sourceContext.feishuParticipationMode = participationStatus.receptionMode;
   }
   if (groupSettings.jevReactions) {
     const outcomes = runtime.outcomeReactionStore ||= createFeishuOutcomeReactionStore(runtime.config.storageDir);
@@ -1500,6 +1500,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     await recordFeishuBotHandoffScope(runtime, receipt.target, {
       sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
     });
+    if (participationEnabled(runtime, receipt.target)) {
+      await participationController(runtime, helpers).inheritDiscussionInvitation(receipt.target, receipt.threadId);
+    }
     if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
       const outboundTarget = receipt.threadId && receipt.target?.conversationKind !== 'main'
         ? { ...receipt.target, threadId: receipt.threadId }
@@ -1583,9 +1586,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       const stale = summary.participationEpoch !== undefined
         && (!Number.isSafeInteger(epoch) || epoch < (originStatus.deliveryEpochFloor ?? originStatus.epoch)
           || epoch > originStatus.epoch);
-      const originBlocked = scopeId && originStatus.mode !== 'active'
-        && !originStatus.invitedMessages?.includes(originSummary.messageId);
-      if (stale || originBlocked || (status.mode !== 'active' && !status.invitedMessages?.includes(summary.messageId))) {
+      const originBlocked = scopeId && !participationAllowsDelivery(originStatus, originSummary);
+      if (stale || originBlocked || !participationAllowsDelivery(status, summary)) {
         const resolved = await request(`/api/source-deliveries/${delivery.id}/resolve`, { method: 'POST',
           body: { state: 'cancelled', leaseId: claim.leaseId, reason: `Group participation is ${status.mode}; stale=${stale}` } });
         if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to cancel paused group delivery');
@@ -2125,11 +2127,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       && Number(summary.participationEpoch) !== participation.epoch && !helpers.preparedSubmission) {
     return { ignored: true, reason: 'participation_changed' };
   }
-  if (participation && participation.mode !== 'active' && !helpers.preparedSubmission) {
+  if (participation && participation.receptionMode !== 'active' && !helpers.preparedSubmission) {
     await controller.assess(summary, { mentioned: mentionsFeishuBot(runtime, summary), taskCommand });
     participation = await controller.state(summary);
   }
-  if (participation && participation.mode !== 'active' && participationAllowsMessage(participation, summary)) {
+  if (participation && participation.receptionMode !== 'active' && participationAllowsMessage(participation, summary)) {
     summary = { ...summary, participationOnce: true };
   }
   try {
@@ -2402,13 +2404,13 @@ async function main() {
       const status = await participationController(runtime).state(summary);
       const at = Number(summary.createTime);
       const time = at < 10_000_000_000 ? at * 1000 : at;
-      return status.mode !== 'paused' && (!status.contextAfterMs || time >= status.contextAfterMs);
+      return status.receptionMode !== 'paused' && (!status.contextAfterMs || time >= status.contextAfterMs);
     },
   });
   await Promise.all(activePilotConversations.map(async summary => {
     try {
       const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
-      if (status?.mode === 'paused') return;
+      if (status?.receptionMode === 'paused') return;
       const context = await loadFeishuConversationContext(runtime,
         { ...summary, messageId: '', createTime: String(Date.now()) },
         { maxMessages: 30, maxAgeMs: 2 * 60 * 60 * 1000, maxCharacters: 10_000,
@@ -2488,12 +2490,12 @@ async function main() {
     if (summary.fileToken && await documentEvents.accept(summary)) return {};
     const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
     const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel,
-      ...(status ? { participationSnapshot: { key: status.key, mode: status.mode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
+      ...(status ? { participationSnapshot: { key: status.key, mode: status.receptionMode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
     });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
       if (sourceLabel === 'im.message.receive_v1') await displayChanged(sourceLabel, raw);
       if (participationEnabled(runtime, summary) && (
-        (await participationController(runtime).state(summary)).mode !== 'active'
+        (await participationController(runtime).state(summary)).receptionMode !== 'active'
         || parseParticipationText(summary.messageText || summary.textPreview))) return {};
       const routed = await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
         { explicitCommand: !!extractLocalCommand(summary) });
@@ -2503,7 +2505,7 @@ async function main() {
       else if (discussionHandoffLink(runtime, summary)
         && !(await getFeishuConversationSettings(runtime, summary)).muted
         && (!participationEnabled(runtime, summary)
-          || (await participationController(runtime).state(summary)).mode !== 'paused')) {
+          || (await participationController(runtime).state(summary)).receptionMode !== 'paused')) {
         // Unbound discussion-thread replies still provide handoff signals and
         // context. Scan without suggesting that the Bot will answer the thread.
         quickParticipation.handle(summary, { receivedAt, reactionMode: 'none' });

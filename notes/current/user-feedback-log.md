@@ -1,11 +1,12 @@
 # Shared User Feedback Log
 
-### 2026-11-11 — Group pause also gates ordinary-group threads
+### 2026-11-11 — Pause is a group default; a mention invites a discussion
 
 - Feedback: a paused conversation group still received unsolicited Bot replies to human-to-human thread messages without a Bot mention.
-- Correction: this supersedes the 2026-10-30 thread reception exemption below. In an ordinary paused group, each new thread input must mention this Bot; a previous invitation, existing Session or active thread override does not enable later unmentioned replies.
-- Change: the participation intake boundary checks the current parent group pause before processing thread inputs. Thread execution/delivery revisions remain independent, so accepted work can finish. Native topic-group admission retains its own policy. Group cards and the setup guide describe the same rule.
-- Verification: isolated connector regressions cover existing/new threads, colleague mentions, files, legacy thread addresses, invitation followed by silence, restart, explicit thread state and resume. Service deployment and natural traffic are separate checks.
+- Clarification: the user means “do not disturb this group by default.” Explicitly mentioning the Bot invites it to participate in that discussion, so subsequent turns should continue normally. Requiring a new mention on every message misunderstood the invitation. This replaces the earlier same-day per-message fix as well as the 2026-10-30 unconditional thread exemption below.
+- Change: represent group reception and durable discussion invitations separately in the participation controller. Current discussion membership controls intake, prompt context and feedback. Mainline invitations carry into the provider-confirmed reply thread; completion and restart preserve the invitation. A new group/topic pause ends prior invitations, and unrelated discussions stay quiet.
+- Engineering lesson: derive behavior from the user's participation model and test the discussion lifecycle across entrances. An isolated message filter is insufficient when invitation, continuation and reply delivery share that meaning.
+- Verification: isolated tests cover quiet uninvited threads, invitation followed by multiple human turns, restart, renewed pause/re-invitation, sibling isolation, mainline-to-thread invitation propagation and stale delivery fencing. Deployment and natural traffic remain separate evidence.
 
 ### 2026-10-30 — Treat thread mentions as requests and remove listening
 

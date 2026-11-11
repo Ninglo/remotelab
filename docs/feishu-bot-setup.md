@@ -877,8 +877,9 @@ Groups use `participationMode: "active" | "paused"`; `ambient` remains a
 compatibility alias for active participation. `defaultGroupParticipation`
 accepts these modes and legacy `mention_only`. Listening is retired: old
 `listening` settings and explicit saved states are read as paused, with no
-observation-only ingestion or attachment download. An explicit Bot mention in
-a paused scope admits that one input and its reply without resuming the scope.
+observation-only ingestion or attachment download. An explicit Bot mention invites the Bot into that discussion without resuming
+the whole group. The invited thread then continues normally, including after
+turn completion or connector restart.
 
 | Existing setting | Upgrade behavior |
 | --- | --- |
@@ -886,7 +887,7 @@ a paused scope admits that one input and its reply without resuming the scope.
 | Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission for new conversations |
 | `participationControls: false` | Preserve the disabled mainline control boundary; thread mentions and continuation still work |
 | Explicit stored listening/paused state, or conversation mute | Preserve the scope's opt-out as paused; no observation intake |
-| Thread state inherited from its group (`modeOverride: false`) | Keep independent thread execution state; group pause still requires a Bot mention on each new input |
+| Thread state inherited from its group (`modeOverride: false`) | Keep independent thread execution state; group pause defaults to quiet until this discussion is explicitly invited |
 | Suppressed/withdrawn status card | Retain suppression |
 
 Modern controlled groups and topics use optional asynchronous Jev social feedback
@@ -896,19 +897,28 @@ no longer require a reaction or select content/work placement. The old ambient
 alias is normalized by the connector's default policy; test/embedded configurations
 without that default keep their explicit compatibility settings.
 
-In ordinary groups, group pause applies to new messages on both the mainline
-and its threads. Each thread input must explicitly mention this Bot while the
-group is paused, even if the thread is already bound or explicitly active.
-A mention admits that input without resuming the group or publishing a
-participation card; subsequent unmentioned replies remain blocked before model
-submission, attachment processing and social feedback. When group reception is
-active, unmuted threads continue in the same Session without another mention.
+In ordinary groups, participation has two separate scopes: the group's default
+and an invitation to a specific discussion. Pausing the group makes both mainline
+messages and uninvited threads quiet. A prior Session binding or an automatically
+opened thread is not an invitation. An explicit Bot mention joins the current
+thread; subsequent human messages in that discussion continue without another
+mention. A mainline invitation also carries into the thread opened by its reply,
+using the accepted source and the provider's actual thread receipt. It does not
+resume unrelated mainline messages or sibling threads.
 
-Threads retain independent execution and delivery revisions: pausing the group
-does not cancel already accepted thread work or revoke its replies. A thread's
-own mute remains in force after group reception resumes. Topic identity
-determines ownership; cancellation matches that conversation's Requests rather
-than cancelling unrelated work in a shared Session.
+Discussion invitations are durable and tied to the latest group/topic pause.
+Completion and restart preserve them; a renewed pause ends previous invitations.
+An explicit topic resume also invites participation in that topic. Reception,
+model context and feedback use this same discussion state. Native topic-group
+admission remains separate. Group cards describe default reception; mentioning
+the Bot does not create a participation card.
+
+Threads retain independent execution and delivery revisions: group pause does
+not revoke already accepted thread replies. A topic stop still fences its old
+results, and an old delivery acknowledgement cannot undo that stop or re-invite
+a discussion after a newer group pause. Topic identity determines ownership;
+cancellation matches that conversation's Requests rather than unrelated work in
+a shared Session.
 
 Native topic groups and ordinary groups have different participation rules.
 In a native topic group, human messages enter their topic Session by default and
