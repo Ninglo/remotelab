@@ -13,6 +13,9 @@ const decision = (disposition, code, summary, evidence = {}, extra = {}) => ({
 
 export function dependencyFailure(value) {
   const error = String(value || '').slice(-32768);
+  if (/暂无可用的 Codex 账号|Codex 账号(?:额度已耗尽|正在限流冷却|未登录)/.test(error)) {
+    return { code: 'codex_account_unavailable', summary: '执行依赖的Codex账号不可用；等待原账号观察器，不以新模型会话重复诊断。' };
+  }
   if (/Permission denied \((?:publickey|password|keyboard-interactive)[^)]*\)|ssh_authentication_failed/i.test(error)) {
     return { code: 'ssh_authentication_failed', summary: 'SSH认证失败；等待接入维护方恢复现有授权，不重复启动诊断对话。',
       humanAction: { type: 'input', summary: '接入维护方核对并恢复该对象现有SSH公钥授权；恢复后由原采样脚本验证。' } };
@@ -135,7 +138,18 @@ export async function triageMonitoringIncident({ item, snapshot, config = {}, ta
     return decision('agent', 'delivery_readback_required', '已有产物验收通过，只需核对原渠道送达；不得重做业务或盲目补发。', { receiptFile: attempt.receiptFile });
   }
   const dependency = dependencyFailure(origin?.failureReason || task.lastExecution?.error || task.lastError);
-  if (dependency) return decision(dependency.agent ? 'agent' : 'blocked', dependency.code, dependency.summary,
+  if (dependency?.code === 'codex_account_unavailable') {
+    const continuity = snapshot.accountContinuity;
+    const observedAt = stamp(continuity?.observedAt);
+    const fresh = observedAt && now - observedAt <= 120000 && observedAt <= now + 5000;
+    const available = fresh && (continuity.remainingPercent > 0
+      || continuity.autoSwitch && continuity.backupCount > 0);
+    if (!available) return decision('wait', dependency.code, dependency.summary,
+      { identity: 'local-codex', observedAt: continuity?.observedAt || null, fresh: Boolean(fresh) });
+    // Dependency recovery permits task-specific acceptance; it does not prove
+    // that the original business operation or its delivery succeeded.
+  }
+  if (dependency && dependency.code !== 'codex_account_unavailable') return decision(dependency.agent ? 'agent' : 'blocked', dependency.code, dependency.summary,
     { identity: [item.id, dependency.code] }, { humanAction: dependency.humanAction });
   const final = requestRecord?.deliveries?.filter(d => d.surfaceKind === 'final') || [];
   return decision('agent', 'task_acceptance_required', '原执行与投递记录已读取；缺少匹配的业务验收证据，需沿原检查点判断和处理。',

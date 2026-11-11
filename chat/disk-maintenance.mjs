@@ -41,9 +41,9 @@ export async function maintainDisk({ path, config, run: execute = command, inspe
       const root = await resolve(cache.path);
       const content = cache.kind === 'npm' ? join(root, '_cacache') : root;
       const info = await inspect(content);
-      if (!info.isDirectory() || info.uid !== uid || info.dev !== before.device) {
-        action.reason = 'owner_or_filesystem_mismatch'; continue;
-      }
+      if (!info.isDirectory()) { action.reason = 'not_directory'; continue; }
+      if (info.uid !== uid) { action.reason = 'owner_mismatch'; continue; }
+      if (info.dev !== before.device) { action.reason = 'different_filesystem'; continue; }
       // Reject foreign-owned entries, links and nested mounts, not just a
       // correctly owned parent. Bound scans; incomplete reads never authorize.
       const ownership = await run('find', [content, '-xdev', '(', '!', '-uid', String(uid), '-o', '-type', 'l', ')', '-print', '-quit']);

@@ -1330,9 +1330,15 @@ Set `recovery.scriptTriage.enabled` to route service and automation incidents th
 minute observer, incident identity, recovery ledger and original alert card; it
 creates no scheduler, Session or second notification route. Disk incidents retain
 their existing bounded cache-maintenance script before fallback.
+Cache receipts distinguish `different_filesystem`, `owner_mismatch` and
+`not_directory`; a cache on the data volume cannot repair root-volume growth.
 
 The fixed gate returns `resolved`, `cancelled`, `wait`, `blocked` or `agent`:
 
+- Codex account-unavailable errors wait on the existing account observer without
+  starting another model repair. A quota sample no older than two minutes must
+  show a usable current account or an enabled available backup before task-specific
+  acceptance resumes. Account recovery alone never closes the business incident.
 - Known SSH authentication and host-identity failures retain one actionable external
   dependency. Feishu quota rejection remains blocked on the affected interface.
   Explicit missing Feishu scopes can use one Agent for the existing authorized

@@ -96,3 +96,17 @@ test('native work and delivery waits do not create a second task, stop or supers
   f.task.state = 'paused'; assert.equal((await triage(f)).disposition, 'cancelled');
   f.task.state = 'active'; f.task.lastExecution.runId = 'new'; assert.equal((await triage(f)).code, 'task_superseded');
 });
+
+test('shared account outage waits for fresh availability and never treats account recovery as task completion', async () => {
+  const f = fixture(); f.item = { kind: 'automation', id: 'task', originRunId: 'old', attempts: [] };
+  f.task = { state: 'active', lastExecution: { runId: 'old', error: '暂无可用的 Codex 账号，请等待限流或额度恢复，或完成账号登录。' } };
+  assert.equal((await triage(f)).disposition, 'wait');
+  f.snapshot.accountContinuity = { remainingPercent: 0, backupCount: 0, observedAt: new Date(now).toISOString() };
+  assert.equal((await triage(f)).code, 'codex_account_unavailable');
+  f.snapshot.accountContinuity.remainingPercent = 60;
+  assert.equal((await triage(f)).code, 'task_acceptance_required');
+  f.snapshot.accountContinuity.observedAt = new Date(now - 180000).toISOString();
+  assert.equal((await triage(f)).disposition, 'wait', 'stale healthy quota cannot release the dependency');
+  f.snapshot.accountContinuity = { remainingPercent: 0, autoSwitch: true, backupCount: 1, observedAt: new Date(now).toISOString() };
+  assert.equal((await triage(f)).disposition, 'agent');
+});

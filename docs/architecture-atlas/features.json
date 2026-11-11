@@ -1115,6 +1115,7 @@
             "chat/ws-clients.mjs",
             "chat-server.mjs",
             "chat/monitoring-recovery.mjs",
+            "chat/monitoring-triage.mjs",
             "chat/disk-maintenance.mjs",
             "chat/monitoring-alerts.mjs",
             "chat/monitoring-alert-message.mjs",
