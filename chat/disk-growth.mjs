@@ -7,6 +7,7 @@ export const DISK_GROWTH_FILE = join(CONFIG_DIR, 'disk-growth-history.json');
 export const diskGrowthDefaults = {
   paths: ['/'], windows: [{ minutes: 15, bytes: GiB }, { minutes: 60, bytes: 2 * GiB }, { minutes: 1440, bytes: 5 * GiB }],
   reserveBytes: 15 * GiB, forecastHours: 72, minimumForecastMinutes: 60, minimumForecastBytes: GiB / 4,
+  recoveryStableMs: 30 * minute,
 };
 const valid = sample => sample && typeof sample.path === 'string' && sample.filesystemId != null
   && Number.isFinite(sample.totalBytes) && sample.totalBytes > 0
@@ -15,7 +16,7 @@ const valid = sample => sample && typeof sample.path === 'string' && sample.file
 const same = (a, b) => a.path === b.path && a.filesystemId === b.filesystemId && a.totalBytes === b.totalBytes;
 
 // Capacity status is unchanged. Growth is a separate, opt-in observation.
-export function assessDiskGrowth(disks, history, config, now = Date.now()) {
+function rawDiskGrowth(disks, history, config, now = Date.now()) {
   if (config?.enabled !== true) return [];
   const settings = { ...diskGrowthDefaults, ...config };
   return disks.filter(d => settings.paths.includes(d.path)).map(disk => {
@@ -50,13 +51,29 @@ export function assessDiskGrowth(disks, history, config, now = Date.now()) {
   });
 }
 
+// The minute observer persists this recovery clock beside its existing samples.
+// Page reads can assess it, but cannot advance or reset it themselves.
+export function assessDiskGrowth(disks, history, config, now = Date.now()) {
+  return rawDiskGrowth(disks, history, config, now).map(row => {
+    const old = history?.recovery?.[row.path];
+    if (row.status !== 'healthy' || !old?.active) return row;
+    const continuous = Date.parse(row.observedAt) >= Date.parse(old.observedAt)
+      && Date.parse(row.observedAt) - Date.parse(old.observedAt) <= 3 * minute;
+    const healthySince = continuous && old.healthySince || row.observedAt;
+    const stableMs = config.recoveryStableMs ?? diskGrowthDefaults.recoveryStableMs;
+    if (Date.parse(row.observedAt) - Date.parse(healthySince) >= stableMs) return row;
+    return { ...row, status: 'recovering', healthySince,
+      detail: `增长已回落到预警线以下，持续恢复观察中；需连续 ${Math.ceil(stableMs / minute)} 分钟有效采样后关闭原事故。` };
+  });
+}
+
 export function diskGrowthAttention(rows, disks) {
-  return rows.filter(row => row.status === 'warning').map(row => {
+  return rows.filter(row => ['warning', 'recovering'].includes(row.status)).map(row => {
     const disk = disks.find(d => d.path === row.path);
     return { kind: 'diskGrowth', id: row.path, subject: row.label, severity: 'warning', detail: row.detail,
       availableBytes: disk.availableBytes, usedPercent: disk.usedPercent, growth: row,
       // Stable rule identity avoids a new edit/confirmation for every byte fluctuation.
-      signals: { growthRule: row.rule } };
+      signals: { growthRule: row.rule, ...(row.status === 'recovering' ? { recovering: true } : {}) } };
   });
 }
 
@@ -67,9 +84,15 @@ export async function recordDiskSamples(disks, config, { file = DISK_GROWTH_FILE
     && Date.parse(d.observedAt) <= now + 5000 && now - Date.parse(d.observedAt) < 3 * minute)
     .map(({ path, filesystemId, totalBytes, availableBytes, observedAt }) => ({ path, filesystemId, totalBytes, availableBytes, observedAt }));
   const previous = await load(file);
+  const recovery = { ...previous?.recovery };
+  for (const row of assessDiskGrowth(disks, previous, config, now)) {
+    const old = recovery[row.path];
+    recovery[row.path] = { active: row.status === 'warning' || row.status === 'recovering' || row.status === 'unknown' && !!old?.active,
+      observedAt: row.observedAt, healthySince: row.status === 'recovering' ? row.healthySince : null };
+  }
   const samples = (previous?.samples || []).filter(p => valid(p) && Date.parse(p.observedAt) >= now - 48 * hour
     && Date.parse(p.observedAt) <= now + 5000 && !current.some(c => same(c, p)
       && Math.floor(Date.parse(c.observedAt) / minute) === Math.floor(Date.parse(p.observedAt) / minute)));
   samples.push(...current);
-  await save(file, { version: 1, observedAt: new Date(now).toISOString(), samples: samples.sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt)).slice(-6000) });
+  await save(file, { version: 1, observedAt: new Date(now).toISOString(), recovery, samples: samples.sort((a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt)).slice(-6000) });
 }

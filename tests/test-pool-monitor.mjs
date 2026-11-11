@@ -145,6 +145,28 @@ test('silent execution loss requires persistent pending work and no active attem
   assert.ok(prior.attention.some(x => x.kind === 'poolTask' && x.detail.includes('没有活动 Attempt')));
 });
 
+test('restarts and requeue cannot close a stalled task without accepted progress', () => {
+  let prior;
+  const next = (minute, generation, state = 'running', accepted = 10) => {
+    const now = start + minute * 60000, value = sample(now, { state, accepted });
+    Object.assign(value.queue.runs[0], { generation, activeAttemptCount: 0 });
+    value.queue.runs[0].progress.pending = 90;
+    prior = assessPool(prior, value, { now });
+    return prior;
+  };
+  for (let minute = 0; minute <= 31; minute++) next(minute, Math.floor(minute / 10));
+  assert.equal(prior.tasks.run.alerted, true, 'frequent generation changes cannot hide a workerless task');
+  const since = prior.tasks.run.since;
+  next(32, 4);
+  assert.equal(prior.tasks.run.since, since);
+  assert.ok(!prior.recovered.some(x => x.kind === 'poolTask'));
+  next(33, 4, 'queued');
+  assert.equal(prior.tasks.run.alerted, true);
+  assert.ok(prior.attention.some(x => x.kind === 'poolTask'));
+  next(34, 5, 'running', 11);
+  assert.ok(prior.recovered.some(x => x.kind === 'poolTask'));
+});
+
 
 test('unreachable terminal runs share one budget and rotate checks across cycles', async () => {
   let elapsed = 0, saved, calls = [];

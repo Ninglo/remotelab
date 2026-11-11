@@ -70,6 +70,16 @@ test('one durable incident resumes the original Session with the actual fallback
   await processMonitoringRecovery(f.options); assert.equal(f.getAdmissions(), 1, 'the unchanged original failure must not create another repair');
 });
 
+test('a growth recovery observation neither resolves nor admits another repair', async () => {
+  const f = fixture({ kind: 'diskGrowth' });
+  f.options.config.diskScript = { enabled: true };
+  f.snapshot.attention[0].signals = { recovering: true };
+  f.snapshot.diskGrowth = [{ path: '/', status: 'recovering' }];
+  await processMonitoringRecovery(f.options);
+  assert.equal(f.getAdmissions(), 0);
+  assert.equal(Object.keys(f.getState().incidents).length, 0);
+});
+
 test('script gate blocks known SSH failures without a model, rechecks facts and preserves evidence', async () => {
   const f = fixture(); f.options.config.scriptTriage = { enabled: true }; f.options.readRequest = async () => null;
   f.task.lastExecution.error = 'user@host: Permission denied (publickey,password).';

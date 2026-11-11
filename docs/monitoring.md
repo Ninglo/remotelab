@@ -386,6 +386,9 @@ business switch, Run outcome and result delivery have distinct meanings.
 
 Enable `diskGrowth: {"enabled": true, "paths": ["/"]}` in `monitoring.json` to add growth warnings independently of these capacity thresholds. The existing minute observer records a bounded 48-hour byte-only history in `disk-growth-history.json`; page reads do not collect samples or write history. The same observer and durable delivery ledger send one updateable growth incident per path; no additional timer or model is needed. Growth warnings do not admit automatic repairs.
 
+Growth recovery requires 30 minutes of consecutive fresh healthy samples (`diskGrowth.recoveryStableMs`, default 1800000). The existing minute observer persists the recovery clock in `disk-growth-history.json`; page reads remain read-only. A brief return below the threshold updates the original incident as recovering and does not rearm repair attempts. Unknown observations reset the healthy window while preserving the open incident. Capacity thresholds and measured growth thresholds are unchanged.
+
+
 Defaults alert on a net increase of 1 GiB within 15 minutes, 2 GiB within one hour, or 5 GiB within 24 hours. A measured increase of at least 256 MiB over at least one hour also warns if its net rate projects reaching 15 GiB available within 72 hours. The forecast states its measured interval and assumes that rate continues. Configure `windows` (`minutes`, `bytes`), `reserveBytes`, `forecastHours`, `minimumForecastMinutes` and `minimumForecastBytes` as needed; these settings do not change capacity warnings.
 
 Fresh readings and matching filesystem identity/size are required. Missing history, stale/failed measurements and a changed filesystem remain unknown and cannot clear a prior incident. Cleanup decreases produce no growth warning. Once a supported observation clears the growth condition, the existing incident is closed; ordinary byte fluctuations do not generate repeated cards. Verified same-filesystem observations may seed the history, preserving their actual timestamps.
@@ -1288,8 +1291,9 @@ either at least 10 additional infrastructure-failed episodes or a continuous
 30-minute absence of active Attempts while episodes remain pending for a
 `poolTask` notice.
 Queue waiting alone, source failures and long execution alone do not establish a
-stalled Run. Gaps and generation changes reset the comparison window. Only
-fresh progress, a new generation or an explicitly read terminal state resolves
+stalled Run. Gaps reset the comparison window, while generation changes retain
+the workerless clock and reset only the generation-scoped failure baseline. Only
+fresh accepted progress or an explicitly read terminal state resolves
 a task notice. Thresholds can be adjusted under `poolMonitoring.thresholds`.
 These notices use the existing risk policy, incident identity, three-hour merge
 and original-card recovery updates. They never enter automated task stop or

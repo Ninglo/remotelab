@@ -63,6 +63,26 @@ test('durable history survives restart, deduplicates each minute and drops old o
   assert.equal(assessDiskGrowth([point(0, 29)], state, config, now)[0].status, 'warning');
 });
 
+test('growth flaps retain one recovery clock across restart and require fresh stable samples', async () => {
+  let state = { samples: [point(2, 32)] };
+  const step = async (minute, free) => {
+    const time = now + minute * 60_000, disk = point(-minute, free);
+    const options = { now: time, load: async () => structuredClone(state), save: async (_, v) => { state = v; } };
+    const result = assessDiskGrowth([disk], state, config, time)[0];
+    await recordDiskSamples([disk], config, options);
+    return result;
+  };
+  assert.equal((await step(0, 30)).status, 'warning');
+  assert.equal((await step(1, 32)).status, 'recovering');
+  assert.equal((await step(2, 30)).status, 'warning');
+  for (let minute = 3; minute < 33; minute++) assert.equal((await step(minute, 32)).status, 'recovering');
+  assert.equal((await step(33, 32)).status, 'healthy');
+  await step(34, 30);
+  await step(35, 32);
+  assert.equal((await step(70, 32)).status, 'recovering', 'a telemetry gap cannot satisfy the stable window');
+  assert.equal(state.recovery['/'].healthySince, point(-70, 32).observedAt);
+});
+
 test('growth sends before capacity warnings, deduplicates, survives unknown readings and rearms only after recovery', async () => {
   let state = null, sends = 0, updates = 0;
   const disk = point(0, 30), row = assess(disk, [point(2, 31.1)]);

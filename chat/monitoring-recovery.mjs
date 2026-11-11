@@ -91,11 +91,11 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
     ? Math.min(10, Math.max(1, Math.floor(configuredConfirmations))) : 1;
   const touch = (item, status, reason = '') => Object.assign(item, { status, reason, updatedAt: at });
   const taskById = new Map((snapshot.automations.items || []).map(t => [t.id, t]));
-  const failures = snapshot.attention.filter(i => i.kind === 'automation'
+  const failures = snapshot.attention.filter(i => !i.signals?.recovering && (i.kind === 'automation'
     || (i.kind === 'disk' && ['warning', 'critical'].includes(i.severity)
       || i.kind === 'diskGrowth' && config.diskScript?.enabled && ['warning', 'critical'].includes(i.severity)
       || i.kind === 'service' && i.severity === 'critical')
-      && !(config.ignoreUnits || []).includes(i.id));
+      && !(config.ignoreUnits || []).includes(i.id)));
   const failingServices = new Set(failures.filter(i => i.kind === 'service').map(i => i.id || i.subject));
   for (const [id, resource] of Object.entries(state.resources)) {
     const [kind, ...parts] = id.split(':');

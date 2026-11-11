@@ -1182,7 +1182,8 @@
             "lib/knowledge-command.mjs",
             "chat/knowledge-retrieval.mjs",
             "knowledge/hybrid-worker.py",
-            "knowledge/requirements.txt"
+            "knowledge/requirements.txt",
+            "chat/disk-growth.mjs"
           ],
           "commands": [
             "usage-summary",

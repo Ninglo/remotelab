@@ -102,7 +102,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
     // Recovery evidence can update an open card, but cannot start a new outage.
-    if (item.kind === 'poolSource' && item.signals?.recovering && !previous?.active) continue;
+    if (item.signals?.recovering && !previous?.active) continue;
     // A local optimization signal must not pre-confirm a new outage.
     let count = previous?.active && previous.event?.severity === item.severity ? previous.observations + 1 : 1;
     const eligible = ['poolSource', 'poolTask', 'poolIdle'].includes(item.kind) && item.confirmed === true || item.severity === 'critical' || item.kind === 'api' && item.id === 'feishu:tenant-quota' || ['disk', 'diskGrowth', 'accountContinuity'].includes(item.kind) || item.kind === 'automation'

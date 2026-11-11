@@ -66,16 +66,16 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
     else if (busy && old?.alerted) recovered.push({ kind: 'poolIdle', id });
   }
   // Only fresh consecutive successful observations establish a task progress window.
-  // A telemetry gap, a generation change or an accepted result resets the window.
+  // A generation is an execution attempt, not evidence of business progress.
   if (queueFresh) for (const run of queue.runs || []) {
     const id = run.run_id, old = previous?.tasks?.[id], accepted = run.progress?.accepted;
     const infra = run.progress?.infra_failed ?? 0;
     const running = run.state === 'running';
-    const continuous = running && old?.state === 'running' && old.generation === run.generation
+    const continuous = running && old?.state === 'running'
       && old.accepted === accepted && fresh(old.observedAt, now) && Number.isFinite(accepted);
     const workerless = running && run.activeAttemptCount === 0 && run.progress?.pending > 0;
     const row = { state: run.state, generation: run.generation, accepted, infra, observedAt: queue._readAt,
-      since: continuous ? old.since : time, infraBase: continuous ? old.infraBase : infra,
+      since: continuous ? old.since : time, infraBase: continuous && old.generation === run.generation ? old.infraBase : infra,
       workerlessSince: workerless ? continuous && old.workerlessSince || time : null, alerted: false };
     const stalledWithoutWorkers = row.workerlessSince && now - at(row.workerlessSince) >= stallMs;
     row.alerted = !!(continuous && now - at(row.since) >= stallMs && (infra - row.infraBase >= errorIncrease || stalledWithoutWorkers));
@@ -83,9 +83,15 @@ export function assessPool(previous, sample, { now = Date.now(), sourceGraceMs =
     if (row.alerted) attention.push({ kind: 'poolTask', id, subject: id, severity: 'warning', confirmed: true,
       detail: `已接受结果 ${accepted}/${run.progress?.expected ?? '?'}，连续 ${Math.floor((now - at(row.since)) / 60000)} 分钟未增加，${stalledWithoutWorkers ? `仍有 ${run.progress.pending} 局待执行，连续 ${Math.floor((now - at(row.workerlessSince)) / 60000)} 分钟没有活动 Attempt` : `期间基础设施失败局数增加 ${infra - row.infraBase}`}；需检查任务和资源是否应恢复或释放。`,
       signals: { noProgressWithErrors: true } });
-    else if (old?.alerted && (accepted > old.accepted || run.generation !== old.generation || !running)) recovered.push({ kind: 'poolTask', id });
-    // An observation gap is not evidence that an incident recovered.
-    else if (old?.alerted) row.alerted = true;
+    else if (old?.alerted && (accepted > old.accepted || ['completed', 'stopped', 'cancelled', 'failed'].includes(run.state))) recovered.push({ kind: 'poolTask', id });
+    // Requeue, restarted attempts and observation gaps keep the original issue
+    // visible until new accepted work or an explicit terminal disposition.
+    else if (old?.alerted) {
+      row.alerted = true;
+      attention.push({ kind: 'poolTask', id, subject: id, severity: 'warning', confirmed: true,
+        detail: `已接受结果 ${accepted}/${run.progress?.expected ?? '?'}；原停滞问题尚未取得新增有效结果，当前状态 ${run.state}，活动 Attempt ${run.activeAttemptCount ?? '未知'}。继续核验原任务，未将重试或重新排队视为恢复。`,
+        signals: { noProgressWithErrors: false, recovering: true } });
+    }
   }
   for (const [id, old] of Object.entries(previous?.tasks || {})) if (!tasks[id] && old.alerted) tasks[id] = old;
   for (const run of sample.terminals || []) if (['completed', 'stopped', 'cancelled', 'failed'].includes(run.state)) {
