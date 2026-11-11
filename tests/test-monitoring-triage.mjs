@@ -104,9 +104,11 @@ test('shared account outage waits for fresh availability and never treats accoun
   f.snapshot.accountContinuity = { remainingPercent: 0, backupCount: 0, observedAt: new Date(now).toISOString() };
   assert.equal((await triage(f)).code, 'codex_account_unavailable');
   f.snapshot.accountContinuity.remainingPercent = 60;
+  assert.equal((await triage(f)).disposition, 'wait', 'positive quota alone does not prove execution availability');
+  f.snapshot.accountContinuity.executionAvailable = true;
   assert.equal((await triage(f)).code, 'task_acceptance_required');
   f.snapshot.accountContinuity.observedAt = new Date(now - 180000).toISOString();
   assert.equal((await triage(f)).disposition, 'wait', 'stale healthy quota cannot release the dependency');
-  f.snapshot.accountContinuity = { remainingPercent: 0, autoSwitch: true, backupCount: 1, observedAt: new Date(now).toISOString() };
+  f.snapshot.accountContinuity = { remainingPercent: 0, autoSwitch: true, backupCount: 1, executionAvailable: true, observedAt: new Date(now).toISOString() };
   assert.equal((await triage(f)).disposition, 'agent');
 });

@@ -13,10 +13,10 @@ test('normal depleted backups do not alert; readiness uses only fresh authorized
   assert.equal(state.status, 'preparing'); assert.equal(state.backupCount, 0); assert.deepEqual(continuityAttention(state), []);
   x.accounts[0] = account('a', 20); state = accountContinuity(x, now);
   assert.equal(state.status, 'no_backup'); assert.equal(continuityAttention(state)[0].action.requiresConfirmation, true);
-  x.accounts.push(account('b', 80, 61000)); assert.equal(accountContinuity(x, now).backupCount, 0);
+  x.accounts.push(account('d', 80, 61000)); assert.equal(accountContinuity(x, now).backupCount, 0);
   x.accounts.at(-1).usage.checkedAt = new Date(now).toISOString(); x.accounts.at(-1).identityId = 'a';
   assert.equal(accountContinuity(x, now).backupCount, 0);
-  x.accounts.at(-1).identityId = 'b'; assert.equal(accountContinuity(x, now).status, 'ready');
+  x.accounts.at(-1).identityId = 'd'; assert.equal(accountContinuity(x, now).status, 'ready');
   x.accounts[0] = account('a', 10); assert.equal(accountContinuity(x, now).status, 'switch_pending');
 });
 test('unknown account readings and disabled switching are distinct from exhaustion', () => {
@@ -24,6 +24,24 @@ test('unknown account readings and disabled switching are distinct from exhausti
   assert.equal(accountContinuity(x, now).status, 'unknown');
   x.accounts[0] = account('a', 20); x.autoSwitch = false;
   assert.equal(accountContinuity(x, now).status, 'switch_disabled');
+});
+test('positive quota cannot release a shared outage during cooldown, alias exhaustion or disabled switching', () => {
+  const x = runtime([account('a', 70), account('b', 80)]);
+  x.accounts[0].cooldownUntil = now + 60000;
+  x.accounts[1].cooldownUntil = now + 60000;
+  assert.equal(accountContinuity(x, now).executionAvailable, false);
+  assert.equal(accountContinuity(x, now).backupCount, 0);
+  delete x.accounts[1].cooldownUntil;
+  assert.equal(accountContinuity(x, now).executionAvailable, true);
+  x.autoSwitch = false;
+  assert.equal(accountContinuity(x, now).executionAvailable, false);
+  x.autoSwitch = true;
+  x.accounts.push({ ...account('b-alias', 0), identityId: 'b' });
+  assert.equal(accountContinuity(x, now).executionAvailable, false);
+  delete x.accounts[0].cooldownUntil;
+  assert.equal(accountContinuity(x, now).executionAvailable, true);
+  x.accounts[0].usage.status = 'signed_out';
+  assert.equal(accountContinuity(x, now).executionAvailable, false);
 });
 test('fleet depletion does not become actionable risk without local continuity evidence', () => {
   const result = analyzeResources({ accounts: [{ status: 'exhausted', active: false, label: 'Remote' }],
@@ -62,11 +80,17 @@ test('fixed diagnosis preserves unknown and paused resources, scopes IDs and exc
   assert.deepEqual(report.coverage, snapshot.coverage);
 });
 
-test('diagnosis CLI emits parseable JSON without starting recovery or accepting mutation flags', async () => {
+test('diagnosis CLI emits parseable JSON without starting recovery or accepting mutation flags', async t => {
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
   const exec = promisify(execFile);
-  const { stdout } = await exec(process.execPath, ['scripts/monitoring-diagnose.mjs', '--kind', 'service'], { timeout: 10000, maxBuffer: 1024 * 1024 });
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const config = await mkdtemp(join(tmpdir(), 'monitoring-cli-test-'));
+  t.after(() => rm(config, { recursive: true, force: true }));
+  const env = { ...process.env, REMOTELAB_CONFIG_DIR: config };
+  const { stdout } = await exec(process.execPath, ['scripts/monitoring-diagnose.mjs', '--kind', 'service'], { env, timeout: 10000, maxBuffer: 1024 * 1024 });
   const report = JSON.parse(stdout);
   assert.equal(report.mode, 'read_only');
   assert.ok(report.resources.every(item => item.kind === 'service'));

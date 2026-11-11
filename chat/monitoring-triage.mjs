@@ -142,8 +142,7 @@ export async function triageMonitoringIncident({ item, snapshot, config = {}, ta
     const continuity = snapshot.accountContinuity;
     const observedAt = stamp(continuity?.observedAt);
     const fresh = observedAt && now - observedAt <= 120000 && observedAt <= now + 5000;
-    const available = fresh && (continuity.remainingPercent > 0
-      || continuity.autoSwitch && continuity.backupCount > 0);
+    const available = fresh && continuity.executionAvailable === true;
     if (!available) return decision('wait', dependency.code, dependency.summary,
       { identity: 'local-codex', observedAt: continuity?.observedAt || null, fresh: Boolean(fresh) });
     // Dependency recovery permits task-specific acceptance; it does not prove

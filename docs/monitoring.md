@@ -1344,7 +1344,9 @@ The fixed gate returns `resolved`, `cancelled`, `wait`, `blocked` or `agent`:
 - Codex account-unavailable errors wait on the existing account observer without
   starting another model repair. A quota sample no older than two minutes must
   show a usable current account or an enabled available backup before task-specific
-  acceptance resumes. Account recovery alone never closes the business incident.
+  acceptance resumes. Positive quota alone is insufficient: cooldown, exhausted
+  identity aliases, signed-out accounts and disabled switching remain unavailable.
+  Account recovery alone never closes the business incident.
 - Known SSH authentication and host-identity failures retain one actionable external
   dependency. Feishu quota rejection remains blocked on the affected interface.
   Explicit missing Feishu scopes can use one Agent for the existing authorized
