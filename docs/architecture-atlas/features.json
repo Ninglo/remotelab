@@ -109,7 +109,7 @@
             "chat/runs.mjs",
             "lib/run-state.mjs",
             "lib/connector-inbox.mjs",
-            "chat/byte-budget-cache.mjs",
+            "lib/byte-budget-cache.mjs",
             "chat/fs-utils.mjs",
             "chat-server.mjs",
             "chat/history.mjs",

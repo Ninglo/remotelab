@@ -17,6 +17,20 @@ syncBuiltinESMExports();
 try {
   const { createRecordStore, writeDurableJson } = await import('../lib/durable-records.mjs');
   const store = createRecordStore(root), otherWriter = createRecordStore(root);
+  const bounded = createRecordStore(join(root, 'bounded'), { maxCacheBytes: 100000 });
+  for (let i = 0; i < 12; i++) {
+    const id = i.toString(16).padStart(24, '0');
+    await bounded.mutate(id, () => ({ sequence: i, body: 'x'.repeat(20000) }));
+    await bounded.archive(id);
+    assert.equal((await bounded.get(id)).body.length, 20000);
+    assert.ok(bounded.cacheStats().estimatedBytes <= 100000);
+  }
+  assert.ok(bounded.cacheStats().entries <= 2, 'scanning large archives cannot retain every record');
+  assert.equal((await bounded.get('0'.repeat(24))).sequence, 0, 'eviction preserves archive readability');
+  const huge = 'f'.repeat(24);
+  await bounded.mutate(huge, () => ({ sequence: 99, body: 'x'.repeat(100000) }));
+  assert.equal((await bounded.get(huge)).body.length, 100000, 'oversized records remain readable');
+  assert.ok(bounded.cacheStats().estimatedBytes <= 100000);
   const key = 'a'.repeat(24);
   await store.mutate(key, () => ({ sequence: 1, nested: { state: 'original' }, body: 'large string '.repeat(100_000) }));
   const first = await store.get(key);

@@ -1,4 +1,4 @@
-import { ByteBudgetCache, cacheBudgetBytes } from './byte-budget-cache.mjs';
+import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs';
 import { readFile, stat } from 'fs/promises';
 import { withFileLock } from '../lib/file-lock.mjs';
 import { join } from 'path';

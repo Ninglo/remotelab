@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ByteBudgetCache } from '../chat/byte-budget-cache.mjs';
+import { ByteBudgetCache } from '../lib/byte-budget-cache.mjs';
 const cache = new ByteBudgetCache(400, text => text.length * 2);
 cache.set('a', 'a'.repeat(20)); cache.set('b', 'b'.repeat(20));
 assert.equal(cache.peek('a').length, 20);

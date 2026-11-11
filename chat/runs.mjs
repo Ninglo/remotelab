@@ -1,4 +1,4 @@
-import { ByteBudgetCache, cacheBudgetBytes } from './byte-budget-cache.mjs';
+import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs';
 import { readRunState } from '../lib/run-state.mjs';
 import { observeRunUsage } from './usage-event-projection.mjs';
 import { requests } from './requests.mjs';

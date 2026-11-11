@@ -82,6 +82,7 @@
 
 - connector 保持默认堆上限。core 当前的 8 GB 上限保留，但下次修改前要先测量工作集。
 - 每类按条读写的状态都需要一个与记录数无关的内存回归测试：在固定堆上限下，用当前线上规模 5 倍的数据跑完整流程。
+- `createRecordStore` 的读缓存同时受原有 4096 条上限和估算字节预算约束，默认每个 store 128 MiB，可由 `REMOTELAB_RECORD_CACHE_MIB` 调整。与历史／Run 缓存复用 `lib/byte-budget-cache.mjs`；大于预算的单条记录仍可正常读取，但不常驻缓存。原 inode/mtime/ctime/size 失效检查和调用方副本语义保留。预算是保留量估算，不等于 V8 精确堆占用；不作为此前 OOM 根因已确认的证据。
 
 ### E. 告警（原则 6）
 
