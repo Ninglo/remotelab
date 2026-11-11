@@ -914,7 +914,8 @@ admission remains separate. Group cards describe default reception; mentioning
 the Bot does not create a participation card.
 
 Threads retain independent execution and delivery revisions: group pause does
-not revoke already accepted thread replies. A topic stop still fences its old
+not revoke already accepted thread replies, including a discussion invited after
+its own topic mute. A topic stop still fences its old
 results, and an old delivery acknowledgement cannot undo that stop or re-invite
 a discussion after a newer group pause. Topic identity determines ownership;
 cancellation matches that conversation's Requests rather than unrelated work in

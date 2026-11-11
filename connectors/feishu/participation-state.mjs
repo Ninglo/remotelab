@@ -23,7 +23,8 @@ export const participationAllowsMessage = (state, summary) => (state.receptionMo
 
 // Group pause changes default reception, not the delivery rights of accepted work.
 export const participationAllowsDelivery = (state, summary) => state.mode === 'active'
-  || state.discussionInvited === true || state.invitedMessages?.includes(summary.messageId) === true;
+  || Boolean(state.discussionInvitation && state.discussionInvitation.topicPauseEpoch === state.deliveryEpochFloor)
+  || state.invitedMessages?.includes(summary.messageId) === true;
 
 export function participationEnabled(runtime, summary) {
   if (!summary?.chatId || isFeishuTopicGroup(summary) || ['p2p', 'private'].includes(summary.chatType)) return false;

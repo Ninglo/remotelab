@@ -226,6 +226,15 @@ try {
       });
       assert.equal(effects.runs.length, beforeMetadata + 1,
         'metadata fallback cannot apply a mainline snapshot to an independent topic');
+      await send('topic-stop-before-parent-test', '/mute');
+      await send('topic-invite-before-parent-test', '@_bot 继续', { mentions: [{ openId: 'bot' }] });
+      await send('accepted-discussion-followup', '继续讨论');
+      const acceptedFollowup = effects.runs.at(-1);
+      const parent = { ...base, threadId: '', rootId: '', topicId: '', chatMode: 'group', conversationKind: 'main' };
+      await runtime.participation.change(parent, 'paused', { controlId: 'pause-parent-after-followup' });
+      assert.equal(await deliverAccepted(acceptedFollowup, 'accepted-before-parent-pause'), true,
+        'group default pause preserves accepted replies even when this topic was invited out of its own mute');
+      assert.equal((await send('new-after-parent-pause', '继续')).reason, 'participation_paused');
     }
   }
   // Exercise the real outbox refinement after the opening learns a provider
