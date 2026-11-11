@@ -13,7 +13,7 @@ export function buildGroupConfigurationCard(record, view) {
     ? (view.responseMode === 'mention_only' ? '点名回应' : '按需回应（控制关闭）') : states[mode];
   const elements = [md(view.nativeTopicGroup ? '本群每个话题独立承接工作。' : view.participationControls === false && view.responseMode === 'mention_only'
     ? '沿用本群的点名回应设置。' : { active: '持续接收群消息，按讨论需要参与。',
-    paused: '普通群主线消息不进入 Session；@我可单次回应。各话题独立接收，不受此开关影响。' }[mode])];
+    paused: '群主线和话题内的普通消息均不进入 Session；每条消息需 @我才回应，之后仍保持暂停。' }[mode])];
   if (record.cardRenewalNotice) elements.unshift(md(record.cardRenewalNotice));
   if (view.participationControls !== false) elements.push({ tag: 'column_set', columns: Object.keys(states).map(state => ({
     tag: 'column', width: 'weighted', weight: 1, elements: [{ tag: 'button',

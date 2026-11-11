@@ -886,7 +886,7 @@ a paused scope admits that one input and its reply without resuming the scope.
 | Explicit `responseMode: "mention_only"` without a participation mode | Preserve invitation-only admission for new conversations |
 | `participationControls: false` | Preserve the disabled mainline control boundary; thread mentions and continuation still work |
 | Explicit stored listening/paused state, or conversation mute | Preserve the scope's opt-out as paused; no observation intake |
-| Thread state inherited from its group (`modeOverride: false`) | Receive normally; only that thread's own mute pauses it |
+| Thread state inherited from its group (`modeOverride: false`) | Keep independent thread execution state; group pause still requires a Bot mention on each new input |
 | Suppressed/withdrawn status card | Retain suppression |
 
 Modern controlled groups and topics use optional asynchronous Jev social feedback
@@ -896,13 +896,19 @@ no longer require a reaction or select content/work placement. The old ambient
 alias is normalized by the connector's default policy; test/embedded configurations
 without that default keep their explicit compatibility settings.
 
-Threads have independent reception and delivery revisions. An explicit Bot
-mention admits a request without a group configuration change or participation
-card; after the conversation binds, human follow-ups continue in the same Session
-without another mention. Muting or resuming the mainline never changes a thread,
-stops its work, or revokes its replies. Muting a thread affects only that thread.
-Topic identity determines ownership; cancellation matches that conversation's
-Requests rather than cancelling unrelated work in a shared Session.
+In ordinary groups, group pause applies to new messages on both the mainline
+and its threads. Each thread input must explicitly mention this Bot while the
+group is paused, even if the thread is already bound or explicitly active.
+A mention admits that input without resuming the group or publishing a
+participation card; subsequent unmentioned replies remain blocked before model
+submission, attachment processing and social feedback. When group reception is
+active, unmuted threads continue in the same Session without another mention.
+
+Threads retain independent execution and delivery revisions: pausing the group
+does not cancel already accepted thread work or revoke its replies. A thread's
+own mute remains in force after group reception resumes. Topic identity
+determines ownership; cancellation matches that conversation's Requests rather
+than cancelling unrelated work in a shared Session.
 
 Native topic groups and ordinary groups have different participation rules.
 In a native topic group, human messages enter their topic Session by default and

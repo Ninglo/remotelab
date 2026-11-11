@@ -80,11 +80,30 @@ try {
   const beforeCancel = cancelled.length;
   await controller.change(main, 'paused', { controlId: 'mute-main' });
   assert.equal(cancelled.length - beforeCancel, 1, 'mainline mute never cancels child topics');
-  assert.equal((await controller.state(base)).mode, 'active');
-  await handleMessage(runtime, { ...base, messageId: 'followup' }, 'test', helpers);
+  const threadBeforePause = await controller.state(base);
+  assert.equal(threadBeforePause.mode, 'active', 'parent pause preserves the thread execution state');
+  const decisionsBeforePause = decisions.length;
+  for (const extra of [
+    { messageId: 'followup', mentions: [] },
+    { messageId: 'colleague-followup' },
+    { messageId: 'file-followup', messageType: 'file' },
+    { messageId: 'legacy-thread-followup', chatMode: 'thread', threadId: '', topicId: '' },
+  ]) {
+    const result = await handleMessage(runtime, { ...base, ...extra }, 'test', helpers);
+    assert.equal(result.reason, 'participation_paused', extra.messageId);
+  }
   assert.equal(observed.length, 0);
-  assert.equal(submitted.length, 2, 'an existing thread continues while the mainline is paused');
+  assert.equal(submitted.length, 1, 'paused group blocks unmentioned replies in existing threads');
+  assert.equal(decisions.length, decisionsBeforePause, 'blocked replies never trigger Jev feedback');
   await handleMessage(runtime, { ...base, messageId: 'invite', mentions: [{ openId: 'bot' }] }, 'test', helpers);
+  assert.equal(submitted.length, 2, 'an explicit Bot mention is admitted');
+  assert.equal((await controller.state(main)).mode, 'paused', 'mention does not resume the group');
+  const afterMention = await handleMessage(runtime, { ...base, messageId: 'after-invite', mentions: [] }, 'test', helpers);
+  assert.equal(afterMention.reason, 'participation_paused', 'one mention cannot unlock later thread messages');
+  assert.equal((await controller.state(base)).epoch, threadBeforePause.epoch, 'parent intake gate preserves accepted thread replies');
+  await controller.change(base, 'active', { controlId: 'explicit-thread-active' });
+  const explicitActive = await handleMessage(runtime, { ...base, messageId: 'explicit-active-followup' }, 'test', helpers);
+  assert.equal(explicitActive.reason, 'participation_paused', 'an active thread override cannot bypass group pause');
   await Promise.all(runtime.jevReactionJobs.values());
   assert.equal(submitted.at(-1).participationOnce, undefined, 'thread @ is a normal request');
   assert.equal((await controller.state(base)).mode, 'active');
@@ -96,9 +115,17 @@ try {
   const restored = createParticipationController(runtime);
   assert.equal((await restored.state(base)).mode, 'paused', 'explicit topic mute survives restart');
   assert.equal((await restored.state(main)).mode, 'paused');
+  runtime.participation = restored;
+  const afterRestart = await handleMessage(runtime, { ...base, threadId: 't2', messageId: 'after-restart' }, 'test', helpers);
+  assert.equal(afterRestart.reason, 'participation_paused', 'group gate survives controller restart');
+  runtime.participation = controller;
   await controller.change(main, 'active', { controlId: 'resume-main' });
   assert.equal((await controller.state(base)).mode, 'paused', 'resuming the mainline does not resume a muted thread');
+  const stillMuted = await handleMessage(runtime, { ...base, messageId: 'still-thread-muted' }, 'test', helpers);
+  assert.equal(stillMuted.reason, 'participation_paused');
   await controller.change(base, 'active', { controlId: 'topic-resume' });
+  const resumed = await handleMessage(runtime, { ...base, messageId: 'resumed-thread' }, 'test', helpers);
+  assert.equal(resumed.sessionId, 'topic', 'group and thread resume restore normal continuation');
 
   const legacyTopic = { ...base, threadId: 'legacy-paused', rootId: 'legacy-root' };
   const { createRecordStore } = await import('../lib/durable-records.mjs');
@@ -124,6 +151,8 @@ try {
   const beforeFirstMention = submitted.length;
   const freshPausedGroupTopic = { ...base, chatId: 'paused', threadId: 'new-paused-group-thread',
     messageId: 'first-mention', mentions: [{ openId: 'bot' }] };
+  const notInvited = await handleMessage(runtime, { ...freshPausedGroupTopic, messageId: 'before-first-mention', mentions: [] }, 'test', helpers);
+  assert.equal(notInvited.reason, 'participation_paused', 'configured group pause also gates new threads');
   const first = await handleMessage(runtime, freshPausedGroupTopic, 'test', helpers);
   assert.equal(first.sessionId, 'topic');
   assert.equal(submitted.length, beforeFirstMention + 1);
@@ -132,6 +161,10 @@ try {
     'a first thread mention does not create a participation card');
   const resumedController = createParticipationController(runtime);
   assert.equal((await resumedController.state(freshPausedGroupTopic)).mode, 'active');
+  runtime.participation = resumedController;
+  const afterFreshMention = await handleMessage(runtime, { ...freshPausedGroupTopic, messageId: 'fresh-after-invite', mentions: [] }, 'test', helpers);
+  assert.equal(afterFreshMention.reason, 'participation_paused', 'first mention and restart do not unlock a paused group');
+  runtime.participation = controller;
 
   normalizeFeishuGroups({ work: { participationMode: 'active', jevReactions: true, reactionCandidates: [] } });
   assert.throws(() => normalizeFeishuGroups({ work: { reactionCandidates: ['INVALID'] } }), /reactionCandidates/);

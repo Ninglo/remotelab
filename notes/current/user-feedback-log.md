@@ -1,5 +1,12 @@
 # Shared User Feedback Log
 
+### 2026-11-11 — Group pause also gates ordinary-group threads
+
+- Feedback: a paused conversation group still received unsolicited Bot replies to human-to-human thread messages without a Bot mention.
+- Correction: this supersedes the 2026-10-30 thread reception exemption below. In an ordinary paused group, each new thread input must mention this Bot; a previous invitation, existing Session or active thread override does not enable later unmentioned replies.
+- Change: the participation intake boundary checks the current parent group pause before processing thread inputs. Thread execution/delivery revisions remain independent, so accepted work can finish. Native topic-group admission retains its own policy. Group cards and the setup guide describe the same rule.
+- Verification: isolated connector regressions cover existing/new threads, colleague mentions, files, legacy thread addresses, invitation followed by silence, restart, explicit thread state and resume. Service deployment and natural traffic are separate checks.
+
 ### 2026-10-30 — Treat thread mentions as requests and remove listening
 
 - Feedback: mentioning the Bot inside a thread is sufficient to request a reply. Thread reception must be independent of the group mainline, with only an explicit thread mute stopping it. Listening adds no useful interaction state.

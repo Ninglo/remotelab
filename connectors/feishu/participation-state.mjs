@@ -45,9 +45,9 @@ export function parseParticipationText(text) {
 
 export function buildParticipationCard(record, configuration = null) {
   if (configuration && !record.source.topicId) return buildGroupConfigurationCard(record, configuration);
-  const scope = record.source.topicId ? '这个话题' : '本群主讨论';
-  const detail = { active: record.source.topicId ? '话题消息继续交给 Agent；仅暂停当前话题后停止接收。'
-    : '持续接收群主线消息，按讨论需要参与。',
+  const scope = record.source.topicId ? '这个话题' : '本群';
+  const detail = { active: record.source.topicId ? '群和当前话题均开启接收时，话题消息继续交给 Agent。'
+    : '持续接收群消息，按讨论需要参与。',
     paused: '普通消息不进入 Session；@我可单次邀请，之后仍保持暂停。' }[record.mode];
   const actions = [...MODES].map(mode => ({ tag: 'button', type: mode === record.mode ? 'primary' : 'default',
     text: { tag: 'plain_text', content: LABELS[mode] }, value: {
@@ -61,7 +61,7 @@ export function buildParticipationCard(record, configuration = null) {
     { tag: 'div', text: { tag: 'lark_md', content: `**${scope} · 直到明确切换**\n${detail}` } },
     ...(record.stopPending ? [{ tag: 'div', text: { tag: 'plain_text', content: '正在停止当前任务。' } }] : []),
     { tag: 'action', actions },
-    { tag: 'note', elements: [{ tag: 'plain_text', content: '/mute 暂停当前范围，/unmute 恢复接收。群主线与各话题独立。' }] },
+    { tag: 'note', elements: [{ tag: 'plain_text', content: '/mute 暂停当前范围，/unmute 恢复接收。群暂停时，话题内也需逐条 @我。' }] },
   ] };
 }
 
@@ -313,12 +313,20 @@ export function createParticipationController(runtime, { resolveSession, cancelS
   async function intake(summary, snapshot = null) {
     if (!participationEnabled(runtime, summary) || ['app', 'bot'].includes(summary.sender?.senderType)) return null;
     const record = await state(summary);
+    const addressed = mentionsFeishuBot(runtime, summary);
+    // Group pause gates every new thread input, including already bound or
+    // explicitly active threads. Keep thread epochs/delivery independent so
+    // accepted work can finish and a mention never resumes the group.
+    if (record.source.topicId && !addressed) {
+      const parent = await state({ ...summary, chatMode: 'group', groupMessageType: 'group',
+        conversationKind: 'main', threadId: '', topicId: '', rootId: '', parentId: '', messageId: '' });
+      if (parent.mode === 'paused') return { ignored: true, reason: 'participation_paused' };
+    }
     if (record.processedControls?.includes(summary.messageId)) {
       void publish(record).catch(error => console.warn(`[feishu-participation] mode card: ${error.message}`));
       return { participationControl: true, duplicate: true };
     }
     const others = (summary.mentions || []).some(x => x.openId && x.openId !== runtime.botIdentity?.openId);
-    const addressed = mentionsFeishuBot(runtime, summary);
     const mode = !others || addressed ? parseParticipationText(summary.messageText || summary.textPreview) : null;
     if (mode) { await change(summary, mode, { waitForCard: false }); return { participationControl: true, mode }; }
     const at = Number(summary.createTime);
