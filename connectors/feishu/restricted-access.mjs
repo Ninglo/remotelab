@@ -10,17 +10,19 @@ export function normalizeRoleAccess(value) {
       || !Array.isArray(value.hrOpenIds) || !value.hrOpenIds.length
       || !Array.isArray(value.interviewerOpenIds)
       || (value.collaboratorOpenIds !== undefined && !Array.isArray(value.collaboratorOpenIds))
+      || (value.recruitingInternOpenIds !== undefined && !Array.isArray(value.recruitingInternOpenIds))
       || !trim(value.endpoint).startsWith('https://') || !trim(value.credentialsPath).startsWith('/')) {
     throw new Error('roles policy requires app, tenant, exact role IDs, HTTPS endpoint and credentialsPath');
   }
   const collaboratorOpenIds = value.collaboratorOpenIds || [];
-  const ids = [...value.hrOpenIds, ...collaboratorOpenIds, ...value.interviewerOpenIds];
+  const recruitingInternOpenIds = value.recruitingInternOpenIds || [];
+  const ids = [...value.hrOpenIds, ...collaboratorOpenIds, ...value.interviewerOpenIds, ...recruitingInternOpenIds];
   if (ids.some(id => !/^ou_[a-zA-Z0-9]+$/.test(id)) || new Set(ids).size !== ids.length) {
     throw new Error('roles policy has invalid or overlapping identities');
   }
   return { appId: value.appId, tenantKey: value.tenantKey,
     hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
-    interviewerOpenIds: [...value.interviewerOpenIds],
+    interviewerOpenIds: [...value.interviewerOpenIds], recruitingInternOpenIds: [...recruitingInternOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };
 }
 
@@ -34,6 +36,7 @@ export function feishuAccessRole(policy, summary) {
       || sender?.senderType !== 'user' || sender?.tenantKey !== config.tenantKey) return 'deny';
   if (config.hrOpenIds.includes(sender.openId)) return 'hr';
   if (config.collaboratorOpenIds?.includes(sender.openId)) return 'collaborator';
+  if (config.recruitingInternOpenIds?.includes(sender.openId)) return 'recruiting_intern';
   if (config.interviewerOpenIds.includes(sender.openId)) return 'interviewer';
   return 'deny';
 }
@@ -89,7 +92,8 @@ function resolvedQuery(result, original) {
 }
 
 export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store, sourceRouteId } = {}) {
-  if (feishuAccessRole(policy, summary) !== 'interviewer') throw new Error('Interviewer identity required');
+  const role = feishuAccessRole(policy, summary);
+  if (!['interviewer', 'recruiting_intern'].includes(role)) throw new Error('Restricted recruiting identity required');
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
     return null;
   }
@@ -99,7 +103,7 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
   const denied = await evaluateRequestAccess({ sessionId: 'interviewer:' + summary.chatId,
     text: summary.messageText, options: { requestId: 'feishu:' + summary.messageId,
-      feishuConnectorAuthenticated: true, usageSurface: 'feishu-restricted-interview',
+      restrictedRecruiting: role === 'recruiting_intern', feishuConnectorAuthenticated: true, usageSurface: 'feishu-restricted-interview',
       sourceContext: { connector: 'feishu', sourceRouteId,
         tenantKey: summary.tenantKey, messageId: summary.messageId, chatType: summary.chatType, sender: summary.sender } } });
   if (denied?.blocked) return denied.reply;

@@ -13,8 +13,8 @@ const storeFor = runtime => runtime.roleDeliveryContexts ||= createRecordStore(
 export async function recordRoleDeliveryContext(runtime, summary, { responseId, sessionId = 'outbound', target = summary }) {
   if (runtime.config.accessPolicy?.mode !== 'roles') return;
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
-  if (!['hr', 'collaborator', 'interviewer'].includes(role) || !responseId || !summary.messageId
-      || (role === 'interviewer' && sessionId !== 'outbound')) throw new Error('Invalid role delivery context');
+  if (!['hr', 'collaborator', 'interviewer', 'recruiting_intern'].includes(role) || !responseId || !summary.messageId
+      || (['interviewer', 'recruiting_intern'].includes(role) && sessionId !== 'outbound')) throw new Error('Invalid role delivery context');
   const context = { responseId, sessionId, sourceRouteId: runtime.config.sourceRouteId || 'default',
     target: normalizeConversationTarget(target), summary: {
       appId: summary.appId, tenantKey: summary.tenantKey, sender: {
@@ -43,7 +43,7 @@ export async function authorizeRoleDelivery(runtime, delivery) {
   const role = feishuAccessRole(runtime.config.accessPolicy, context.summary);
   if (runtime.config.appId !== context.summary.appId) return null;
   if (['hr', 'collaborator'].includes(role)) return { role, summary: context.summary };
-  if (role !== 'interviewer' || delivery.sessionId !== 'outbound' || delivery.attachment
+  if (!['interviewer', 'recruiting_intern'].includes(role) || delivery.sessionId !== 'outbound' || delivery.attachment
       || delivery.kind !== 'content'
       || canonicalJson(context.target) !== canonicalJson(normalizeConversationTarget(delivery.target))) return null;
   return { role, summary: context.summary };

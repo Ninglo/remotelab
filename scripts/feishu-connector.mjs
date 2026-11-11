@@ -669,7 +669,7 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
-  const allowed = role === 'interviewer' || await isAllowedByPolicy(runtime.config.accessPolicy, summary);
+  const allowed = ['interviewer', 'recruiting_intern'].includes(role) || await isAllowedByPolicy(runtime.config.accessPolicy, summary);
   const linkedHumanMessage = allowed
     && trimString(summary?.sender?.senderType).toLowerCase() === 'user'
     && runtime.config.projectLinks?.some(link => link.discussionChatId === summary.chatId
@@ -1541,7 +1541,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         if (!resolved.response.ok) throw new Error('Unable to suppress unauthorized delivery');
         return resolved.json?.delivery;
     }
-    if (authorization.role === 'interviewer') {
+    if (['interviewer', 'recruiting_intern'].includes(authorization.role)) {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
       try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary,
@@ -1926,7 +1926,7 @@ async function handleFeishuReactionFeedback(runtime, summary, helpers = {}) {
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
   if (role === 'deny') return { blocked: true };
-  if (role === 'interviewer') {
+  if (['interviewer', 'recruiting_intern'].includes(role)) {
     const enqueue = helpers.queueFeishuReply || queueFeishuReply;
     try {
       const text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(runtime.config.accessPolicy, summary,
@@ -2233,7 +2233,7 @@ function initializeInbox(runtime) {
       if (entry.admissionFailure) return notifyFeishuAdmissionFailure(runtime, entry);
       if (entry.summary.sourceKind === 'personal_chat_entered') return runtime.personalSettings.publish(entry.summary, { automatic: true });
       if (entry.summary.sourceKind === 'bot_added') return onboardFeishuGroup(runtime, entry.summary);
-      if (feishuAccessRole(runtime.config.accessPolicy, entry.summary) === 'interviewer'
+      if (['interviewer', 'recruiting_intern'].includes(feishuAccessRole(runtime.config.accessPolicy, entry.summary))
           && entry.summary.eventType !== 'im.message.receive_v1') return { blocked: true };
       if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
         return handleFeishuReactionFeedback(runtime, entry.summary);

@@ -91,3 +91,7 @@ and Feishu restricted-access/role-delivery/interview-conversation suites. These
 use synthetic temporary state and never send real alerts or invoke a model.
 V2 regression: `node scripts/run-with-clean-instance-env.mjs node
 tests/test-request-content-operation.mjs`.
+
+### Restricted recruiting intern queries
+
+The authenticated Feishu connector marks its independently configured `recruiting_intern` route with `restrictedRecruiting`. This only prevents the legacy limited-interviewer handler from consuming the query; protected-content and permission-change checks still run. It grants no confidential-HR membership and never admits a request into the general executor. The signed TalentPulse backend performs candidate-responsibility and active-membership checks before selecting materials, and the connector repeats that query at delivery. Do not set this option for general chat or use it as an authorization result.

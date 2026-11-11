@@ -12,7 +12,7 @@ const { processSourceDeliveryOnce } = await import('../scripts/feishu-connector.
 const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery, failSourceDelivery,
   resolveSourceDelivery, getSourceDelivery } = await import('../chat/source-deliveries.mjs');
 const policy = { mode: 'roles', roles: { appId: 'cli_test', tenantKey: 'tenant',
-  hrOpenIds: ['ou_hr'], collaboratorOpenIds: ['ou_collaborator'], interviewerOpenIds: ['ou_ge'] } };
+  hrOpenIds: ['ou_hr'], collaboratorOpenIds: ['ou_collaborator'], interviewerOpenIds: ['ou_ge'], recruitingInternOpenIds: ['ou_intern'] } };
 const config = { accessPolicy: policy, appId: 'cli_test', sourceRouteId: 'test', storageDir: join(home, 'connector') };
 const event = { appId: 'cli_test', tenantKey: 'tenant', chatId: 'oc_ge', chatType: 'p2p',
   messageId: 'om_ge', messageType: 'post', eventType: 'im.message.receive_v1', messageText: '4. 提问 Alice | 下一轮应追问什么？',
@@ -95,5 +95,12 @@ try {
     assert.equal((await getSourceDelivery(pending.id)).state, failed ? 'delivered' : 'cancelled');
     assert.equal(sends, failed ? 2 : 1, 'no stale data on revoked or failed queries');
   }
+  const intern={...event,messageId:'om_intern',chatId:'oc_intern',sender:{...event.sender,openId:'ou_intern'}};
+  await recordRoleDeliveryContext(runtime(),intern,{responseId:'feishu:om_intern'});
+  const internReply=await enqueueSourceDelivery({responseId:'feishu:om_intern',text:'stale',sourceDelivery:sourceDelivery(intern)});
+  assert.equal((await authorizeRoleDelivery(runtime(),internReply)).role,'recruiting_intern');
+  assert.equal(await authorizeRoleDelivery({config:{...config,accessPolicy:{mode:'roles',roles:{...policy.roles,recruitingInternOpenIds:[]}}}},internReply),null);
+  await processSourceDeliveryOnce(runtime(),{...helpers,queryRestrictedInterview:async(p,s)=>{assert.equal(s.sender.openId,'ou_intern');return 'scoped intern data'},sendFeishuText:async(r,s,text)=>{assert.equal(s.chatId,'oc_intern');assert.equal(text,'scoped intern data');return {message_id:'intern_reply'}}});
+  assert.equal((await getSourceDelivery(internReply.id)).state,'delivered');
   console.log('PASS: real outbox round trip, restart, HR reply, scoped requery, tamper/revocation denial and legacy cancellation');
 } finally { await rm(home, { recursive: true, force: true }); }

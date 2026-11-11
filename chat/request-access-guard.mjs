@@ -69,7 +69,7 @@ async function contentOperationDecision(input, config, compiled, stateRoot, now)
     && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(entry =>
       entry.route === source.sourceRouteId && entry.tenant === source.tenantKey && entry.openId === source.sender.openId);
   const business = Boolean(config.interview && isLimitedInterviewQuestion(String(input.text || ''))
-    && (!allowed || businessActor) && !options.internalOperation && !options.deliveryOnly);
+    && (!allowed || businessActor) && !options.restrictedRecruiting && !options.internalOperation && !options.deliveryOnly);
   const automation = (config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
     && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()));
   const matched = !automation && intents.find(intent => !(intent.category === 'bypass'
@@ -144,7 +144,7 @@ export async function evaluateRequestAccess(input, {
       && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(actor =>
         actor.route === source.sourceRouteId && actor.tenant === source.tenantKey && actor.openId === source.sender.openId);
     const business = config.interview && isLimitedInterviewQuestion(String(input.text || ''))
-      && (!(allowed || connectorAllowed) || businessActor) && !maintenance
+      && (!(allowed || connectorAllowed) || businessActor) && !options.restrictedRecruiting && !maintenance
       && !options.internalOperation && !options.deliveryOnly;
     if ((allowed || connectorAllowed) && !privilegedBypass && !privateOnly && !business) return null;
     // Existing internal operations retain their scopes; scheduled exceptions are exact.

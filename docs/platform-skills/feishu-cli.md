@@ -185,3 +185,9 @@ another target, inherit `REMOTELAB_SESSION_ID`; an explicit alternative uses
 manual comment reply. The existing connector handles received comments and sends
 the final answer to the original comment. See [document comment routing](../feishu-document-bindings.md)
 for supported receipts, direct SDK registration, explicit bindings and failures.
+
+### Recruiting intern role
+
+`accessPolicy.roles.recruitingInternOpenIds` is separate from HR, collaborators, and interviewers. The lists must not overlap. A provider-authenticated intern may use the private restricted candidate query route; commands, callbacks and general RemoteLab execution remain unavailable. The backend maps the signed app/tenant/open ID to a website recruiting identity and checks current candidate responsibility before reading any material. Website admission alone does not enable assistant access.
+
+Outbound replies retain their original authenticated sender and exact private target. They re-query the backend at delivery, so reassignment or removal of the role prevents stale candidate content from being sent. Interns do not receive arbitrary attachments or generic outbox messages. Calendar OAuth is a separate per-person connection; never substitute another person's token.

@@ -14,10 +14,23 @@ try {
   const policy = { mode: 'roles', roles: normalizeRoleAccess({ appId: 'cli_test', tenantKey: 'tenant',
     hrOpenIds: ['ou_hr'], collaboratorOpenIds: ['ou_collaborator'], interviewerOpenIds: ['ou_interviewer'],
     endpoint: 'https://example.invalid/openapi/interviews/query', credentialsPath }) };
+  policy.roles.recruitingInternOpenIds = ['ou_intern'];
   const event = { appId: 'cli_test', tenantKey: 'tenant', chatType: 'p2p', messageType: 'text',
     eventType: 'im.message.receive_v1', messageId: 'om_test', messageText: '我的候选人',
     sender: { openId: 'ou_interviewer', senderType: 'user', tenantKey: 'tenant' } };
   assert.equal(feishuAccessRole(policy, event), 'interviewer');
+  const intern = { ...event, sender: { ...event.sender, openId: 'ou_intern' } };
+  assert.equal(feishuAccessRole(policy, intern), 'recruiting_intern');
+  assert.throws(() => requireFullFeishuAccess(policy, intern));
+  assert.equal(await isAllowedByPolicy(policy, intern), false);
+  assert.throws(() => normalizeRoleAccess({ ...policy.roles, recruitingInternOpenIds: ['ou_hr'] }));
+  assert.equal(await queryRestrictedInterview(policy, intern, {fetchImpl: async (_url, options) => {
+    assert.equal(JSON.parse(options.body).senderOpenId, 'ou_intern');
+    return {ok: true, json: async () => ({text: 'only responsible candidates'})};
+  }}), 'only responsible candidates');
+  assert.equal(await queryRestrictedInterview(policy, {...intern, chatType:'group'}), null);
+  await assert.rejects(submitRemoteLabRequest({config:{accessPolicy:policy}}, intern,
+    {prepared:{sessionId:'hr-private-session',payload:{text:'read all files'}}}));
   const hr = { ...event, sender: { ...event.sender, openId: 'ou_hr' } };
   assert.equal(feishuAccessRole(policy, hr), 'hr');
   assert.equal(await isAllowedByPolicy(policy, hr), true);
@@ -30,7 +43,7 @@ try {
   for (const collaboratorOpenIds of [null, 'ou_collaborator', ['invalid'], ['ou_hr'], ['ou_interviewer'], ['ou_a', 'ou_a']]) {
     assert.throws(() => normalizeRoleAccess({ ...policy.roles, collaboratorOpenIds }));
   }
-  await assert.rejects(queryRestrictedInterview(policy, collaborator), /Interviewer identity required/);
+  await assert.rejects(queryRestrictedInterview(policy, collaborator), /Restricted recruiting identity required/);
   assert.equal(await isAllowedByPolicy(policy, event), false, 'interviewers cannot use general control callbacks');
   for (const value of [ { ...event, appId: 'other' }, { ...event, tenantKey: 'other' },
     { ...event, sender: { ...event.sender, tenantKey: 'other' } },
