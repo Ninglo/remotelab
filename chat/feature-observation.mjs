@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { createRecordStore } from '../lib/durable-records.mjs';
+import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs';
 import { fingerprint, publishRecord, readRecord, records, safeId } from './feature-experiment-store.mjs';
 import { requests } from './requests.mjs';
 import { runDir } from './runs.mjs';
@@ -124,22 +125,48 @@ export function featureObservationPrompt(observation, requestId, enabled = Boole
 
 // Codex exposes cumulative provider counters. Other Harnesses remain unknown
 // until their adapter supplies equivalent counters; never use whole-run usage.
+// A monitoring refresh asks for both phase boundaries of each old Run. Index
+// only its small meter records once per file version, not the full spool twice
+// on every refresh. Disk stat still makes appended/replaced files visible.
+const meterIndexes = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_FEATURE_METER_CACHE_MIB', 8),
+  value => JSON.stringify(value).length * 2 + 256);
+const meterReads = new Map();
+async function featureMeterIndex(path, file) {
+  const version = `${file.dev}:${file.ino}:${file.size}:${file.mtimeMs}:${file.ctimeMs}`;
+  const cached = meterIndexes.get(path);
+  if (cached?.version === version) return cached.meters;
+  const key = `${path}:${version}`;
+  if (meterReads.has(key)) return meterReads.get(key);
+  const pending = (async () => {
+    const meters = [];
+    if (file.size) {
+      // The captured prefix is immutable for an append-only spool. A partial
+      // final line is reconsidered after the next append changes its version.
+      const lines = createInterface({ input: createReadStream(path, { end: file.size - 1 }), crlfDelay: Infinity });
+      for await (const line of lines) {
+        let row, event;
+        try { row = JSON.parse(line); event = row.json || JSON.parse(row.line || '{}'); } catch { continue; }
+        const usage = event.featureUsage;
+        if (event.type !== 'remotelab.context_metrics' || !usage?.threadId
+          || ['inputTokens', 'cachedInputTokens', 'outputTokens'].some(k => !Number.isSafeInteger(usage[k]) || usage[k] < 0)) continue;
+        meters.push({ ...usage, at: row.ts });
+      }
+    }
+    meterIndexes.set(path, { version, meters });
+    return meters;
+  })().finally(() => meterReads.delete(key));
+  meterReads.set(key, pending);
+  return pending;
+}
 export async function readFeatureMeter(runId, { firstAtOrAfter = null } = {}) {
   const path = join(runDir(runId), 'spool.jsonl');
   try {
-    if ((await stat(path)).size > 64 * 1024 * 1024) return null;
-    let meter = null;
-    const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
-    for await (const line of lines) {
-      let row, event;
-      try { row = JSON.parse(line); event = row.json || JSON.parse(row.line || '{}'); } catch { continue; }
-      const usage = event.featureUsage;
-      if (event.type !== 'remotelab.context_metrics' || !usage?.threadId
-        || ['inputTokens', 'cachedInputTokens', 'outputTokens'].some(k => !Number.isSafeInteger(usage[k]) || usage[k] < 0)) continue;
-      meter = { ...usage, at: row.ts };
-      if (firstAtOrAfter !== null && Date.parse(row.ts) >= firstAtOrAfter) return meter;
-    }
-    return firstAtOrAfter === null ? meter : null;
+    const file = await stat(path);
+    if (file.size > 64 * 1024 * 1024) return null;
+    const meters = await featureMeterIndex(path, file);
+    const meter = firstAtOrAfter === null ? meters.at(-1)
+      : meters.find(row => Date.parse(row.at) >= firstAtOrAfter);
+    return meter ? structuredClone(meter) : null;
   } catch { return null; }
 }
 export function featureUsageDelta(before, after) {

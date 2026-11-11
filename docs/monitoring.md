@@ -96,6 +96,8 @@ Python计算运行在控制服务的可选子进程，使用私有Unix socket；
 
 当前 Codex App Server 提供阶段计量。其他 Harness、计数器重置、缺少起止采样或未结束的执行显示未知，不能补零，也不能把整轮用量归给自检。阶段用量包括上下文及 finish 工具编排，begin 之前和 finish 返回后的最终答复未计入；它不是“开启相对于关闭”的净增成本。不增加独立审查模型；每次正常回报需要 begin、finish 及取证工具，真实代价见验证记录。保留未开始／未结束／不适用的分母，不能只用成功回执计算功能成功率。
 
+阶段计量按 Run 日志文件版本复用计数器索引，同一版本的并发查询只扫描一次；索引不保留日志正文。每次查询仍检查文件状态，追加、替换或删除立即反映，缺失采样保持未知。缓存默认 8 MiB，可由 `REMOTELAB_FEATURE_METER_CACHE_MIB` 调整；不改变统计边界或原 64 MiB 单文件读取上限。
+
 新接纳的交付自检 v3 只在工作话题中的复杂执行任务实际触发自检时保存回执。群主线不启用、不采集自检观察、不接受 begin/finish；个人和群开关不能覆盖这个范围。普通讨论、简短问答、状态查询和简单可逆操作不为 `not_applicable` 发起工具调用。此类输入可能显示 `no_record`，不能把该计数当成漏验收率。旧 v1/v2 话题工作保留原规则与回执要求；群主线的关闭条件覆盖旧开启状态。
 
 确定性验证：`tests/test-feature-observation.mjs`；真实模型隔离验证：`REMOTELAB_LIVE_FEATURE_OBSERVATION=1 node tests/test-feature-observation-live.mjs`。两者不写生产配置、不发飞书消息。
