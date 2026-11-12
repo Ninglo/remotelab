@@ -12,8 +12,8 @@ const sop = { goal: 'Verify two outputs', scope: 'fixture only', sourceRequestId
 ] };
 try {
   assert.deepEqual(projectMainlineHooks('unbound', dir), []);
-  await initMainline({ id: 'project', title: 'Fixture', projectId: 'real-device', sessionId: session, sop }, dir);
-  await assert.rejects(initMainline({ id: 'project', title: 'Fixture', projectId: 'real-device', sessionId: session, sop }, dir), /Already registered/);
+  await initMainline({enabled: true, enableSourceRequestId: 'fixture-explicit-test', id: 'project', title: 'Fixture', projectId: 'real-device', sessionId: session, sop }, dir);
+  await assert.rejects(initMainline({enabled: true, enableSourceRequestId: 'fixture-explicit-test', id: 'project', title: 'Fixture', projectId: 'real-device', sessionId: session, sop }, dir), /Already registered/);
   const begin = () => mainlineHook(session, { hook_event_name: 'UserPromptSubmit', turn_id: 'turn' }, dir);
   const stop = () => mainlineHook(session, { hook_event_name: 'Stop', turn_id: 'turn' }, dir);
   assert.match(JSON.stringify(await begin()), /Verify two outputs/);

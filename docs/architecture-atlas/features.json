@@ -417,6 +417,7 @@
           "sources": [
             "docs/project-mainline.md",
             "lib/project-mainline.mjs",
+            "lib/project-sop-source.mjs",
             "chat/native/codex.mjs",
             "chat/runner-sidecar.mjs"
           ],

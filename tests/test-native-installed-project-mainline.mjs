@@ -15,10 +15,11 @@ const originalPath = process.env.PATH;
 test('installed Codex reinjects project state and publishes only the accepted final', {skip:!binary,timeout:45000}, async()=>{
  const home=await mkdtemp(join(tmpdir(),'native-mainline-'));setIsolatedTestHome(home);
  const {createCodexDriver}=await import('../chat/native/codex.mjs');
- const {initMainline,showMainline,checkpointMainline}=await import('../lib/project-mainline.mjs');
+ const {initMainline,showMainline,checkpointMainline,setMainlineBinding}=await import('../lib/project-mainline.mjs');
+ const sopPath=join(home,'SOP.md');await writeFile(sopPath,'# Native fixture SOP\nVerify the fixture evidence.');
  const artifact=join(home,'evidence.json');const content='{"fixture":true}';await writeFile(artifact,content);
  const evidence={path:artifact,sha256:createHash('sha256').update(content).digest('hex')};
- await initMainline({id:'fixture',title:'Native fixture',projectId:'real-device',sessionId:'fixture-session',sop:{goal:'KEEP_MAIN_GOAL_791',scope:'synthetic fixture',sourceRequestId:'human-fixture',nodes:[{id:'a',title:'Verify',method:'fixture evidence',dependsOn:[],acceptance:['fixture verified']}]}});
+ await initMainline({enabled: true, enableSourceRequestId: 'fixture-explicit-test',id:'fixture',title:'Native fixture',projectId:'real-device',sessionId:'fixture-session',request:{kind:'project',domain:'real_device',object:'fixture robot task',goal:'KEEP_MAIN_GOAL_791',needsTracking:true,sourceRequestId:'human-fixture',evidence:'isolated experiment'},sop:{document:{kind:'local',path:sopPath},goal:'KEEP_MAIN_GOAL_791',scope:'synthetic fixture',sourceRequestId:'human-fixture',nodes:[{id:'a',title:'Verify',method:'fixture evidence',source:'Native fixture SOP',dependsOn:[],acceptance:['fixture verified']}]}});
  const bodies=[], paths=[], stderr=[];
  let emitTool = false;
   const server = createServer(async (request, response) => {
@@ -31,6 +32,8 @@ test('installed Codex reinjects project state and publishes only the accepted fi
     const body = JSON.parse(raw || '{}');
     if (bodies.length === 1) {
       const shown = await showMainline('fixture-session');
+      assert.match(shown.sopDocument.content,/Native fixture SOP/);
+      assert.equal(shown.sopDocument.writeback,'deferred');
       await checkpointMainline('fixture-session', { expectedRevision: shown.state.revision, inputToken: shown.inputToken, sourceRequestId: 'human-fixture', summary: 'fixture completed', decision: 'complete', nodes: [{id:'a',status:'done',note:'verified',checks:[{index:0,passed:true,evidence:[evidence]}]}] });
     }
     bodies.push(body);
@@ -90,6 +93,11 @@ test('installed Codex reinjects project state and publishes only the accepted fi
    assert.equal(failed.status,'failed','repeated missing checkpoint cannot report success');
    assert.match(failed.error,/Project mainline check failed/);
    assert.equal(observed.filter(x=>x.item?.type==='agent_message').length,1,'failed turn cannot publish any draft');
+   await setMainlineBinding('fixture-session',{enabled:false,sourceRequestId:'human-pause',reason:'explicit disable'});
+   settled=new Promise(resolve=>{resolveSettled=resolve});
+   await driver.submit({id:'disabled',text:'Return a final with the experiment disabled.'});
+   assert.equal((await settled).status,'completed');
+   assert.equal(observed.filter(x=>x.item?.type==='agent_message').length,2,'disabled experiment permits the next ordinary final');
    console.log('installed Codex: reinjection, evidence/readback, single final, and bounded failure verified');
  } finally {
    driver.close();const closed=child.exitCode===null&&child.signalCode===null?once(child,'close'):Promise.resolve();child.kill('SIGKILL');await closed;
