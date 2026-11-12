@@ -407,6 +407,24 @@
           ]
         },
         {
+          "id": "project-mainline",
+          "sourceRevision": "d0288c2dac60131fb41816ea19f25b4df1c4c90b",
+          "name": "按项目维护 SOP 与待办",
+          "purpose": "在明确绑定的项目会话中保存核心 SOP、节点依赖、验收依据与继续或等待的决定。",
+          "entry": "Agent 使用 remotelab project-track；由项目所属会话明确启用。",
+          "condition": "仅对明确绑定的会话启用。Codex 原生钩子在输入和压缩恢复时读取状态，并在结束前检查当前节点及证据；其他 Harness 可用状态 CLI，但没有此原生结束检查。它不自动启动任务、恢复暂停工作或创建后续提醒。",
+          "example": "沿这个项目已有的 SOP 推进，完成节点后保存验收依据；真正等待时记清依赖和恢复入口。",
+          "sources": [
+            "docs/project-mainline.md",
+            "lib/project-mainline.mjs",
+            "chat/native/codex.mjs",
+            "chat/runner-sidecar.mjs"
+          ],
+          "commands": [
+            "project-track"
+          ]
+        },
+        {
           "id": "debug",
           "name": "会话与执行故障定位",
           "purpose": "区分未接纳、排队、执行失败、结果生成和外部送达问题。",
