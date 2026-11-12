@@ -29,6 +29,17 @@ try {
     return {ok: true, json: async () => ({text: 'only responsible candidates'})};
   }}), 'only responsible candidates');
   assert.equal(await queryRestrictedInterview(policy, {...intern, chatType:'group'}), null);
+  const workflowPolicy = {mode:'roles',roles:normalizeRoleAccess({...policy.roles,recruitingWorkflowCommand:['/usr/bin/python3','/fixed/workflow.py']})};
+  let operations=0;
+  const workflowImpl=async (command,summary,options)=>{assert.deepEqual(command,workflowPolicy.roles.recruitingWorkflowCommand);assert.equal(summary.sender.openId,'ou_intern');if(!options.readOnly)operations++;return {handled:true,text:options.readOnly?'saved receipt':'saved operation'};};
+  const file={...intern,messageType:'file',messageText:'',resources:[{fileKey:'file_test',originalName:'resume.pdf',downloadType:'file',resourceType:'file'}]};
+  assert.equal(await queryRestrictedInterview(workflowPolicy,file,{workflowImpl}),'saved operation');
+  assert.equal(await queryRestrictedInterview(workflowPolicy,file,{workflowImpl,readOnly:true}),'saved receipt');
+  assert.equal(operations,1,'publication must read the receipt, never repeat writes');
+  assert.equal(await queryRestrictedInterview(workflowPolicy,{...file,sender:event.sender},{workflowImpl}),null,'interviewers cannot upload');
+  assert.equal(await queryRestrictedInterview(workflowPolicy,{...file,chatType:'group'},{workflowImpl}),null);
+  assert.throws(()=>normalizeRoleAccess({...policy.roles,recruitingWorkflowCommand:['relative.py']}));
+
   await assert.rejects(submitRemoteLabRequest({config:{accessPolicy:policy}}, intern,
     {prepared:{sessionId:'hr-private-session',payload:{text:'read all files'}}}));
   const hr = { ...event, sender: { ...event.sender, openId: 'ou_hr' } };

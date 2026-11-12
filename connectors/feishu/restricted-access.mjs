@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash, createHmac } from 'node:crypto';
 import { join } from 'node:path';
+import { executeRecruitingWorkflow } from './recruiting-workflow.mjs';
 import { createRecordStore } from '../../lib/durable-records.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -20,7 +21,11 @@ export function normalizeRoleAccess(value) {
   if (ids.some(id => !/^ou_[a-zA-Z0-9]+$/.test(id)) || new Set(ids).size !== ids.length) {
     throw new Error('roles policy has invalid or overlapping identities');
   }
-  return { appId: value.appId, tenantKey: value.tenantKey,
+  if (value.recruitingWorkflowCommand !== undefined && (!Array.isArray(value.recruitingWorkflowCommand)
+      || !value.recruitingWorkflowCommand.length || !value.recruitingWorkflowCommand[0].startsWith('/')
+      || value.recruitingWorkflowCommand.some(arg => typeof arg !== 'string' || !arg || arg.includes('\0'))))
+    throw new Error('Invalid fixed recruiting workflow command');
+  return { ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
     hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
     interviewerOpenIds: [...value.interviewerOpenIds], recruitingInternOpenIds: [...recruitingInternOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };
@@ -91,7 +96,7 @@ function resolvedQuery(result, original) {
     ...(q.action === 'answer' ? {question: original.question, ...(original.context ? {context:original.context} : {})} : {}) };
 }
 
-export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store, sourceRouteId } = {}) {
+export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store, sourceRouteId, readOnly = false, workflowImpl = executeRecruitingWorkflow } = {}) {
   const role = feishuAccessRole(policy, summary);
   if (!['interviewer', 'recruiting_intern'].includes(role)) throw new Error('Restricted recruiting identity required');
   if (!['p2p', 'private'].includes(summary.chatType) || summary.eventType !== 'im.message.receive_v1') {
@@ -99,7 +104,8 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   }
   // Normalized rich text and plain text share the restricted backend; arbitrary
   // wording never enters the general executor or grants object access.
-  if (!['text', 'post'].includes(summary.messageType)) return null;
+  if (!['text', 'post'].includes(summary.messageType)
+      && !(role === 'recruiting_intern' && summary.messageType === 'file' && policy.roles.recruitingWorkflowCommand)) return null;
   const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
   const denied = await evaluateRequestAccess({ sessionId: 'interviewer:' + summary.chatId,
     text: summary.messageText, options: { requestId: 'feishu:' + summary.messageId,
@@ -107,6 +113,10 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
       sourceContext: { connector: 'feishu', sourceRouteId,
         tenantKey: summary.tenantKey, messageId: summary.messageId, chatType: summary.chatType, sender: summary.sender } } });
   if (denied?.blocked) return denied.reply;
+  if (role === 'recruiting_intern' && policy.roles.recruitingWorkflowCommand) {
+    const result = await workflowImpl(policy.roles.recruitingWorkflowCommand, summary, {readOnly});
+    if (result.handled) return result.text;
+  }
   let query = parseInterviewQuery(summary.messageText);
   if (!query) return null;
   if ((query.question?.length || 0) > 4000) return '问题较长，请分成几条发送，每条不超过4000字。';

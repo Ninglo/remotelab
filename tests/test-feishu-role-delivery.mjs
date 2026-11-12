@@ -32,7 +32,7 @@ const requestRemoteLab = async (path, { body }) => {
 };
 let sends = 0, queries = 0;
 const helpers = { requestRemoteLab, enrichSummaryWithChatMetadata: async (r, s) => s,
-  queryRestrictedInterview: async (p, s) => { queries++; assert.deepEqual(s, event); return 'fresh authorized result'; },
+  queryRestrictedInterview: async (p, s, options) => { assert.equal(options.readOnly,true); queries++; assert.deepEqual(s, event); return 'fresh authorized result'; },
   sendFeishuText: async (r, s, text) => { sends++; assert.equal(s.chatId, 'oc_ge');
     assert.equal(text, 'fresh authorized result'); return { message_id: 'om_reply' }; } };
 try {

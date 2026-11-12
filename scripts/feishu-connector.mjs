@@ -1548,7 +1548,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
       try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary,
-        restrictedInterviewOptions(runtime)); }
+        {...restrictedInterviewOptions(runtime), readOnly: true}); }
       catch (error) {
         console.error('[feishu-restricted] delivery query unavailable:', error.message);
         delivery.text = INTERVIEW_QUERY_UNAVAILABLE;

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { canonicalJson, createRecordStore } from '../../lib/durable-records.mjs';
 import { normalizeConversationTarget, sameConversationScope } from '../../lib/conversation-target.mjs';
+import { getSummaryFeishuResources } from './inbound-envelope.mjs';
 import { feishuAccessRole } from './restricted-access.mjs';
 
 const key = id => createHash('sha256').update(id).digest('hex').slice(0, 24);
@@ -21,6 +22,7 @@ export async function recordRoleDeliveryContext(runtime, summary, { responseId, 
         openId: summary.sender.openId, senderType: summary.sender.senderType, tenantKey: summary.sender.tenantKey },
       eventType: summary.eventType, messageType: summary.messageType, messageId: summary.messageId,
       messageText: summary.messageText, chatId: summary.chatId, chatType: summary.chatType,
+      ...(summary.messageType === 'file' ? {resources: getSummaryFeishuResources(summary)} : {}),
     } };
   await storeFor(runtime).mutate(key(responseId), existing => {
     if (existing) {

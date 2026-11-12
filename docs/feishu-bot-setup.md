@@ -1358,3 +1358,21 @@ and `node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-role-de
 and the normal connector regressions. Stage the backend and policy together;
 verify unauthorized, stale, forged and unassigned queries before restarting the
 bot. A staged configuration is not evidence that the running connector loaded it.
+
+### Restricted recruiting workflow
+
+A roles policy may configure `roles.recruitingWorkflowCommand` as a fixed absolute
+executable plus fixed arguments. Authenticated private `recruiting_intern` events
+(text/post and file resources) are sent as a versioned JSON stdin packet to that
+business executor after the request guard. Interviewers retain the read-only
+query path; neither role enters the general RemoteLab executor. The business
+executor must enforce current membership, candidate ownership, a closed operation
+schema, original-message idempotency, bounded attempts and durable step receipts.
+It may return `{handled:false}` to retain the existing scoped query behavior.
+
+At publication the connector passes `mode:receipt` (`readOnly:true`); the executor
+must recheck current authorization and return the saved result without executing
+writes again. The durable role-delivery context retains normalized attachment
+metadata for the original file event. The fixed command comes only from operator
+configuration, never from a message or a model result. Timeout/error replies do
+not imply rollback; the business receipt owns recovery of any completed steps.
