@@ -1,5 +1,13 @@
 # Shared User Feedback Log
 
+### 2026-11-12 — Shared printing and personal information assistance (ideas to discuss)
+
+- Source/context: a project participant relayed two requests from informal colleague conversations and explicitly asked to record them for discussion when time permits.
+- Shared printing: let Index operate additional company printers, make selected models available to colleagues, and let other people initiate printing through Index. Printer types, the model selection and the eventual interaction remain to be discussed.
+- Personal information assistance: classify information, assess priority, suggest replies and help order work to start. Replying under the person's own identity is another proposed mode; recommendation and actual sending remain distinct behaviors to design.
+- Existing footing: the requester believes both ideas have foundations already. This entry records that assessment without claiming the relevant integrations or end-to-end use are verified.
+- Follow-up status: collected ideas for later discussion. Concrete product shape, implementation scope, ownership and timing are undecided; this request authorizes recording only.
+
 ### 2026-11-11 — Pause is a group default; a mention invites a discussion
 
 - Feedback: a paused conversation group still received unsolicited Bot replies to human-to-human thread messages without a Bot mention.
