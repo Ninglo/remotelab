@@ -826,7 +826,14 @@
             "tests/test-workbench-login-browser.mjs",
             "templates/login.html",
             "static/chat/i18n.js",
-            "tests/test-legacy-site-login.mjs"
+            "tests/test-legacy-site-login.mjs",
+            "chat/employee-host-proxy.mjs",
+            "chat/site-identity-html.mjs",
+            "static/site-identity.js",
+            "static/site-identity.css",
+            "chat/router-site-directory.mjs",
+            "chat/router-monitoring-preview.mjs",
+            "tests/test-employee-host-proxy.mjs"
           ],
           "commands": []
         },

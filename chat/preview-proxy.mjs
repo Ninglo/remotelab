@@ -1,7 +1,9 @@
 import { requireEmployeeSite, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
 import { legacySiteLogin, previewIdentityPolicy } from '../lib/legacy-site-login.mjs';
 import { siteUsageHtmlTransform, siteUsageCsp, siteUsageOrigin } from './site-usage-html.mjs';
+import { siteIdentityCsp, siteIdentityHtmlTransform } from './site-identity-html.mjs';
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
@@ -39,6 +41,7 @@ async function routeFor(slug) {
       recognizeIdentity: route.recognizeIdentity === true || identity.recognizeIdentity === true,
       employeeLogin: identity.employeeLogin === true,
       postPaths: Array.isArray(route.postPaths) ? route.postPaths.filter(validPreviewPostPath) : [],
+      machinePaths: Array.isArray(route.machinePaths) ? route.machinePaths.filter(p => ['GET', 'POST'].includes(p.method) && validPreviewPostPath(p.path) && typeof p.bearerTokenFile === 'string' && p.bearerTokenFile.startsWith('/')) : [],
       requestHeaders: Array.isArray(route.requestHeaders) ? route.requestHeaders.filter(validPreviewRequestHeader) : [],
     };
   } catch {
@@ -57,9 +60,22 @@ export async function handlePreviewProxy(req, res, pathname) {
     res.end('Preview route not found');
     return true;
   }
+  const suffix = match[2] || '/';
+  const machineRoute = route.machinePaths.find(p => p.path === suffix && p.method === req.method);
+  let machine = false;
+  if (machineRoute && (req.method === 'POST' || req.headers.authorization)) {
+    try {
+      const expected = Buffer.from((await readFile(machineRoute.bearerTokenFile, 'utf8')).trim());
+      const supplied = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+      machine = expected.length >= 16 && req.headers.authorization?.startsWith('Bearer ') && expected.length === supplied.length && timingSafeEqual(expected, supplied);
+    } catch {}
+    if (!machine) {
+      res.writeHead(401, { 'Cache-Control': 'private, no-store' }); res.end('Device credential required'); return true;
+    }
+  }
   let person;
   const mappedLogin = route.employeeLogin && !req.headers.authorization;
-  if (route.access === 'employee' || mappedLogin) {
+  if (!machine && (route.access === 'employee' || mappedLogin)) {
     person = await requireEmployeeSite(req, res);
     if (!person) return true;
     if (!['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
@@ -70,7 +86,6 @@ export async function handlePreviewProxy(req, res, pathname) {
     // Failure of the new identity store must not block the original login.
     try { person = await employeeSitePerson(req, res); } catch {}
   }
-  const suffix = match[2] || '/';
   const allowsPost = route.postPaths.includes(suffix);
   if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && allowsPost)) {
     res.writeHead(405, { Allow: allowsPost ? 'GET, HEAD, POST' : 'GET, HEAD', 'Cache-Control': 'no-store' });
@@ -83,7 +98,7 @@ export async function handlePreviewProxy(req, res, pathname) {
   const requestHeaders = ['authorization', 'range', 'if-range', 'if-none-match', 'if-modified-since',
     'content-type', 'content-length', 'origin', 'sec-fetch-site', ...route.requestHeaders];
   for (const name of requestHeaders) {
-    if (route.access === 'employee' && name === 'authorization') continue;
+    if (route.access === 'employee' && name === 'authorization' && !machine) continue;
     if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];
   }
   if (person) headers['x-remotelab-person-id'] = person.id;
@@ -133,9 +148,14 @@ export async function handlePreviewProxy(req, res, pathname) {
     if (html) {
       delete responseHeaders['content-length']; delete responseHeaders.etag;
       if (responseHeaders['content-security-policy']) responseHeaders['content-security-policy'] = siteUsageCsp(responseHeaders['content-security-policy'], siteUsageOrigin(req));
+      if (route.access === 'employee' || mappedLogin) responseHeaders['content-security-policy'] = siteIdentityCsp(responseHeaders['content-security-policy'] || '', siteUsageOrigin(req));
     }
     res.writeHead(response.statusCode || 502, responseHeaders);
-    if (html) response.pipe(siteUsageHtmlTransform(responseHeaders['content-security-policy'] || '')).pipe(res);
+    if (html) {
+      const stream = response.pipe(siteUsageHtmlTransform(responseHeaders['content-security-policy'] || ''));
+      if (route.access === 'employee' || mappedLogin) stream.pipe(siteIdentityHtmlTransform(responseHeaders['content-security-policy'] || '', siteUsageOrigin(req))).pipe(res);
+      else stream.pipe(res);
+    }
     else response.pipe(res);
   });
   upstream.on('timeout', () => upstream.destroy(new Error('Preview service timed out')));

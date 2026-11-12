@@ -5,6 +5,9 @@ import { requireAttachmentAccess } from './session-attachment-access.mjs';
 import { handleSiteLogin } from './router-site-login.mjs';
 import { handleSiteUsageRoutes } from './router-site-usage.mjs';
 import { injectSiteUsageHtml } from './site-usage-html.mjs';
+import { siteUsageOrigin } from './site-usage-html.mjs';
+import { injectSiteIdentityHtml } from './site-identity-html.mjs';
+import { handleEmployeeHost } from './employee-host-proxy.mjs';
 import { handleSiteDirectory } from './router-site-directory.mjs';
 import { checkEmployeeStaticAccess } from './employee-static-access.mjs';
 import {readMonitoringPortal} from './monitoring-portal.mjs';
@@ -1356,6 +1359,7 @@ export async function handleRequest(req, res) {
   const parsedUrl = parseUrl(req.url, true);
   const pathname = parsedUrl.pathname;
 
+  if (await handleEmployeeHost(req, res)) return;
   if (await handleSiteLogin(req, res, pathname)) return;
   if (pathname === '/api/site-usage/events' && await handleSiteUsageRoutes({ req, res, pathname })) return;
   if (await handleSiteDirectory(req, res, pathname)) return;
@@ -1375,7 +1379,7 @@ export async function handleRequest(req, res) {
         staticAsset.contentType.startsWith('text/css') ? versionTag : '',
       );
       if (req.employeeStaticPage && req.method === 'GET' && !req.headers.range && /^text\/html/.test(staticAsset.contentType)) {
-        content = injectSiteUsageHtml(content);
+        content = injectSiteIdentityHtml(injectSiteUsageHtml(content), '', siteUsageOrigin(req));
       }
       if (/^(?:audio|video)\//.test(staticAsset.contentType)) {
         writeRangedStaticResponse(req, res, staticAsset, content);

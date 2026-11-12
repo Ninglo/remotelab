@@ -101,7 +101,11 @@
   let destination = '/site-login';
   try {
     const target = new URL(requested, location.origin);
-    if (requested.startsWith('/') && target.origin === location.origin) destination = target.pathname + target.search + target.hash;
+    if (requested.startsWith('/') && target.origin === location.origin) {
+      // Browsers retain the original fragment on an HTTP login redirect. It is
+      // never sent to the server, so restore it here for deep application links.
+      destination = target.pathname + target.search + (target.hash || location.hash);
+    }
   } catch {}
   create({ status, authorize, retry, onConnected: async () => destination !== '/site-login' ? destination : null }).start();
 })();

@@ -1,0 +1,8 @@
+body.remotelab-has-site-identity{margin-top:calc(var(--remotelab-original-margin-top,0px) + 44px + env(safe-area-inset-top))!important}
+#remotelab-site-identity{box-sizing:border-box;position:fixed;top:0;left:0;right:0;z-index:2147483000;min-height:44px;padding:calc(8px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 8px 16px;display:flex;justify-content:flex-end;align-items:center;gap:12px;background:#f8fafc;color:#285b43;border-bottom:1px solid #dce5df;font:13px/1.6 system-ui,-apple-system,"PingFang SC",sans-serif;letter-spacing:normal;text-align:right}
+#remotelab-site-identity span{max-width:100%;overflow-wrap:anywhere}
+#remotelab-site-identity a{color:inherit;font:inherit;text-decoration:underline;white-space:nowrap}
+#remotelab-site-identity a[hidden]{display:none!important}
+#remotelab-site-identity[data-state=unavailable],#remotelab-site-identity[data-state=signed-out]{color:#795923}
+@media(prefers-color-scheme:dark){#remotelab-site-identity{background:#1c2420;color:#c0dbc9;border-color:#35483b}#remotelab-site-identity[data-state=unavailable],#remotelab-site-identity[data-state=signed-out]{color:#e2c58e}}
+@media(max-width:480px){#remotelab-site-identity{font-size:12px;padding-left:12px;padding-right:max(12px,env(safe-area-inset-right));gap:8px}}

@@ -181,7 +181,7 @@ try {
       await fresh.route('https://accounts.feishu.cn/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Feishu fixture</h1>' }));
       const first = await fresh.newPage(); first.on('pageerror', e => errors.push(e.message));
       await first.clock.install();
-      await first.goto(base + '/public-pages/one/index.html');
+      await first.goto(base + '/public-pages/one/index.html#platform?run=fixture-run');
       await first.locator('#authorize').waitFor({ state: 'visible' });
       assert.equal(await first.locator('h1').textContent(), '员工登录');
       assert.equal(await first.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -217,7 +217,7 @@ try {
       assert.notEqual(replacement.url(), retriedLink, 'expired click opens a fresh link instead of the stale provider page');
       tokenResponse = undefined;
       now += 5000; await first.clock.fastForward(5500);
-      await first.waitForURL('**/public-pages/one/index.html');
+      await first.waitForURL('**/public-pages/one/index.html#platform?run=fixture-run');
       assert.equal(await first.locator('h1').textContent(), '隔离测试内容');
       assert.deepEqual(errors, []);
       console.log('Browser: desktop/mobile login, first confirmation fixture, legacy-cookie upgrade, two-site reuse PASS');

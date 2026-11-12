@@ -322,3 +322,54 @@ Production acceptance still requires a real company login, Hub → website and
 A → B reuse, direct-origin/header-forgery rejection, logout/expiry, restart, and
 public/control-console policy preservation. Local fixtures do not establish that
 the production gateway or employee grant exists.
+
+## Unified identity indicator and independent hosts
+
+Employee HTML pages served by static publications, employee previews, the site
+ directory and the existing authenticated monitoring view share one top-right
+identity indicator. It reads `/api/site-login/me`, displays `飞书认证：姓名` only
+for a verified Feishu identity, and revalidates when returning to the tab. Other
+accepted account identities are labelled `账号认证`. Expired or unavailable
+identity never retains the prior success label. Embedded frames do not add a
+second indicator. Pages, APIs and media reuse the same host-only session;
+server checks do not create additional login screens. Login redirects preserve
+application fragments such as `#platform?run=…`.
+
+An independently hosted service can use the same login without changing its
+public hostname. Route that host's complete ingress (including fallback tunnels)
+to this instance, then configure `employee-site-hosts.json`:
+
+```json
+{"version":1,"hosts":{"results.example.test":{
+  "port":18788,"readPaths":["^/$","^/ui(?:/.*)?$","^/healthz$"],
+  "postPaths":[],"publicHealthPaths":["/healthz"],"forwardCookies":[]
+}}}
+```
+
+Host dispatch precedes the console router. Only explicitly matched read paths,
+exact POST paths, shared login endpoints and identity assets are reachable;
+console APIs are unavailable on these hosts. Keep the original application's
+path and operation restrictions. Read-path expressions must be anchored. Public
+health paths are an explicit exception, not a data/API bypass. Existing native
+role cookies may be named in `forwardCookies`; employee and console cookies and
+client identity headers never reach the upstream. Writes require same-origin
+requests. Video Range responses and streaming remain intact, while successful
+HTML receives the shared indicator. A different hostname still has a separate
+browser cookie, as described above; this is not cross-domain SSO.
+
+Device publishers use existing credentials, not human cookies. An employee
+preview may declare exact `machinePaths` entries with `method` (`GET` or `POST`),
+`path` and an absolute `bearerTokenFile`. POST paths must also be registered in
+`postPaths`. The token is checked at the ingress and is forwarded only for that
+matching device request. A device token cannot read other pages or invoke human
+operations. Use this only for existing authenticated machine interfaces; do not
+add anonymous exceptions to keep an old client working. Token files remain
+private and outside source control. An authenticated person can still read a
+registered GET path with the shared employee session.
+
+Validation: `tests/test-employee-host-proxy.mjs` exercises isolated host routing,
+identity-header rejection, cookie boundaries, original writes, compressed HTML,
+video ranges and device scope. With `EMPLOYEE_TEST_PLAYWRIGHT` and
+`EMPLOYEE_TEST_CHROME`, it also checks one indicator on desktop/mobile, embedded
+frames, identity changes and session expiry. The fixtures do not simulate a
+real employee completing Feishu confirmation.

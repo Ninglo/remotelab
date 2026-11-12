@@ -2,6 +2,7 @@
 import http from 'node:http';
 import {evidenceConfig} from './monitoring-file-evidence.mjs';
 import {readResolutionConfig} from './monitoring-resolution.mjs';
+import {injectSiteIdentityHtml} from './site-identity-html.mjs';
 export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview',publicOrigin}={}){
  // A standalone '/' in JavaScript may be a date/path separator, not a URL.
  // Only the HTML home link and known presentation routes belong to this proxy.
@@ -27,6 +28,7 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride})
     if(/html|javascript/.test(type)){
      body=Buffer.from(rewriteMonitoringPresentation(body.toString(),{prefix,publicOrigin}));
     }
+    if(response.statusCode===200&&/^text\/html/.test(type))body=injectSiteIdentityHtml(body);
     res.writeHead(response.statusCode||502,{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(body);resolve();
    });
   });upstream.on('timeout',()=>upstream.destroy());upstream.on('error',()=>{if(!res.headersSent)res.writeHead(502);res.end();resolve()});res.on('close',()=>upstream.destroy());
