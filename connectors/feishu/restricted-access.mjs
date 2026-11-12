@@ -46,6 +46,34 @@ export function feishuAccessRole(policy, summary) {
   return 'deny';
 }
 
+// Card actions arrive on the app's authenticated Feishu connection, but card
+// render targets are delivery addresses, not complete sender identities. Build
+// the role check from the callback operator and tenant, and reject conflicting
+// values supplied by any card-specific summary.
+export function summarizeFeishuCardAction(config, raw, summary) {
+  const event = raw?.event || raw;
+  const appId = trim(config?.appId);
+  const operator = event?.operator;
+  const sender = { senderType: 'user' };
+  for (const [field, key] of [['openId', 'open_id'], ['userId', 'user_id'], ['unionId', 'union_id']]) {
+    const values = [operator?.operator_id?.[key], operator?.[key]].map(trim).filter(Boolean);
+    if (values.some(value => value !== values[0])
+        || summary?.sender?.[field] && summary.sender[field] !== values[0]) return null;
+    sender[field] = values[0] || '';
+  }
+  const tenants = [operator?.tenant_key, event?.tenant_key, raw?.header?.tenant_key]
+    .map(trim).filter(Boolean);
+  if (!appId || !sender.openId || !tenants.length || tenants.some(value => value !== tenants[0])
+      || !summary?.sender?.openId || summary.sender.openId !== sender.openId
+      || summary.sender.senderType && summary.sender.senderType !== 'user'
+      || summary.sender.tenantKey && summary.sender.tenantKey !== tenants[0]
+      || summary.tenantKey && summary.tenantKey !== tenants[0]
+      || summary.appId && summary.appId !== appId
+      || raw?.header?.app_id && raw.header.app_id !== appId) return null;
+  return { ...summary, appId, tenantKey: tenants[0],
+    sender: { ...sender, tenantKey: tenants[0] } };
+}
+
 export function requireFullFeishuAccess(policy, summary) {
   if (!['legacy', 'hr', 'collaborator'].includes(feishuAccessRole(policy, summary))) {
     throw new Error('Restricted sender cannot enter the general RemoteLab executor');

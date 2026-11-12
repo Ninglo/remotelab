@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
-import { normalizeRoleAccess, feishuAccessRole, parseInterviewQuery, queryRestrictedInterview,
+import { normalizeRoleAccess, feishuAccessRole, summarizeFeishuCardAction, parseInterviewQuery, queryRestrictedInterview,
   requireFullFeishuAccess, INTERVIEW_QUERY_UNAVAILABLE } from '../connectors/feishu/restricted-access.mjs';
 import { handleMessage, isAllowedByPolicy, submitRemoteLabRequest, processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
 
@@ -19,6 +19,44 @@ try {
     eventType: 'im.message.receive_v1', messageId: 'om_test', messageText: '我的候选人',
     sender: { openId: 'ou_interviewer', senderType: 'user', tenantKey: 'tenant' } };
   assert.equal(feishuAccessRole(policy, event), 'interviewer');
+  const callback = { header: { tenant_key: 'tenant', app_id: 'cli_test' }, event: {
+    operator: { operator_id: { open_id: 'ou_hr' } }, tenant_key: 'tenant' } };
+  const cardSummary = { chatId: 'chat', tenantKey: 'tenant', sender: { senderType: 'user', openId: 'ou_hr' } };
+  assert.equal(feishuAccessRole(policy, summarizeFeishuCardAction({ appId: 'cli_test' }, callback, cardSummary)), 'hr',
+    'an authorized card click carries app and sender tenant from its authenticated callback');
+  for (const bad of [
+    { ...callback, header: { ...callback.header, tenant_key: 'another-tenant' } },
+    { ...callback, header: { ...callback.header, app_id: 'another-app' } },
+    { ...callback, event: { ...callback.event, operator: { operator_id: { open_id: 'ou_other' } } } },
+    { ...callback, header: {}, event: { operator: callback.event.operator } },
+  ]) assert.equal(summarizeFeishuCardAction({ appId: 'cli_test' }, bad, cardSummary), null);
+  assert.equal(summarizeFeishuCardAction({ appId: 'cli_test' }, callback,
+    { ...cardSummary, appId: 'another-app' }), null);
+  assert.equal(summarizeFeishuCardAction({ appId: 'cli_test' }, callback,
+    { ...cardSummary, sender: { ...cardSummary.sender, tenantKey: 'another-tenant' } }), null);
+  const directCallback = { operator: { open_id: 'ou_hr', user_id: 'user_hr',
+    union_id: 'union_hr', tenant_key: 'tenant' } };
+  const directSummary = summarizeFeishuCardAction({ appId: 'cli_test' }, directCallback, cardSummary);
+  assert.equal(directSummary.sender.userId, 'user_hr');
+  assert.equal(directSummary.sender.unionId, 'union_hr');
+  assert.equal(await isAllowedByPolicy({ mode: 'whitelist', allowedSendersPath: join(dir, 'allowlist.json'),
+    allowedSenders: { userIds: ['user_hr'] } }, directSummary), true,
+    'user-ID allowlists use the authenticated operator even when a card omits userId');
+  for (const [field, key] of [['openId', 'open_id'], ['userId', 'user_id'], ['unionId', 'union_id']]) {
+    const conflict = structuredClone(directCallback);
+    conflict.operator.operator_id = { [key]: 'other' };
+    assert.equal(summarizeFeishuCardAction({ appId: 'cli_test' }, conflict, cardSummary), null);
+    assert.equal(summarizeFeishuCardAction({ appId: 'cli_test' }, directCallback,
+      { ...cardSummary, sender: { ...cardSummary.sender, [field]: 'other' } }), null);
+  }
+  for (const [openId, allowed] of [['ou_hr', true], ['ou_collaborator', true],
+    ['ou_intern', false], ['ou_interviewer', false], ['ou_removed', false]]) {
+    const verified = summarizeFeishuCardAction({ appId: 'cli_test' },
+      { operator: { open_id: openId, tenant_key: 'tenant' } },
+      { sender: { senderType: 'user', openId } });
+    assert.equal(await isAllowedByPolicy(policy, verified), allowed,
+      `${openId}: callbacks must preserve the existing general-executor boundary`);
+  }
   const intern = { ...event, sender: { ...event.sender, openId: 'ou_intern' } };
   assert.equal(feishuAccessRole(policy, intern), 'recruiting_intern');
   assert.throws(() => requireFullFeishuAccess(policy, intern));

@@ -7,6 +7,7 @@ import { buildNativeQuestionCard, sendNativeQuestionCard, handleNativeQuestionCa
 import { publishLiveAssistantReplies } from '../chat/native-final-publication.mjs';
 import { buildSessionDisplayEvents } from '../chat/session-display-events.mjs';
 import { processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
+import { feishuAccessRole, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'question-surfaces-'));
 const calls = [], identity = { sessionId: 'session', runId: 'run', questionId: 'question' };
@@ -77,6 +78,45 @@ try {
   assert(Number(requests[0][1].body.sourceContext.createTime) > 0, 'button decisions carry their actual acceptance time for pilot fences');
   assert.equal(requests[0][1].body.sourceContext.messageType, 'interactive');
   assert.deepEqual(requests[0][1].body.sourceDelivery.target, delivery.target);
+  const roleRuntime = { ...runtime, config: { ...runtime.config, appId: 'cli_test',
+    storageDir: join(root, 'role-question') }, appClient: { im: { v1: { message: {
+      ...runtime.appClient.im.v1.message,
+      reply: async () => ({ code: 0, data: { message_id: 'original' } }),
+    } } } } };
+  const roleDelivery = { ...delivery, target: { ...delivery.target, tenantKey: 'tenant' } };
+  await sendNativeQuestionCard(roleRuntime, roleDelivery);
+  const roleAction = rawAction({ option: 1 });
+  roleAction.event.operator = { open_id: 'ou_hr', user_id: 'user_hr', tenant_key: 'tenant' };
+  const rolePolicy = { mode: 'roles', roles: { appId: 'cli_test', tenantKey: 'tenant',
+    hrOpenIds: ['ou_hr'], collaboratorOpenIds: [], interviewerOpenIds: [] } };
+  const roleRequests = [];
+  for (const alter of [raw => { raw.header.app_id = 'other'; },
+    raw => { raw.header.tenant_key = 'other'; },
+    raw => { raw.event.operator.open_id = 'ou_removed'; },
+    raw => { raw.event.operator.operator_id = { open_id: 'ou_other' }; }]) {
+    const denied = structuredClone(roleAction); alter(denied);
+    const result = await handleNativeQuestionCardAction(roleRuntime, denied, {
+      authorize: summary => feishuAccessRole(rolePolicy,
+        summarizeFeishuCardAction(roleRuntime.config, denied, summary)) === 'hr',
+      request: async () => { throw new Error('Unauthorized callback entered executor'); },
+    });
+    assert.equal(result.toast.type, 'error');
+  }
+  const roleResult = await handleNativeQuestionCardAction(roleRuntime, roleAction, {
+    authorize: summary => feishuAccessRole(rolePolicy,
+      summarizeFeishuCardAction(roleRuntime.config, roleAction, summary)) === 'hr',
+    request: async (_url, options) => { roleRequests.push(options.body); return { response: { ok: true } }; },
+  });
+  assert.equal(roleResult.toast.type, 'success', 'an HR user can answer the Feishu choice card');
+  assert.equal(roleRequests[0].sourceContext.sender.tenantKey, 'tenant',
+    'the accepted choice retains its authenticated tenant for downstream identity checks');
+  assert.equal(roleRequests[0].sourceContext.appId, 'cli_test');
+  assert.equal(roleRequests[0].sourceContext.sender.userId, 'user_hr');
+  const wrongAppRuntime = { ...roleRuntime, config: { ...roleRuntime.config, storageDir: join(root, 'wrong-app') } };
+  await sendNativeQuestionCard(wrongAppRuntime, { ...roleDelivery, target: { ...roleDelivery.target, appId: 'other' } });
+  assert.equal((await handleNativeQuestionCardAction(wrongAppRuntime, roleAction, {
+    authorize: () => true, request: () => { throw new Error('Wrong-app receipt entered executor'); },
+  })).toast.type, 'error');
   await handleNativeQuestionCardAction(runtime, rawAction({ option: 2 }), actionOptions);
   const secondClick = rawAction({ option: 2 }); secondClick.header.event_id = 'action-two';
   assert.equal((await handleNativeQuestionCardAction(runtime, secondClick, actionOptions)).toast.type, 'success');

@@ -15,9 +15,8 @@ try {
     reasoning: { kind: 'enum', levels: ['low', 'medium', 'xhigh'], default: 'medium' } }]));
   const { updateAuthDocument } = await import('../lib/auth-config.mjs');
   await updateAuthDocument(doc => {
-    doc.people = [{ id: 'person_alice', name: 'Alice', credentials: [],
-      identities: [{ id: 'identity_alice', kind: 'feishu', realm: 'fixture', subjectId: 'alice' }] }];
-    doc.primaryPersonId = 'person_alice';
+    doc.people.push({ id: 'person_alice', name: 'Alice', credentials: [],
+      identities: [{ id: 'identity_alice', kind: 'feishu', realm: 'fixture', subjectId: 'alice' }] });
   });
   const { createSession, getSession } = await import('../chat/session-manager.mjs');
   const { requests } = await import('../chat/requests.mjs');

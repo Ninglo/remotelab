@@ -19,8 +19,11 @@ const { createSessionDetail } = await import('../chat/session-api-shapes.mjs');
 const { progressPolicyForCard } = await import('../lib/session-progress-policy.mjs');
 const { createProgressCardRefresh } = await import('../connectors/feishu/progress-card-refresh.mjs');
 const { setWss } = await import('../chat/ws-clients.mjs');
-const hints = [];
-setWss({ clients: [{ readyState: 1, send: value => hints.push(JSON.parse(value)) }] });
+const { promise: firstHint, resolve: receiveHint } = Promise.withResolvers();
+setWss({ clients: [{ readyState: 1, _authSession: { authKind: 'service' }, send: value => {
+  const hint = JSON.parse(value);
+  if (hint.progressCard) receiveHint(hint);
+} }] });
 after(() => setWss(null));
 const { handleFeishuProgressPolicyAction } = await import('../connectors/feishu/progress-policy-actions.mjs');
 const { recordFeishuCardAction } = await import('../connectors/feishu/card-engagement.mjs');
@@ -53,8 +56,8 @@ const request = async (path, options = {}) => {
   try { return { response: { ok: true }, json: { session: createSessionDetail(await updateProgressCardDisclosure('s', options.body)) } }; }
   catch (error) { return { response: { ok: false }, json: { error: error.message } }; }
 };
-const callback = (eventId, mode, extra = {}) => ({ header: { event_id: eventId, tenant_key: 'tenant' }, event: {
-  context: { open_chat_id: 'group', open_message_id: 'original' }, operator: { open_id: 'person' },
+const callback = (eventId, mode, extra = {}) => ({ header: { event_id: eventId }, event: {
+  context: { open_chat_id: 'group', open_message_id: 'original' }, operator: { open_id: 'person', tenant_key: 'tenant' },
   action: { value: { namespace: 'progress-card', sessionId: 's', anchorSeq: first.seq, revision: 0, mode, ...extra } } } });
 const act = raw => handleFeishuProgressPolicyAction({ config: { sourceRouteId: 'bot' } }, raw,
   { request, stateDir, authorize: async summary => summary.sender.openId === 'person', recordAction: input => {
@@ -62,7 +65,7 @@ const act = raw => handleFeishuProgressPolicyAction({ config: { sourceRouteId: '
     observations.push(observed); return observed;
   } });
 
-test('latest summary is outside, history defaults hidden, and real clicks keep one message through updates', async () => {
+test('latest summary is outside, history defaults hidden, and real clicks keep one message through updates', { timeout: 5000 }, async () => {
   let [cycle] = await cycles();
   const collapsed = buildFeishuWorkboardCard(cycle.content, cycle.board, cycle.progress, cycle);
   assert.equal(collapsed.body.elements.find(e => e.tag === 'button').text.content, '点击显示进展');
@@ -70,7 +73,7 @@ test('latest summary is outside, history defaults hidden, and real clicks keep o
   assert(collapsed.body.elements.every(e => e.content?.length < 220 || !e.content));
   assert.doesNotMatch(JSON.stringify(collapsed), /collapsible_panel|查看完整工作过程/);
   assert.equal((await act(callback('expand-a', 'expanded'))).toast.type, 'success');
-  assert.deepEqual(hints.find(hint => hint.progressCard)?.progressCard,
+  assert.deepEqual((await firstHint).progressCard,
     { anchorSeq: first.seq, mode: 'expanded', revision: 1, sourceRouteId: 'bot', chatId: 'group' },
     'accepted clicks broadcast only presentation fields, without actor or change identities');
   [cycle] = await cycles();
@@ -114,7 +117,7 @@ test('callbacks validate the real message, anchor, tenant and operator; core rej
   const before = observations.length;
   for (const change of [raw => { raw.event.context.open_message_id = 'forwarded'; },
     raw => { raw.event.action.value.anchorSeq = progress.seq; },
-    raw => { raw.header.tenant_key = 'other'; }, raw => { raw.event.operator.open_id = 'outsider'; }]) {
+    raw => { raw.event.operator.tenant_key = 'other'; }, raw => { raw.event.operator.open_id = 'outsider'; }]) {
     const raw = callback('forged', 'collapsed'); change(raw);
     assert.equal((await act(raw)).toast.type, 'error');
   }

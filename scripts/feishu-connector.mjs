@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview,
-  restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE } from '../connectors/feishu/restricted-access.mjs';
+  restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
 import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
@@ -651,6 +651,11 @@ async function isAllowedByPolicy(policy, summary) {
     || allowed.unionIds.includes(sender.unionId)
     || allowed.tenantKeys.includes(sender.tenantKey || summary.tenantKey)
   );
+}
+
+function isAllowedCardAction(config, raw, summary) {
+  const verified = summarizeFeishuCardAction(config, raw, summary);
+  return verified ? isAllowedByPolicy(config.accessPolicy, verified) : false;
 }
 
 async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed) {
@@ -1809,7 +1814,7 @@ function participationController(runtime, helpers = {}) {
       ...summary, chatType: summary.chatType || 'group',
     }),
     ...(runtime.groupConfiguration ? { getConfiguration: record => runtime.groupConfiguration.view(record) } : {}),
-    authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+    authorize: (summary, raw) => isAllowedCardAction(runtime.config, raw, summary),
     resolveSession: async summary => {
       const binding = await findFeishuThreadSessionBinding(runtime, summary);
       if (binding?.sessionId) return binding.sessionId;
@@ -1859,7 +1864,7 @@ function groupConfigurationController(runtime, helpers = {}) {
     request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
     resolveDefault: () => resolveFeishuRuntimeSelection(runtime, { chatType: 'group', conversationKind: 'main' }),
     participation: () => participationController(runtime, helpers),
-    authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+    authorize: (summary, raw) => isAllowedCardAction(runtime.config, raw, summary),
   });
   return runtime.groupConfiguration;
 }
@@ -2029,7 +2034,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     if (command.commands.length !== 1) return enqueue(runtime, summary, '/project 请单独使用。');
     if (!runtime.projectSurface && runtime.config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
       request: helpers.requestRemoteLab || runtime.requestRemoteLab,
-      authorize: summary => isAllowedByPolicy(runtime.config.accessPolicy, summary),
+      authorize: (summary, raw) => isAllowedCardAction(runtime.config, raw, summary),
     });
     if (!runtime.projectSurface) return enqueue(runtime, summary, '当前群尚未启用项目入口。');
     let result;
@@ -2360,7 +2365,7 @@ async function main() {
   runtime.cardReadSampler = createFeishuCardReadSampler(runtime);
   runtime.personalSettings = createPersonalSettingsController(runtime, { authorize: summary => isAllowedByPolicy(config.accessPolicy, summary) });
   if (config.projectSurfacesPath) runtime.projectSurface = createProjectSurface(runtime, {
-    authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+    authorize: (summary, raw) => isAllowedCardAction(config, raw, summary),
   });
   // Identity is also required for self-message suppression and bot handoff mentions in group=all.
   runtime.botIdentity = await withTimeout(
@@ -2563,25 +2568,26 @@ async function main() {
     'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
     'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
     'card.action.trigger': async raw => {
+      const authorizeCard = summary => isAllowedCardAction(config, raw, summary);
       const automationFeedback = await handleAutomationCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
-        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+        authorize: authorizeCard,
       });
       if (automationFeedback) return automationFeedback;
       const personalFeedback = await runtime.personalSettings.action(raw);
       if (personalFeedback) return personalFeedback;
       const memoryFeedback = await handleMemoryReviewCardAction(runtime, raw, {
-        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+        authorize: authorizeCard,
       });
       if (memoryFeedback) return memoryFeedback;
       const questionFeedback = await handleNativeQuestionCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
-        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+        authorize: authorizeCard,
       });
       if (questionFeedback) return questionFeedback;
       const progressFeedback = await handleFeishuProgressPolicyAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
-        authorize: summary => isAllowedByPolicy(config.accessPolicy, summary),
+        authorize: authorizeCard,
       });
       if (progressFeedback) return progressFeedback;
       const configurationFeedback = await runtime.groupConfiguration?.action(raw);

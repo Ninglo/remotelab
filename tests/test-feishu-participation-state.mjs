@@ -32,7 +32,8 @@ try {
       patch: async x => { calls.cards.push(x); return { code: 0 }; },
       create: async () => { throw new Error('must reuse existing main card'); },
     } } } } };
-  const options = { resolveSession: async () => 's1', cancelSession: async id => calls.stopped.push(id), authorize: async () => true };
+  const options = { resolveSession: async () => 's1', cancelSession: async id => calls.stopped.push(id),
+    authorize: async (_summary, raw) => !!raw?.event?.operator?.open_id };
   runtime.participation = createParticipationController(runtime, options);
   const base = { chatId: 'misc', chatType: 'group', chatMode: 'group', tenantKey: 'tenant',
     messageType: 'text', sender: { senderType: 'user', openId: 'human' }, mentions: [] };

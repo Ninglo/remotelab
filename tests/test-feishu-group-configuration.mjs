@@ -51,7 +51,8 @@ try {
   runtime.participation = createParticipationController(runtime, { authorize: async () => true, cancelSession: async () => {},
     getConfiguration: record => controller.view(record) });
   const options = { request, resolveDefault: async () => session, participation: () => runtime.participation,
-    authorize: async summary => summary.sender.openId === 'human' };
+    authorize: async (summary, raw) => summary.sender.openId === 'human'
+      && raw?.event?.operator?.open_id === 'human' };
   controller = createGroupConfigurationController(runtime, options);
   await runtime.participation.remember(source, session.id);
   const record = await runtime.participation.state(source);
@@ -76,9 +77,9 @@ try {
   const { loadPersonMessageReplies } = await import('../chat/person-message-replies.mjs');
   const { captureMessageRoutingOptions } = await import('../chat/message-routing-policy.mjs');
   await updateAuthDocument(doc => {
-    doc.people = ['human', 'other'].map(name => ({ id: `person_${name}`, name, credentials: [],
-      identities: [{ id: `identity_${name}`, kind: 'feishu', realm: config.sourceRouteId, subjectId: name }] }));
-    doc.primaryPersonId = 'person_human';
+    doc.people.push(...['human', 'other'].map(name => ({ id: `person_${name}`, name, credentials: [],
+      identities: [{ id: `identity_${name}`, kind: 'feishu', realm: config.sourceRouteId, subjectId: name }] })));
+    // Keep the bootstrap administrator: these are ordinary test members.
   });
   const pilot = { version: 2, enabled: true, personalOptIn: true, trialId: 'test', scopeLabel: '六个测试群',
     groups: [{ sourceRouteId: config.sourceRouteId, tenantKey: source.tenantKey, chatId: source.chatId, folder: home }] };

@@ -1260,6 +1260,13 @@ If you need deeper implementation or rollout context after the setup is working:
 
 ### Optional personal settings pilot
 
+For interactive controls, the connector checks the card's original chat/message
+and authorizes the callback's operator, tenant and configured app. The stored
+delivery target alone is not a caller identity. If a known member sees an
+unauthorized-card toast, inspect the callback path and durable receipt before
+changing the role list or asking for OAuth again; see
+[the external message protocol](external-message-protocol.md).
+
 Configure `personalSettings.openIds` only for the explicitly invited testers, and
 an optional credential-free HTTPS `personalSettings.webUrl`. The existing
 `card.action.trigger` subscription handles these private cards as well. A normal

@@ -50,7 +50,7 @@ export async function handleFeishuProgressPolicyAction(runtime, raw, {
     if (!current.response?.ok) return reply('无法读取会话，输入 /progress 可重试。');
     const session = current.json?.session;
     const target = session?.conversation?.target;
-    const summary = { chatId, chatType: target?.chatType, tenantKey: trim(event.tenant_key || raw?.header?.tenant_key),
+    const summary = { chatId, chatType: target?.chatType, tenantKey: trim(event.operator?.tenant_key || event.tenant_key || raw?.header?.tenant_key),
       ...(target?.conversationKind === 'thread' ? { threadId: target.threadId } : {}),
       sender: { senderType: 'user', openId: actor,
         userId: trim(event.operator?.operator_id?.user_id || event.operator?.user_id),

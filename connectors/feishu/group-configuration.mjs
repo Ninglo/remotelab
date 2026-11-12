@@ -101,7 +101,7 @@ export function createGroupConfigurationController(runtime, { request, resolveDe
     const summary = { ...record?.source, chatId, messageId, chatType: 'group', chatMode: 'group', conversationKind: 'main',
       sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id };
     if (!record || record.source.topicId || !actor || actor === runtime.botIdentity?.openId
-        || record.source.chatId !== chatId || record.cardMessageId !== messageId || !await authorize(summary)) {
+        || record.source.chatId !== chatId || record.cardMessageId !== messageId || !await authorize(summary, raw)) {
       return { toast: { type: 'error', content: '配置卡片已失效或无权操作。' } };
     }
     if (['parallel-on', 'parallel-off', 'parallel-status', 'routing-on', 'routing-off', 'routing-status'].includes(value.action)) {

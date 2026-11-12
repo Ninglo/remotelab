@@ -193,6 +193,9 @@ all possible tasks, or claim client click acceptance from API delivery alone.
 The installed Bot must already have a configured `card.action.trigger`
 subscription; enabling that subscription in Feishu's console is a human step
 only if it is absent.
+Project card actions use the same authenticated callback operator, tenant and
+configured app as other Feishu card controls. Retained card targets locate the
+original message; they do not establish the clicker's role.
 
 ## Shared announcement context
 

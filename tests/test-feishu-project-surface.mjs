@@ -67,7 +67,8 @@ try {
       return patchResult;
     },
   } } } };
-  const options = { authorize: async summary => summary.sender.openId === 'allowed', watchFiles: false };
+  const options = { authorize: async (summary, raw) => summary.sender.openId === 'allowed'
+    && raw?.context?.open_chat_id === 'discussion', watchFiles: false };
   const makeSurface = extra => { const surface = createProjectSurface(runtime, { ...options, ...extra });
     surfaces.push(surface); return surface; };
   let surface = makeSurface();

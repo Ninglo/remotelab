@@ -384,7 +384,7 @@ export function createParticipationController(runtime, { resolveSession, cancelS
       sender: { senderType: 'user', openId: actor }, eventId: raw.header?.event_id || event.event_id });
     if (!record || !actor || record.source.chatId !== chatId || record.cardMessageId !== messageId
         || !MODES.has(value.mode) || value.epoch !== (await state(summary)).epoch || !participationEnabled(runtime, summary)
-        || !await authorize(summary)) return { toast: { type: 'error', content: '状态已变化或无权操作，请看最新卡片。' } };
+        || !await authorize(summary, raw)) return { toast: { type: 'error', content: '状态已变化或无权操作，请看最新卡片。' } };
     void change(summary, value.mode, { controlId: summary.eventId || `button:${actor}:${record.epoch}:${value.mode}` })
       .catch(error => console.warn(`[feishu-participation] ${error.message}`));
     return { toast: { type: 'info', content: '正在切换，生效后卡片会更新。' } };

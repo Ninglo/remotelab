@@ -25,7 +25,7 @@ export function parseProjectAction(raw) {
     messageId: trim(event.context?.open_message_id || event.context?.message_id),
     actor: trim(event.operator?.operator_id?.open_id || event.operator?.open_id),
     userId: trim(event.operator?.operator_id?.user_id || event.operator?.user_id),
-    tenantKey: trim(event.tenant_key || raw?.header?.tenant_key) };
+    tenantKey: trim(event.operator?.tenant_key || event.tenant_key || raw?.header?.tenant_key) };
 }
 
 export function createProjectSurface(runtime, { request = runtime.requestRemoteLab,
@@ -152,14 +152,14 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     });
   }
 
-  async function validate(action) {
+  async function validate(action, raw) {
     if (!action || !ACTIONS.has(action.action) || !/^[a-f0-9]{24}$/.test(action.cardKey || '')
       || !action.actor || !action.messageId) throw new Error('项目操作无效。');
     const record = await cards.get(action.cardKey);
     if (!record?.messageId || action.chatId !== record.source.chatId
       || action.messageId !== record.messageId) throw new Error('请在项目原卡片中操作。');
     if (!await authorize({ chatId: action.chatId, tenantKey: action.tenantKey,
-      sender: { senderType: 'user', openId: action.actor, userId: action.userId, tenantKey: action.tenantKey } })) {
+      sender: { senderType: 'user', openId: action.actor, userId: action.userId, tenantKey: action.tenantKey } }, raw)) {
       throw new Error('当前账号无法修改此项目入口。');
     }
     if (isExpired(record) || (record.createdAt && Date.now() - record.createdAt >= CARD_UPDATE_WINDOW_MS)) throw expiredError();
@@ -181,7 +181,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const action = parseProjectAction(raw);
     if (!action) return null;
     try {
-      await validate(action);
+      await validate(action, raw);
       return { accepted: true, toast: { type: 'info', content: '正在核对并更新项目原卡。' } };
     } catch (error) { return { accepted: false, toast: { type: 'error',
       content: /^[\u3400-\u9fff]/.test(error.message) ? error.message : '项目来源暂时不可核实，请刷新后重试。' } }; }
@@ -224,7 +224,7 @@ export function createProjectSurface(runtime, { request = runtime.requestRemoteL
     const action = parseProjectAction(raw);
     if (!action) return null;
     return exclusive(action.cardKey, async () => {
-      const { record, source } = await validate(action);
+      const { record, source } = await validate(action, raw);
       const next = ['pause', 'resume'].includes(action.action)
         ? await control(record, source, action)
         : { ...record, tab: action.action, page: action.page || 0, alias: action.alias || '', notice: '' };

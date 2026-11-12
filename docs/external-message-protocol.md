@@ -358,6 +358,17 @@ final-message behavior.
 In-flight supplementary replies and native questions do not consume the final
 reply for an accepted input. A combined final can still cover those inputs;
 per-input reply reservations continue to prevent duplicate final publication.
+
+Feishu interactive-card actions must authorize the person who clicked using
+the callback's authenticated operator, tenant and the receiving app's configured
+app ID. The stored card target identifies where the card was sent; it is not a
+sender identity. Compare any tenant or app fields retained on that target with
+the callback, then build the complete role-check summary. A missing or
+conflicting callback identity fails closed. An authorized choice carries that
+same verified sender and tenant into the accepted native-question Request.
+Do not interpret a rejected card click as a change to the person's HR role or
+as a need to repeat OAuth without checking the callback path and its receipt.
+
 When a continuation's native final also names settled human inputs from an
 earlier execution in the same conversation, those older IDs are context only.
 Publication reserves the explicitly selected current-execution inputs, sends

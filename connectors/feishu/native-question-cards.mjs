@@ -154,11 +154,13 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
       const path = receiptPath(runtime, value);
       const card = await readRecord(path);
       if (!card || card.messageId !== messageId || card.target.chatId !== chatId) return reply('这张卡片不属于原问题。');
-      const tenantKey = trim(event.tenant_key || raw?.header?.tenant_key);
-      const summary = { ...card.target, messageId, tenantKey,
-        sender: { senderType: 'user', openId: actor,
-          userId: trim(event.operator?.operator_id?.user_id), unionId: trim(event.operator?.operator_id?.union_id) } };
-      if ((card.target.tenantKey && card.target.tenantKey !== tenantKey) || !await authorize(summary)) return reply('无权回答这个问题。');
+      const tenantKey = trim(event.operator?.tenant_key || event.tenant_key || raw?.header?.tenant_key);
+      const summary = { ...card.target, messageId, appId: trim(runtime.config.appId), tenantKey,
+        sender: { senderType: 'user', openId: actor, tenantKey,
+          userId: trim(event.operator?.operator_id?.user_id || event.operator?.user_id),
+          unionId: trim(event.operator?.operator_id?.union_id || event.operator?.union_id) } };
+      if ((card.target.appId && card.target.appId !== runtime.config.appId)
+          || (card.target.tenantKey && card.target.tenantKey !== tenantKey) || !await authorize(summary)) return reply('无权回答这个问题。');
       let text = '';
       if (Number.isInteger(value.option) && value.option >= 1 && value.option <= card.question.options.length) text = String(value.option);
       else {
@@ -187,7 +189,7 @@ export async function handleNativeQuestionCardAction(runtime, raw, { request, au
           submission = { actor, text, body: {
             requestId: `feishu-question:${eventId}`, nativeQuestionId: value.questionId, text,
             sourceContext: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
-              chatId, chatType: card.target.chatType, messageId, tenantKey, sender: summary.sender,
+              chatId, chatType: card.target.chatType, messageId, appId: summary.appId, tenantKey, sender: summary.sender,
               createTime: String(Date.now()), messageType: 'interactive',
               eventId, ...(card.thread_id ? { threadId: card.thread_id } : {}) },
             sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: card.target },

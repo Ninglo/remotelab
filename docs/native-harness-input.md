@@ -228,6 +228,11 @@ number, continues the conversation without selecting an option. Claude
 multi-select also accepts comma-separated numbers such as `1,2`. Several
 questions appear in order.
 
+The Feishu option callback authorizes the actual clicker from the authenticated
+operator, tenant and configured app, then keeps that identity on the submitted
+Request. A denial on this card requires callback/receipt inspection before
+claiming that the person lacks a role or needs to repeat OAuth.
+
 Web controls submit with `nativeQuestionAnswerSource: "control"`; Feishu callback
 Request IDs identify the same control path. The answer stays in raw history as
 `native_question_answer` and reaches the native question tool. The visible

@@ -1,5 +1,13 @@
 # Shared User Feedback Log
 
+### 2026-11-12 — Authorized Feishu choice rejected by an incomplete card identity
+
+- Feedback: an HR user clicked an option on a Bot question card and saw a permission denial, while her direct text reply in the same private chat was accepted. The earlier explanation blamed the conversation window; that diagnosis was wrong.
+- Confirmed code cause: the card action summary passed to the roles policy lacked the receiving app ID and sender tenant. The roles policy requires both, so it denied even a listed HR open ID. The card receipt recorded no accepted button submission; the later direct text decision was handled separately.
+- Repair in the connector's callback boundary: derive app, tenant and operator from the authenticated callback, reject conflicts with retained card context, and pass the verified identity into native-question Requests. Apply the same normalization to other card action permission checks so the error is not Person-specific. Keep the restricted interviewer role and foreign-tenant/app denial unchanged.
+- Verification covers authorized clicks, missing/conflicting app, tenant and operator identities, revoked/restricted roles, durable duplicate/retry admission, and preserved downstream identity. Legacy group/automation fixtures now retain the bootstrap administrator; the progress-card fixture authenticates its WebSocket and awaits the asynchronous hint. These changes restore the tests without relaxing production authorization. Instance rollout and a subsequent natural callback/readback remain separate deployment evidence.
+- Related workflow feedback: message identity, user OAuth, app scopes, calendar ownership/ACL and recruiting API authorization are independent checks. Diagnose the exact failed operation; a recruiting API 401 or a wrong calendar lookup is not proof that calendar consent is missing. Look up an existing event before creating another, preserve its actual participants and prior decisions, and avoid repeated consent requests based only on a permission toast.
+
 ### 2026-11-12 — Shared printing and personal information assistance (ideas to discuss)
 
 - Source/context: a project participant relayed two requests from informal colleague conversations and explicitly asked to record them for discussion when time permits.
