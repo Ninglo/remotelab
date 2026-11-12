@@ -4,6 +4,7 @@ import { normalizeLimits, normalizeResetCredits } from '../../lib/codex-account-
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 import { nativeQuestionAnswers } from '../native-user-questions.mjs';
+import { projectMainlineHooks, mainlineFinalAllowed } from '../../lib/project-mainline.mjs';
 
 const nativeStatus = value => value === 'inProgress' ? 'in_progress' : value === 'declined' ? 'failed' : value;
 const textInput = text => [{ type: 'text', text: String(text), text_elements: [] }];
@@ -58,7 +59,17 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   }
   args.push('-c', 'approval_policy="never"');
   const recoveryHook = options.ruleRecoverySessionId ? codexRuleRecoveryHook(options.ruleRecoverySessionId) : null;
-  if (recoveryHook) args.push('-c', recoveryHook.override);
+  const projectHooks = projectMainlineHooks(options.projectMainlineSessionId, options.projectMainlineConfigDir);
+  const guardedFinal = projectHooks.length > 0;
+  const nativeHooks = [...(recoveryHook ? [{ event: 'SessionStart', matcher: 'compact', command: recoveryHook.command, timeout: 30, additionalContextLimit: 0 }] : []), ...projectHooks];
+  const hookConfig = {};
+  for (const { event, matcher, ...handler } of nativeHooks) {
+    (hookConfig['hooks.' + event] ||= []).push({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', ...handler }] });
+  }
+  // Inline TOML is used only for generated, exactly trusted native handlers.
+  const toml = value => Array.isArray(value) ? '[' + value.map(toml).join(',') + ']'
+    : value && typeof value === 'object' ? '{' + Object.entries(value).map(([k,v]) => k + '=' + toml(v)).join(',') + '}' : JSON.stringify(value);
+  for (const [key, value] of Object.entries(hookConfig)) args.push('-c', key + '=' + toml(value));
 
   let sequence = 0, closed = null, initialization = null, threadId = '', activeTurnId = '';
   let operationTail = Promise.resolve(), inputsInFlight = 0, asyncQuestionsPending = 0, lastTerminal = null, settledTerminalId = '';
@@ -68,6 +79,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   const asyncQuestions = new Set();
   const finalAnswerTurns = new Set();
   const ruleRecoveryFailures = new Map();
+  const pendingFinals = new Map();
 
   function askAsync(item) {
     if (asyncQuestions.has(item.id)) return;
@@ -242,7 +254,8 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         output_preview: true };
     } else return;
     items.set(id, item);
-    onEvent({ type: 'item.updated', native_stream: true, item: { ...item } });
+    if (!(guardedFinal && item.type === 'agent_message' && item.phase !== 'commentary'))
+      onEvent({ type: 'item.updated', native_stream: true, item: { ...item } });
   }
   function handle(message) {
     if (closed || !message || typeof message !== 'object') return;
@@ -270,6 +283,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           if (recoveryHook && params.run?.eventName === 'sessionStart' && failure) {
             ruleRecoveryFailures.set(params.turnId || activeTurnId, failure.text);
           }
+          const projectFailure = (params.run?.entries || []).find(entry => entry.kind === 'stop'
+            && entry.text?.startsWith('Project mainline check failed:'));
+          if (guardedFinal && projectFailure) ruleRecoveryFailures.set(params.turnId || activeTurnId, projectFailure.text);
           break;
         }
         case 'turn/completed': {
@@ -277,6 +293,13 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           const recoveryError = ruleRecoveryFailures.get(turn?.id);
           if (recoveryError) { turn = { ...turn, status: 'failed', error: {message: recoveryError} };ruleRecoveryFailures.delete(turn.id); }
           if (!turn?.id || completedTurns.has(turn.id)) break;
+          const pendingFinal = pendingFinals.get(turn.id);
+          if (guardedFinal && turn.status === 'completed' && pendingFinal) {
+            if (mainlineFinalAllowed(options.projectMainlineSessionId, turn.id, options.projectMainlineConfigDir)) {
+              onEvent({ type: 'item.completed', item: pendingFinal });
+            } else turn = { ...turn, status: 'failed', error: { message: 'Project mainline check failed: final was not accepted; todo remains unfinished.' } };
+          }
+          pendingFinals.delete(turn.id);
           completedTurns.add(turn.id);
           if (activeTurnId === turn.id) activeTurnId = '';
           const terminal = { status: turn.status, turnId: turn.id,
@@ -306,7 +329,9 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
           const item = execItem(params.item);
           if (!item) break;
           items.set(item.id, item);
-          onEvent({ type: message.method === 'item/started' ? 'item.started' : 'item.completed', item });
+          if (guardedFinal && item.type === 'agent_message' && item.phase !== 'commentary') {
+            if (message.method === 'item/completed') pendingFinals.set(params.turnId || activeTurnId, item);
+          } else onEvent({ type: message.method === 'item/started' ? 'item.started' : 'item.completed', item });
           if (message.method === 'item/completed') {
             items.delete(item.id);
             reasoningParts.delete(item.id);
@@ -340,23 +365,23 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
       await request('initialize', { clientInfo: { name: 'remotelab', version: '1.0.0' } });
       send({ method: 'initialized' });
       let recoveryConfig;
-      if (recoveryHook) {
+      if (nativeHooks.length) {
         const existing = await request('config/read', { includeLayers: false, ...(cwd ? { cwd } : {}) });
         const listing = await request('hooks/list', { cwds: cwd ? [cwd] : [] });
-        const own = listing.data?.flatMap(entry => entry.hooks || []).find(hook =>
-          hook.command === recoveryHook.command && hook.eventName === 'sessionStart' && hook.matcher === 'compact'
-          && hook.source === 'sessionFlags' && hook.additionalContextLimit === 0);
-        if (!own?.currentHash || !own.key) throw new Error('Codex native rule recovery hook unavailable; refusing reference-only continuation');
+        const ownHooks = nativeHooks.map(expected => listing.data?.flatMap(entry => entry.hooks || []).find(hook =>
+          hook.command === expected.command && hook.eventName === expected.event[0].toLowerCase() + expected.event.slice(1)
+          && (hook.matcher || '') === (expected.matcher || '') && hook.source === 'sessionFlags'));
+        if (ownHooks.some(hook => !hook?.currentHash || !hook.key)) throw new Error('Codex required native hook unavailable; refusing unguarded continuation');
         // Trust only our exact generated command for this process/thread. Do
         // not persist settings or enable/trust any other user/plugin hooks.
         const hookState = { ...(existing.config?.hooks?.state || {}) };
         if (existing.config?.features?.hooks !== true) {
           for (const hook of listing.data?.flatMap(entry => entry.hooks || []) || []) {
-            if (hook.key !== own.key) hookState[hook.key] = { ...hookState[hook.key], enabled: false };
+            if (!ownHooks.some(own => own.key === hook.key)) hookState[hook.key] = { ...hookState[hook.key], enabled: false };
           }
         }
-        recoveryConfig = { 'hooks.state': { ...hookState, [own.key]: { enabled: true, trusted_hash: own.currentHash } }, 'features.hooks': true,
-          'hooks.SessionStart': [{ matcher: 'compact', hooks: [{ type: 'command', command: recoveryHook.command, timeout: 30, additionalContextLimit: 0 }] }] };
+        for (const own of ownHooks) hookState[own.key] = { ...hookState[own.key], enabled: true, trusted_hash: own.currentHash };
+        recoveryConfig = { 'hooks.state': hookState, 'features.hooks': true, ...hookConfig };
       }
       const resumeId = configuredOptions.threadId;
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {

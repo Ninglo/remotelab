@@ -53,6 +53,7 @@ Usage:
   remotelab feishu                   Run reusable Bot-only Feishu office actions
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab workboard                Read task evidence and submit compact state updates
+  remotelab project-track            Maintain an explicitly bound project SOP and todo
   remotelab message-replies          Manage personal work-start and in-flight input trials
   remotelab feature-observation      Record an opted-in feature check and its evidence
   remotelab knowledge                Search/read an explicitly enabled organization knowledge pilot
@@ -300,6 +301,12 @@ switch (command) {
     break;
   }
 
+  case 'project-track': {
+    const { runProjectTrack } = await import(scriptPath('lib/project-mainline.mjs'));
+    try { console.log(JSON.stringify(await runProjectTrack(args))); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'workboard': {
     const { runWorkboardCommand } = await import(scriptPath('lib/workboard-command.mjs'));
     try {

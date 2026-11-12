@@ -562,6 +562,7 @@ async function main() {
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: { ...invocationOptions, ...(options.invocationOptions || {}), requestId: manifest.requestId,
+        projectMainlineSessionId: manifest.sessionId,
         observeCodexUsage: Boolean(codexAccount),
         ...(manifest.ruleContextDelivery?.recovery === 'codex-session-start' ? { ruleRecoverySessionId: manifest.sessionId } : {}),
         ...(codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [

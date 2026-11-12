@@ -5,6 +5,14 @@ as its input channel is available. The Harness owns when those messages affect
 model inference, tool execution, retries and subsequent turns. Receiving an
 input is not a claim that an already-running model call has consumed it.
 
+Explicitly bound project Sessions can enable the [SOP/todo checkpoint](project-mainline.md)
+with `remotelab project-track`. The runner supplies native Codex SessionStart,
+UserPromptSubmit, Stop and Interrupt hooks only for that binding. Final messages
+are buffered until the current input's checkpoint and readback pass; a native
+Stop continuation returns unfinished work to the same Harness. Commentary and
+questions remain immediate. This adds no separate reviewer model and does not
+change unbound Sessions or claim enforcement for other Harness families.
+
 ## New private conversation versus active input
 
 Feishu `/new` creates a blank Session using the existing atomic conversation
