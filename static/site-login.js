@@ -1,7 +1,7 @@
 // Shared device authorization controller. The workbench mounts it in its own
 // login card; employee websites keep the standalone /site-login entry.
 (() => {
-  function create({ status, authorize, retry, onConnected, onBusy = () => {}, openAuthorization = false, messages = {} }) {
+  function create({ status, authorize, retry, onConnected, onBusy = () => {}, openAuthorization = false, returnTo = location.pathname + location.search + location.hash, messages = {} }) {
     const message = (key, fallback) => messages[key] || fallback;
     let timer, deadline = 0, generation = 0, pending = false, polling = null, popup;
     async function api(action, method = 'GET') {
@@ -57,6 +57,12 @@
         try { popup = window.open('about:blank', '_blank'); } catch {}
       }
       try {
+        const sso = await api('sso/config');
+        if (sso.enabled && !sso.issuer) {
+          closePopup();
+          location.replace('/api/site-login/sso/start?returnTo=' + encodeURIComponent(returnTo));
+          return;
+        }
         let known = false;
         try { await api('me'); known = true; } catch {}
         if (!known) {
@@ -107,5 +113,5 @@
       destination = target.pathname + target.search + (target.hash || location.hash);
     }
   } catch {}
-  create({ status, authorize, retry, onConnected: async () => destination !== '/site-login' ? destination : null }).start();
+  create({ status, authorize, retry, returnTo: destination === '/site-login' ? '/' : destination, onConnected: async () => destination !== '/site-login' ? destination : null }).start();
 })();

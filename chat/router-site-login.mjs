@@ -1,14 +1,17 @@
 import { readFile } from 'node:fs/promises';
+import { createSiteSsoHandler } from './site-login-sso.mjs';
 import { generateNonce, setSecurityHeaders } from './middleware.mjs';
 import { employeeSiteIdentity, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
 
-export function createSiteLoginHandler({ identity = employeeSiteIdentity, personFor = employeeSitePerson } = {}) {
+export function createSiteLoginHandler({ identity = employeeSiteIdentity, personFor = employeeSitePerson, ssoOptions = {} } = {}) {
+  const sso = createSiteSsoHandler({ identity, personFor, ...ssoOptions });
   return async (req, res, pathname) => {
     if (pathname !== '/site-login' && !pathname.startsWith('/api/site-login/')) return false;
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Vary', 'Cookie');
     const send = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
     try {
+      if (await sso(req, res, pathname)) return true;
       const gateway = await identity.gatewaySettings?.(req);
       if (gateway) {
         if (gateway.enabled === false) { send(503, { error: '员工登录已停用' }); return true; }

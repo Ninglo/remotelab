@@ -13,9 +13,11 @@ creator; a manual or unattended publication supplies `--owner <person-id>`.
 
 [点击体验首次登录与站点切换](/public-pages/remotelab-architecture-atlas/employee-login-demo.html)。
 演示位于现有整体说明网站，只切换模拟画面，不接触真实登录态。
-页面与两个真实示例站均按当前飞书设备授权流程说明；公司 SSO 接入已暂停。
+首次身份确认继续使用飞书设备授权；配置下述跨域入口后，独立域名也复用同一次确认。
+另一个 Muka 公司网关适配器仍未启用，不影响这里的员工网站单点登录。
 
-实际访问顺序是：打开目标网站 → 未登录则跳到 `/site-login?returnTo=原网址` →
+实际访问顺序是：打开目标网站 → 未登录则跳到 `/site-login?returnTo=原网址`
+（独立域名自动转到统一入口）→
 点击“使用飞书登录”，在新标签页完成飞书身份确认 → 回到原标签页，它检测到成功后自动进入原网站。
 飞书页不负责跳到各个业务网站；原登录页按飞书给定间隔查询授权结果，再按 `returnTo` 继续。
 已有有效身份时直接进入，正常切站无需再打开飞书。
@@ -51,11 +53,12 @@ identity 的 `feishu` 登录方式及 Web identity，不发行额外密码或 be
 | 域名的 HTTPS／反向代理入口 | 将静态网站、动态网站与登录请求送到同一 RemoteLab 服务 |
 | 静态发布 `/public-pages/<slug>/` | 发布时登记员工访问和负责人；服务端检查登录后才返回 HTML、数据与图片 |
 | 动态预览 `/preview/<slug>/` | 检查登录后代理到本机服务，并向服务传递已核人员身份 |
-| 统一员工登录 `/site-login` | 调用飞书设备授权接口，核对公司标识，签发同域共享会话 |
+| 统一员工登录 `/site-login` | 调用飞书设备授权接口，核对公司标识，签发员工会话，已登记的独立域名通过一次性凭证复用 |
 | 浏览器与服务端会话存储 | 浏览器保存 HttpOnly Cookie；服务端持久化会话，避免每次访问都调用飞书 |
 
 新建网站复用静态发布器或动态预览入口即可接入。负责人取创建人的已核身份，公司员工均可访问；
-管理员字段预留，不增加角色管理。独立域名、其他浏览器或浏览器内置 WebView 不共享同一份 Cookie。
+管理员字段预留，不增加角色管理。独立域名仍各有自己的 Cookie，但配置跨域登录后可自动取得同一员工会话；
+其他浏览器、浏览器配置文件或独立 WebView 需要分别登录。
 当前实现不要求先到网站门户挑选站点，也没有替旧站自动移除原有密码。
 
 ## Configuration and scope
@@ -106,11 +109,66 @@ endpoint without another Feishu prompt. Valid sessions renew to 30 days at most
 once per day; normal requests and renewal do not call Feishu. Restarting the
 service preserves sessions. Logout removes the server-side session.
 
-This is same-domain reuse, not cross-domain SSO. A different browser, browser
-profile or independent domain has a different cookie context. No broad parent-
-domain cookie is issued. Independently hosted sites require their own ingress integration.
+Without `sso.issuerOrigin`, reuse is limited to one hostname. With it, the registered
+independent hosts use the cross-domain flow below. A different browser/profile
+still needs its own login. No broad parent-domain cookie is issued. Independently
+hosted sites must terminate at the same managed ingress; unrelated services and
+other RemoteLab instances are not automatically trusted.
 Existing Basic Auth sites use the explicit migration below. Employee status synchronization and
 offboarding remain outside this login-only scope.
+
+## Cross-domain login and future websites
+
+Give the agent: “Enable one Feishu login across this instance's internal websites.
+Use its stable HTTPS domain as the issuer, keep the current tenant, identities,
+application permissions and public/machine exceptions, and make new managed sites
+inherit the same login. Verify the original deep links across different hosts.”
+The issuer and participants must reach the same instance and its identity store.
+This feature does not activate the separately paused Muka company gateway.
+
+Add to the existing private `site-login.json`, preserving its other fields:
+
+```json
+{"sso":{"issuerOrigin":"https://index.example.test"}}
+```
+
+The issuer is an exact HTTPS origin (loopback HTTP is accepted for local development).
+Participant origins are **only** the HTTPS hosts already registered in
+`employee-site-hosts.json`; there is no second client list. A new static publication
+or employee preview inherits login automatically on the main domain. A new independent
+hostname joins when its complete ingress and host route are registered there; direct
+proxies to the application bypass this mechanism and must not be used for internal sites.
+The existing `publish static` / `preview expose` employee defaults, ownership metadata,
+explicit public publications and exact authenticated machine routes remain unchanged.
+
+The flow is: website → issuer → website. The issuer reuses a valid employee or
+exactly bound Feishu workbench identity; otherwise its existing device flow asks
+for Feishu confirmation once. It returns a random code that expires in 60 seconds.
+The code is bound to the registered destination, a 10-minute initiating request,
+and a random HttpOnly/Secure/SameSite=Lax `__Host-employee_sso_*` browser cookie.
+Atomic consumption prevents replay, including concurrent callbacks. Original query
+strings and fragments are returned intact. Credentials never appear in URLs or HTML.
+The application still receives only the already verified Person header, with its
+original operation and role restrictions.
+
+Each host receives its own host-only cookie referencing the **same** durable employee
+session. Logout revokes that session across participating sites; remaining cookies
+cannot revive it. An existing separate workbench login may establish a new employee
+session on the next explicit login, as before. Sessions created before enabling SSO
+remain usable; a browser that only has an old independent-site cookie may need one
+initial confirmation at the issuer. Different browsers and WebViews remain separate.
+
+Temporary requests and grants use indexed SQLite through the existing worker at
+`employee-site-sso.json.sqlite` (mode 0600). Every use checks expiry; each new start
+removes expired records. Completed requests and redeemed codes are deleted atomically.
+The short-lived grant contains the session token only in server-side state. Service
+restart preserves both the browser binding and one-use semantics; storage errors fail
+closed. Disabling only `sso` restores per-host login without deleting existing sessions.
+
+`tests/test-site-login-sso.mjs` covers genuine HTTPS/browser redirects across four fixture
+origins, one Feishu confirmation, a newly registered host, deep links, identity labels,
+shared logout, expiry, replay races, wrong browsers/audiences and preserved API/media
+restrictions. The provider is isolated test data, not a live human Feishu authorization.
 
 ## Authentication boundary
 
@@ -355,7 +413,8 @@ role cookies may be named in `forwardCookies`; employee and console cookies and
 client identity headers never reach the upstream. Writes require same-origin
 requests. Video Range responses and streaming remain intact, while successful
 HTML receives the shared indicator. A different hostname still has a separate
-browser cookie, as described above; this is not cross-domain SSO.
+browser cookie. With `sso.issuerOrigin` configured, the same session is obtained
+through the browser-bound single-use exchange below, without another Feishu prompt.
 
 Device publishers use existing credentials, not human cookies. An employee
 preview may declare exact `machinePaths` entries with `method` (`GET` or `POST`),

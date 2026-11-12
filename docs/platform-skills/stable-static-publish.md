@@ -19,6 +19,8 @@ RemoteLab owns the static file server and publish lifecycle. Public ingress is s
 
 Use Service Port Forwarding instead when the result needs a long-running process, API, database connection, WebSocket, or server-side state.
 When employee login is configured, new publications default to `employee` access.
+They automatically reuse the instance login, including cross-domain SSO when
+`site-login.json` has `sso.issuerOrigin`. Do not embed another login into the page.
 The managed server authenticates every file, including JSON, images and downloads,
 before loading it. Explicitly public material uses `--access public`. Instances
 without employee identity configuration retain the existing public default.

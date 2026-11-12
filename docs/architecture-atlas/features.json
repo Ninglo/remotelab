@@ -799,7 +799,7 @@
           "id": "employee-site-login",
           "name": "网站统一员工登录",
           "purpose": "内部站点复用飞书员工登录，控制台可按实例启用员工自动注册。",
-          "entry": "沿托管网站入口接入；员工网站设备授权走 /site-login；控制台直接在原登录卡片完成飞书确认，启用注册后自动登记本人并返回原 Session 链接。公司 SSO 由已登记的网关完成登录和回调。",
+          "entry": "沿托管网站入口接入；员工网站统一入口走 /site-login；配置 sso.issuerOrigin 后已登记独立域名和新托管产物复用跨域登录；控制台直接在原登录卡片完成飞书确认，启用注册后自动登记本人并返回原 Session 链接。公司 SSO 由已登记的网关完成登录和回调。",
           "condition": "复用有效网页登录、员工和旧前沿身份；控制台默认仅映射已有账号；启用 workbenchRegistration 后，公司员工明确使用飞书登录即可自动注册普通账号，无需另填账号名、身份码或密码。会话仍按本人隔离，无权链接提供进入自己工作区的入口。旧 Basic 可映射原站服务端凭据，首次飞书进入无需旧密码；私人账号保留原人员与角色，原凭据调用继续有效；公开入口保持原访问方式。公司 SSO 暂停；主动退出暂停控制台自动重入，其他网站登录保留。",
           "example": "发布一个内部网站，公司员工均可访问，由本次创建人负责。",
           "sources": [
@@ -810,6 +810,8 @@
             "chat/employee-site-auth.mjs",
             "chat/router-qianyan-internal-routes.mjs",
             "chat/router-site-login.mjs",
+            "chat/site-login-sso.mjs",
+            "tests/test-site-login-sso.mjs",
             "templates/site-login.html",
             "static/site-login.js",
             "docs/employee-site-login.md",

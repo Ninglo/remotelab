@@ -25,7 +25,11 @@ to company employees, record the current human creator as owner, and reserve
 The loopback application must be healthy without its own login: the proxy handles
 login once and forwards the verified `x-remotelab-person-id`, never the employee
 cookie or a client-supplied identity header. Keep the application loopback-only.
-See [employee site login](../employee-site-login.md).
+See [employee site login](../employee-site-login.md). When `sso.issuerOrigin` is
+configured, new employee previews reuse the same cross-domain login automatically.
+For an independent hostname, route its complete ingress to this instance and register
+it in `employee-site-hosts.json`; this registration also enrolls it in SSO. Do not
+proxy internal HTML straight to an unauthenticated backend or add a second login.
 
 Existing Basic Auth routes retain their authentication on replacement. Instances
 without employee identity configuration retain the Basic Auth default; explicitly

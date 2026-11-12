@@ -40,7 +40,7 @@ export function createEmployeeHostHandler({ routes = loadEmployeeHosts, requireP
       if (/[\\\x00-\x1f\x7f%]/.test(decoded) || decoded.split('/').some(p => p === '..' || p === '.')) { reply(res, 400, '无效路径'); return true; }
       // Forwarded host values are supplied by the reverse proxy, never clients.
       req.headers['x-forwarded-host'] = req.headers.host;
-      if (path === '/site-login' || /^\/api\/site-login\/(me|start|poll|logout)$/.test(path)) {
+      if (path === '/site-login' || /^\/api\/site-login\/(?:me|start|poll|logout|sso\/(?:config|start|authorize|callback))$/.test(path)) {
         await login(req, res, path); return true;
       }
       if (Object.hasOwn(ASSETS, path) && ['GET', 'HEAD'].includes(req.method)) {
