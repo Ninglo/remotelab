@@ -28,6 +28,12 @@ clause. Encoded data requests retain the same checks. This is deterministic
 recognition of explicit requests, not complete semantic understanding; an
 unrecognized input never authorizes a resource read or disclosure.
 
+Completed-action reports, such as stating that colleagues have already been
+added to an application's access list, do not request a new permission change.
+V2 excludes those reports from mutation recognition. This does not validate the
+reported change, grant any permission, or exempt a simultaneous data request or
+new command. Mixed reports and commands retain the normal per-clause checks.
+
 Data eligibility does not grant protection-change authority. V2 `operationGrants`
 bind `sessionId`, `requestId`, `textSha256`, `operations` (`bypass`), `approvalRef`,
 and either an exact Person/identity pair or an `actor` with authenticated Feishu

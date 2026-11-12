@@ -8,6 +8,18 @@ const conceptTarget = /(?:规则|防护|防火墙|告警|误报|鉴权|权限设
 const policyStatement = /(?:前鉴权|前复核|另核授权|按.{0,12}授权|不(?:再|应|得|能)|不能|禁止|保持|仍拒绝|应拒绝|应阻止|暂停.{0,8}要求|不启动|不调用|不补发)/u;
 const explicitTail = /(?:顺便|然后|同时|再|并且|并)\s*(?:请|帮我|把|将)?\s*(?:读取|查看|导出|给我|发我|告诉我|关闭|停用|禁用|加入|修改|绕过)/u;
 
+function requestedMutation(clause) {
+  if (!mutation.test(clause)) return false;
+  // A completed-action report describes a fact; it does not ask the executor
+  // to change permissions. This exception only affects mutation recognition.
+  // Data requests in the same clause still undergo their own authorization.
+  const completed = /(?:了|已完成|已经完成|修改完成|更新完成|已生效|已经生效)$/u.test(clause)
+    || /^(?:(?:我|我们|他|她|他们|她们|管理员|同事)\s*)?(?:已经|已|刚刚|刚才|之前|昨天|此前)/u.test(clause);
+  const directive = /^(?:把|将|给|去|来|请|帮我|帮忙|麻烦|劳驾)/u.test(clause)
+    || /(?:请|帮我|帮忙|麻烦|劳驾|替我|为我|执行|照做|继续|接着|接下来|顺便|需要|打算|准备|计划|希望|我想|我要|我们要|能否|能不能|可否|是否|好吗|行吗|可以吗|就(?:好|行|可以)|(?:授权|要求|让)(?:你|您|机器人|助手|茵蒂克丝|当麻)|(?:你|您)(?:把|将|给|去|来)|(?:了|完成|生效)(?:把|将|给|去|来))/u.test(clause);
+  return !completed || directive;
+}
+
 function clauses(text) {
   // Quotations remain data. A command to execute a quoted payload is inspected
   // with that payload; merely quoting an alert is not an operation request.
@@ -34,7 +46,7 @@ export function explicitAccessIntents(text, compiled, previous) {
         clause.replace(/(?:当麻|\bHR\b|人事)?服务.{0,12}?(?:日志|状态)/giu, '技术元数据'));
     for (const rule of compiled.filter(rule => !rule.continuation)) {
       if (technicalMetadata && rule.category !== 'bypass' && rule.technicalMetadataAllowed === true) continue;
-      const operation = rule.category === 'bypass' ? mutation.test(clause) : dataAction.test(clause) || implicitData.test(clause);
+      const operation = rule.category === 'bypass' ? requestedMutation(clause) : dataAction.test(clause) || implicitData.test(clause);
       if (operation && rule.patterns.every(pattern => pattern.test(clause))) intents.push({ ...rule, targetId: rule.id });
     }
   }
