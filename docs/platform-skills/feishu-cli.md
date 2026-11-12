@@ -161,6 +161,58 @@ Bot application scope use
 [`feishu-auth-request`](../../skills/feishu-auth-request/SKILL.md). Do not print
 App Secrets or tokens.
 
+### Personal user authorization guard
+
+Operator prompt: “Protect this person's existing Feishu OAuth configuration at
+the normal CLI launcher. Bind it to their authenticated Feishu identity and only
+the named conversations. Keep access on demand; do not start background reading.”
+Use the original accepted request, exact Person, Bot route, tenant, user open ID,
+app/profile, and confirmed conversation/peer IDs. Keep real identities and grants
+in instance configuration, outside Git. This is separate from administrator roles.
+
+`lib/lark-personal-guard.mjs` runs before the official CLI in
+`scripts/lark-cli.mjs`. Personal configurations under
+`<instanceRoot>/config/lark-cli-personal/` require a
+`remotelab-personal-guard.json`; a missing, unreadable or malformed policy refuses
+execution. A policy marker in another selected config directory also opts in.
+Symlinks are resolved. Ordinary shared Bot/profile configurations are unchanged.
+
+Version 1 requires `enabled`, `mode: "manual"`, `personId`, `profile`, `appId`,
+`owner: {route, tenant, openId}`, `conversations: [{chatId, peerOpenId}]`,
+`disclosure`, and `sourceRequestId`. Optional ISO `notBefore` and `expiresAt`
+bound business calls; the ending instant is excluded. The requester must match
+the original active durable Request's verified connector identity and Person,
+and the Request must belong to the current Run. The latest human input in the
+Session is checked too, so another person's in-flight supplement does not inherit
+the root author's permission. Missing state and completed/stale requests refuse
+access. No name, Session ownership, administrator role or caller-written author
+label grants permission. This initial guard supports direct Feishu requests;
+background/Trigger/Schedule and other source types remain unimplemented.
+
+Only explicit `--profile` and `--as user` business calls are accepted: text-only
+`im +messages-send` to a configured peer/chat, with an idempotency key and an
+automatically appended disclosure; and `api GET /open-apis/im/v1/messages` with
+inline JSON constrained to a configured chat. Individual arbitrary-message reads,
+cross-chat searches, attachments, other writes and alternate raw API operations
+are refused. Use the scoped history query to read back a sent message. Owner
+`auth status` and local `auth logout` remain available outside the business time
+window. Logout clears local login state; it is not provider-side revocation.
+The guard does not decide whether message prose is a progress update or whether
+the human authorized that particular content; the Harness still owns that check.
+
+This adds no subscription, timer or model call. A future temporary reply window
+must be separately authorized and implemented. Validate with
+`node scripts/run-with-clean-instance-env.mjs node tests/test-lark-personal-guard.mjs`
+and an authorized sender's `--dry-run`; do not send a test to real recipients
+without an explicit request. Tool errors and receipts remain in normal history.
+
+**Boundary:** this is a guard on the normal launcher, not credential isolation.
+A same-OS-user process can bypass the launcher, copy configuration, alter readable
+request identifiers or state, or invoke the vendor binary directly; root/sudo can
+also bypass it. Protecting against those paths requires an independent credential
+service and execution isolation. Do not claim account-wide or all-channel security,
+and do not use this basic guard as evidence that unattended delegated sending is safe.
+
 ### Foldable work process
 
 Existing progress-card buttons also produce usage observations without saving personal defaults. Read signals, per-user click counts, collection coverage and the authenticated analysis endpoint are documented in [Feishu card engagement](../feishu-card-engagement.md). A read receipt is a signal, not proof that someone read the content carefully.

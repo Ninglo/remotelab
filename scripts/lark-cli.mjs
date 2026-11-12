@@ -2,11 +2,18 @@
 import { spawn, execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
+import { guardPersonalLarkCli } from '../lib/lark-personal-guard.mjs';
 import { isDocumentCreationCommand, createdDocumentFromResult, recordCreatedDocument } from '../lib/feishu-document-creation.mjs';
 
 const require = createRequire(import.meta.url);
 const cli = require.resolve('@larksuite/cli/scripts/run.js');
-const args = process.argv.slice(2);
+let args;
+try { args = (await guardPersonalLarkCli(process.argv.slice(2))).args; }
+catch (error) {
+  console.error(JSON.stringify({ ok: false, error: { type: 'authorization', code: error.code || 'guard_unavailable',
+    message: '个人飞书授权调用已拦截；需要本人的当前请求、允许的会话及有效策略。' } }));
+  process.exit(3);
+}
 let profile;
 if (isDocumentCreationCommand(args)) {
   try {

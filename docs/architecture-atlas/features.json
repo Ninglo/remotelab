@@ -638,11 +638,13 @@
           "name": "飞书文档和办公操作",
           "purpose": "在授权范围内读取或维护文档、知识库、消息、日历、任务和多维表格。",
           "entry": "在会话说清具体资源和操作；Agent 按现行飞书方法选择入口。",
-          "condition": "固定 Bot 动作只是其中一部分；其他操作需对应 CLI/Skill。应用 scope、用户授权和资源访问权分别检查。",
+          "condition": "固定 Bot 动作只是其中一部分；其他操作需对应 CLI/Skill。应用 scope、用户授权和资源访问权分别检查。 已登记的个人授权可在正常 CLI 入口核对本人当前请求、会话和文字代发范围；基础兜底不隔离同系统账号或 sudo，也不启动后台代回。",
           "example": "读取这篇文档，在原件补充结论并保留现有评论。",
           "sources": [
             "lib/feishu-action-command.mjs",
-            "docs/platform-skills/feishu-cli.md"
+            "docs/platform-skills/feishu-cli.md",
+            "lib/lark-personal-guard.mjs",
+            "scripts/lark-cli.mjs"
           ],
           "commands": [
             "feishu"
