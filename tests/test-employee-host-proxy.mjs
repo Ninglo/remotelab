@@ -13,15 +13,18 @@ const { siteIdentityCsp, injectSiteIdentityHtml } = await import('../chat/site-i
 const { handlePreviewProxy } = await import('../chat/preview-proxy.mjs');
 const listen = async s => { await new Promise(r => s.listen(0, '127.0.0.1', r)); return s.address().port; };
 let identity = { id: 'fixture-a', name: '测试甲', auth_kind: 'feishu' }, fail = false;
-const html = '<!doctype html><html><head><title>Fixture</title></head><body><header>Application</header><main>Fixture content</main><iframe src="/frame"></iframe></body></html>';
+const html = '<!doctype html><html><head><title>Fixture</title><link rel="stylesheet" href="/fixture.css"></head><body><header>Application</header><main>Fixture content <button id="fixture-action">Open recording</button></main><aside id="application-sidebar">Recording list</aside><iframe src="/frame"></iframe></body></html>';
 const upstream = http.createServer((req, res) => {
+  // Real viewer pages style their sidebar by tag. The injected identity bar
+  // must not inherit viewport height or column layout from those rules.
+  if (req.url === '/fixture.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); res.end('aside{height:100vh;max-width:100%;flex-direction:column;margin:20px;border-right:1px solid;position:sticky}aside span{display:block;height:100vh;margin:20px}aside a{position:fixed;inset:0;padding:100px}'); return; }
   if (req.url.startsWith('/video')) { res.writeHead(206, { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 2-4/10', 'Content-Length': 3 }); res.end(req.method === 'HEAD' ? undefined : '234'); return; }
   if (req.url === '/page' || req.url === '/frame') { res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Encoding': 'gzip', 'Content-Security-Policy': "default-src 'self'; frame-ancestors 'self'" }); res.end(gzipSync(req.url === '/frame' ? '<html><head></head><body>Frame</body></html>' : html)); return; }
   res.setHeader('Content-Type', 'application/json'); res.setHeader('Set-Cookie', ['lab_access=native; HttpOnly', 'employee_site_session=evil']);
   let body = ''; req.on('data', c => body += c); req.on('end', () => res.end(JSON.stringify({ path: req.url, headers: req.headers, body })));
 });
 const port = await listen(upstream);
-let hosts = { 'fixture.test': { port, readPaths: ['^/(?:page|frame|echo|video|healthz)$'], postPaths: ['/review'], publicHealthPaths: ['/healthz'], forwardCookies: ['lab_access'] } };
+let hosts = { 'fixture.test': { port, readPaths: ['^/(?:page|frame|echo|video|healthz|fixture\\.css)$'], postPaths: ['/review'], publicHealthPaths: ['/healthz'], forwardCookies: ['lab_access'] } };
 const gate = async (req, res) => {
   if (identity && req.headers.cookie?.includes('fixture=valid')) return identity;
   const nav = /text\/html/.test(req.headers.accept || ''); res.writeHead(nav ? 302 : 401, nav ? { Location: '/site-login?returnTo=' + encodeURIComponent(req.url) } : {}); res.end(); return null;
@@ -82,6 +85,13 @@ try {
         assert.equal(await page.frameLocator('iframe').locator('#remotelab-site-identity').count(), 0);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.ok((await page.locator('header').boundingBox()).y >= 44);
+        const badge = await page.locator('#remotelab-site-identity').boundingBox();
+        assert.ok(badge.height <= 60, `identity bar must stay compact, got ${badge.height}px`);
+        assert.equal(badge.x, 0); assert.equal(badge.y, 0); assert.equal(badge.width, width);
+        assert.equal(await page.locator('#application-sidebar').evaluate(el => getComputedStyle(el).height), '844px', 'application sidebar styling stays intact');
+        await page.locator('#fixture-action').evaluate(el => el.addEventListener('click', () => el.dataset.clicked = 'yes'));
+        await page.locator('#fixture-action').click({ timeout: 2000 });
+        assert.equal(await page.locator('#fixture-action').getAttribute('data-clicked'), 'yes', 'identity overlay must not intercept application controls');
       }
       identity = { id: 'fixture-b', name: '<img src=x onerror=alert(1)>', auth_kind: 'feishu' };
       await page.evaluate(() => window.RemoteLabSiteIdentity.refresh());
