@@ -6,7 +6,7 @@ export async function pollCodexAccounts({ pool = codexAccounts,
   const data = await pool.read();
   if (!data.accounts.some(account => account.account?.type === 'chatgpt')) return;
   const command = await resolveCommand();
-  if (command) await pool.list({ refresh: 'stale', command });
+  if (command) await pool.list({ refresh: 'stale', command, includePersonal: true });
 }
 
 // One instance timer samples accounts independently of the switching policy.

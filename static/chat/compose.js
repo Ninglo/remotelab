@@ -1313,6 +1313,7 @@ function switchTab(tab, { syncState = true } = {}) {
   if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", false);
   if (showingTasks) void window.RemoteLabTaskCenter?.onTabShown?.();
   if (showingSettings) window.restoreMonitoringSettingsPosition?.();
+  if (showingSettings) window.remotelabPersonalCodex?.shown();
   if (!showingSessions && typeof isDesktop === "boolean" && !isDesktop && typeof closeSidebarFn === "function") {
     closeSidebarFn();
   }

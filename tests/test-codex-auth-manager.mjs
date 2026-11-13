@@ -108,4 +108,19 @@ assert.equal(switched.deviceLoginActive, true);
 assert.equal(switched.phase, 'awaiting');
 assert.equal(switched.userCode, '2ABC-4DEFG');
 
+let failedChild;
+const failedReauthorization = createCodexAuthManager({
+  resolveCommand: async () => fakeCodex, resolveHome: () => switchHome,
+  readAccountStatus: async () => ({ account: { type: 'chatgpt', email: 'old@example.invalid' } }),
+  spawnProcess: () => {
+    failedChild = new EventEmitter();
+    failedChild.stdout = new PassThrough(); failedChild.stderr = new PassThrough(); failedChild.exitCode = null;
+    setImmediate(() => failedChild.stdout.write('ABCD-EFGH'));
+    return failedChild;
+  },
+});
+await failedReauthorization.startDeviceLogin();
+failedChild.exitCode = 1; failedChild.emit('close', 1);
+assert.equal((await failedReauthorization.getStatus()).loggedIn, false, 'a failed authorization must not activate the previous cached identity');
+
 console.log('Codex auth manager tests passed');

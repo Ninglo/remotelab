@@ -119,6 +119,7 @@ export function createCodexAuthManager({
   now = () => Date.now(),
   credentialStore,
   onProcess,
+  onLoginExit,
 } = {}) {
   let activeChild = null;
   let generation = 0;
@@ -197,6 +198,8 @@ export function createCodexAuthManager({
     // A reauthorization may still have its previous cache. It is complete only
     // when the device-login process exits, not when the old identity is read.
     if (activeChild) return createPublicState(state, { available: true, loggedIn: false });
+    // A failed reauthorization must not report success from the old cache.
+    if (state.phase === 'failed') return createPublicState(state, { available: true, loggedIn: false });
 
     let result;
     try {
@@ -328,6 +331,7 @@ export function createCodexAuthManager({
         activeChild = null;
         state = { ...state, phase: 'failed', error: error.message || 'Codex login failed' };
         notifyWaiters();
+        onLoginExit?.();
       });
       activeChild.on('close', (code) => {
         if (currentGeneration !== generation) return;
@@ -336,6 +340,7 @@ export function createCodexAuthManager({
           ? { ...state, phase: 'completed', error: '' }
           : { ...state, phase: 'failed', error: 'Codex login did not complete' };
         notifyWaiters();
+        onLoginExit?.();
       });
 
       await waitForDeviceCode();

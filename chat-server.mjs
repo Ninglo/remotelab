@@ -25,6 +25,7 @@ const [
   { ensureDir, cleanupAtomicTemps },
   guestWeChatConnectorStartup,
   codexAccountMonitor,
+  personalCodexAuth,
 ] = await Promise.all([
   import('./lib/config.mjs'),
   import('./chat/router.mjs'),
@@ -42,6 +43,7 @@ const [
   import('./chat/fs-utils.mjs'),
   import('./lib/guest-wechat-connector-startup.mjs'),
   import('./chat/codex-account-monitor.mjs'),
+  import('./chat/personal-codex-auth.mjs'),
 ]);
 
 let ready = false;
@@ -122,6 +124,7 @@ async function shutdown() {
   sessionAutoArchive.stopSessionAutoArchive();
   groupFeedReview.stopGroupFeedReview();
   stopCodexAccountMonitor();
+  await personalCodexAuth.personalCodexAuthManager.shutdown();
   await sessionManager.killAll();
   await usageObservations.usageEvents.idle();
   process.exit(0);

@@ -1,4 +1,6 @@
 import { evaluateRequestAccess } from './request-access-guard.mjs';
+import { captureCodexAccountPolicy } from './codex-account-context.mjs';
+import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
 import { applyRecordingIntakePolicy } from '../lib/recording/intake-policy.mjs';
 import { publishNativeFeishuResponses } from './feishu-response-publication.mjs';
@@ -753,9 +755,10 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   }
   const manifest = await getRunManifest(runId);
   if (!manifest) return run;
+  const fallbackNoticePublished = await publishPersonalCodexFallbackNotice(run);
   if (run.finalizedAt) reconcileAutomationHook(run, manifest, { updateRun });
 
-  let historyChanged = false;
+  let historyChanged = fallbackNoticePublished;
   let sessionChanged = false;
 
   const projection = await collectNormalizedRunEventDelta(run, manifest);
@@ -3580,6 +3583,14 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images, { sessionId });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  // Freeze the verified payer at admission, including queued requests and live
+  // steering. Never accept a client-supplied account policy or infer ownership
+  // from the Session creator. Legacy accepted requests retain shared routing.
+  options = { ...options };
+  if (priorRequest) {
+    if (Object.hasOwn(priorRequest.options, 'codexAccountPolicy')) options.codexAccountPolicy = priorRequest.options.codexAccountPolicy;
+    else delete options.codexAccountPolicy; // Preserve pre-upgrade idempotency fingerprints.
+  } else options.codexAccountPolicy = await captureCodexAccountPolicy(options);
   const recordingInput = await applyRecordingIntakePolicy({ text, requestId: options.requestId,
     nativeQuestionId: options.nativeQuestionId, sourceContext: options.sourceContext }, session, { priorRequest });
   text = recordingInput.text;
@@ -3670,6 +3681,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
         : text?.trim(),
     }, activeNative ? activeRequest.runtimeSelection : null);
+  if (!priorRequest && (await getToolDefinitionAsync(runtimeSelection.tool))?.runtimeFamily !== 'codex-json') {
+    options.codexAccountPolicy = null;
+  }
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = messageReplyPolicy ? session.groupFeed !== true
     && (messageReplyPolicy.checklist || replyProgressUsesCard(messageReplyPolicy))
@@ -4046,6 +4060,7 @@ async function prepareRequestRunOnce(record) {
       modelContextSlots: promptPackage.modelContextSlots,
       internalOperation: options.internalOperation || null,
       viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
+      codexAccountPolicy: options.codexAccountPolicy || null,
       ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
       ...(options.autoRoutingReceipt ? { autoRoutingReceipt: options.autoRoutingReceipt } : {}),
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)

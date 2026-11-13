@@ -1,0 +1,19 @@
+.personal-codex { padding: 18px; }
+.personal-codex p { margin: 10px 0; line-height: 1.6; }
+.personal-codex-status-row, .personal-codex-code-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.personal-codex-policy { padding: 12px 14px; border: 1px solid var(--border-color, #ddd); border-radius: 10px; }
+.personal-codex-account { font-weight: 600; overflow-wrap: anywhere; }
+.personal-codex .settings-app-actions { gap: 8px; flex-wrap: wrap; }
+.personal-codex .settings-app-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+.personal-codex-primary { font-weight: 600; }
+.personal-codex-device { margin-top: 16px; padding: 16px; border: 1px solid var(--border-color, #ddd); border-radius: 12px; }
+.personal-codex-device ol { padding-left: 22px; line-height: 1.8; margin-top: 0; }
+#personalCodexCode { font-size: clamp(20px, 5vw, 28px); letter-spacing: .1em; user-select: all; overflow-wrap: anywhere; }
+#personalCodexError { color: var(--error-color, #c43b32); overflow-wrap: anywhere; }
+#personalCodexDeviceHelp, #personalCodexExpiry { font-size: 13px; opacity: .8; }
+.personal-codex [hidden] { display: none !important; }
+@media (max-width: 600px) {
+  .personal-codex { padding: 12px; }
+  .personal-codex-device { padding: 12px; }
+  .personal-codex .settings-app-actions > * { flex: 1 1 140px; }
+}

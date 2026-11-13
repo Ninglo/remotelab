@@ -63,7 +63,7 @@ function captureInstallSkipIntent() {
     );
   } catch {}
   url.searchParams.delete("skipInstall");
-  history.replaceState(null, "", `${url.pathname}${url.search}`);
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 function hasRecentInstallSkip() {
@@ -365,6 +365,7 @@ async function initApp() {
 
   const authInfo = await resolveInitialAuthInfo();
   currentPerson = authInfo?.person ? { ...authInfo.person } : currentPerson;
+  window.remotelabPersonalCodex?.init(authInfo);
   const addPersonButton = document.getElementById('settingsPersonCreateToggle');
   if (addPersonButton) addPersonButton.hidden = !currentPerson?.administrator;
   const administratorLink = document.getElementById('administratorManagementLink');

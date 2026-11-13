@@ -340,11 +340,11 @@
         },
         {
           "id": "accounts",
-          "name": "执行账号授权、Session 分配与额度观察",
-          "purpose": "查看登录与额度，按实例限定可参与分流的账号，均衡新会话与后台调用，并在账号耗尽或限流后自动换号续接原对话。",
-          "entry": "执行工具的账号管理入口；监控器的账号信息。",
-          "condition": "首次登录仍可能需要持有人完成授权。自动续接须启用自动切换，账号池需有可用账号；每轮对同一账号身份最多尝试一次，模型及上下文保持不变。额度采样过期时不能当作当前余额。",
-          "example": "检查当前可用账号和采样时间，说明是否需要我完成授权。",
+          "name": "个人 Codex 绑定、公共账号分配与额度观察",
+          "purpose": "个人账号仅供本人优先使用，确认耗尽后提醒并临时转用公共池；公共账号继续由管理员管理，保留原有分流与续接。",
+          "entry": "侧栏“我的 Codex”（设置首项）；管理员在设置 → 连接 → 公共 Codex 账号管理公共池。",
+          "condition": "个人绑定须本人在 OpenAI 页面完成设备码授权。同一登录身份不能同时绑定个人和公共池；普通限流、登录失效和未知额度不触发个人转公共。公共池内部自动换号仍受原自动切换设置控制。",
+          "example": "绑定自己的账号，查看额度；耗尽后在原对话收到转用公共池的提醒，额度恢复后新请求优先回个人。",
           "sources": [
             "chat/router-codex-auth-routes.mjs",
             "chat/codex-account-list-auth.mjs",
@@ -358,7 +358,16 @@
             "chat/session-detached-assistant.mjs",
             "docs/codex-session-routing.md",
             "chat/router-claude-auth-routes.mjs",
-            "chat/router-pi-auth-routes.mjs"
+            "chat/router-pi-auth-routes.mjs",
+            "lib/codex-account-ownership.mjs",
+            "chat/personal-codex-auth.mjs",
+            "chat/router-personal-codex-routes.mjs",
+            "chat/codex-account-context.mjs",
+            "chat/personal-codex-notice.mjs",
+            "static/chat/personal-codex.js",
+            "static/chat/personal-codex.css",
+            "tests/test-personal-codex.mjs",
+            "tests/test-http-personal-codex.mjs"
           ],
           "commands": []
         },

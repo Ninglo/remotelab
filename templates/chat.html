@@ -19,6 +19,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
 <title>{{PAGE_TITLE}}</title>
 <link rel="stylesheet" href="chat/chat.css?v={{ASSET_VERSION}}">
+<link rel="stylesheet" href="chat/personal-codex.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/automation-home.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/amber-usage-pilot.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="chat/amber-pet.css?v={{ASSET_VERSION}}">
@@ -93,6 +94,10 @@
         </button>
       </nav>
       <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
+        <button class="sidebar-nav-button" id="myCodexButton" type="button" aria-controls="settingsPanel">
+          <span class="sidebar-nav-icon" data-icon="user" aria-hidden="true"></span>
+          <span data-personal-codex-title>我的 Codex</span>
+        </button>
         <button class="sidebar-nav-button" id="tabSettings" type="button" aria-controls="settingsPanel" aria-expanded="false">
           <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
           <span data-i18n="nav.settings">Settings</span>
@@ -309,6 +314,7 @@
             <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
           </header>
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
+            <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title>我的 Codex</a>
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
             <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
@@ -319,6 +325,41 @@
           </nav>
 
           <div class="settings-content">
+            <section class="settings-group" id="settings-personal-codex" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-personal-codex-title>我的 Codex</h3>
+                <p id="personalCodexIntro">绑定你自己的 ChatGPT 账号，仅用于你发起的 Codex 任务。</p>
+              </header>
+              <div class="settings-group-body personal-codex">
+                <div class="personal-codex-status-row">
+                  <strong id="personalCodexStatus" role="status">正在读取…</strong>
+                  <button class="settings-app-btn" id="personalCodexRefresh" type="button">刷新状态</button>
+                </div>
+                <p id="personalCodexPolicy" class="personal-codex-policy"></p>
+                <div id="personalCodexAccount" class="personal-codex-account" hidden></div>
+                <div id="personalCodexUsage" class="settings-codex-usage" hidden></div>
+                <p id="personalCodexHelp"></p>
+                <div class="settings-app-actions">
+                  <button class="settings-app-btn personal-codex-primary" id="personalCodexBind" type="button">绑定我的账号</button>
+                  <button class="settings-app-btn" id="personalCodexUnbind" type="button" hidden>解绑</button>
+                </div>
+                <div id="personalCodexDevice" class="personal-codex-device" hidden>
+                  <ol id="personalCodexSteps"></ol>
+                  <div class="personal-codex-code-row">
+                    <code id="personalCodexCode"></code>
+                    <button class="settings-app-btn" id="personalCodexCopy" type="button">复制验证码</button>
+                  </div>
+                  <div class="settings-app-actions">
+                    <a class="settings-app-btn personal-codex-primary" id="personalCodexAuthorize" target="_blank" rel="noopener noreferrer">前往 OpenAI 授权</a>
+                    <button class="settings-app-btn" id="personalCodexCancel" type="button">取消绑定</button>
+                  </div>
+                  <p id="personalCodexExpiry"></p>
+                  <p id="personalCodexDeviceHelp"></p>
+                </div>
+                <p id="personalCodexError" role="alert" hidden></p>
+                <p id="personalCodexFeedback" role="status" hidden></p>
+              </div>
+            </section>
             <section class="settings-group" id="settings-general" data-settings-section>
               <header class="settings-group-header">
                 <h3 data-i18n="settings.group.general">General</h3>
@@ -872,6 +913,7 @@
 <script src="chat/mobile-voice.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/voice-shortcut.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/personal-codex.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/message-reply-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/personal-memory-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

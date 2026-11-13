@@ -40,6 +40,8 @@ export function canReadAutomation(actor, task, document = getAuthReadSnapshot())
 // credentials. Ordinary browsers enter only scoped routes; new APIs opt in here
 // after enforcing the same policy. This also closes credential/identity takeover.
 export function memberRouteAllowed(method, path, personId) {
+  if (path === '/api/personal-codex/status') return method === 'GET';
+  if (['/api/personal-codex/device-login', '/api/personal-codex/cancel-login', '/api/personal-codex/logout'].includes(path)) return method === 'POST';
   if (/^\/api\/sessions(?:\/|$)/.test(path) || /^\/api\/(?:runs|assets|images|media)(?:\/|$)/.test(path)) return true;
   if (/^\/api\/(?:automation-tasks|triggers|schedules)(?:\/|$)/.test(path)) return true;
   if (/^\/api\/people\/[^/]+(?:\/credentials(?:\/[^/]+)?)?$/.test(path)) return path.split('/')[3] === personId;

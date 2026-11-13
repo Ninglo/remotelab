@@ -91,6 +91,7 @@ import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleUsageRoutes } from './router-usage-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
+import { handlePersonalCodexRoutes } from './router-personal-codex-routes.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
 import { handleClaudeAuthRoutes } from './router-claude-auth-routes.mjs';
 import { handleDisplayPublicRoutes, handleDisplaySettingsRoutes } from './router-display-routes.mjs';
@@ -1484,6 +1485,7 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+  if (await handlePersonalCodexRoutes({ req, res, pathname, authSession, writeJson })) return;
   res.setHeader('Cache-Control', 'private, no-store');
   if (!isSessionAdministrator(authSession) && !memberRouteAllowed(req.method, pathname, authSession?.personId)) {
     writeJson(res, 403, { error: 'Administrator access required' }); return;

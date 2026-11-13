@@ -1,11 +1,125 @@
-# Codex Session account allocation
+# Codex personal binding and shared account allocation
+
+Users bind their own account from **My Codex** in the sidebar (also the first
+Settings section). Direct link: `/?tab=settings#settings-personal-codex`.
+Choose **Bind my account**, copy the device code, authorize on the official
+OpenAI page and return. Status updates automatically while this page is open.
+No password or credential-file upload is required. The user may need to enable
+device-code authorization in ChatGPT's Security settings, or obtain workspace
+administrator enablement. [OpenAI device authorization](https://developers.openai.com/codex/auth#device-code-authorization).
+
+The authenticated RemoteLab Person owns the binding. Browser and connector
+identities linked to that same Person use it; names and email similarity do not
+link identities. One personal account is supported per Person. Public account
+binding remains under **Settings → Connections → Shared Codex accounts** and
+requires administrator access.
+
+## Personal routing policy
+
+| Condition | Execution account |
+| --- | --- |
+| No personal binding | Existing shared allocation |
+| Bound and usable, including low positive or unknown quota | That Person's account |
+| Confirmed subscription exhaustion from fresh quota or the provider error | Shared pool; deterministic conversation notice |
+| Authentication failure, incomplete reauthorization or rate limiting alone | Report the failure; no automatic use of shared quota |
+| Personal quota recovers | Next request prefers the personal account |
+| Explicit unbind | New requests use the shared pool |
+
+Personal accounts are excluded from every shared candidate path, default
+selection, Session-affinity migration, schedule preferences and background helper
+allocation. System classification and other unattributed helper calls continue
+using the shared pool. Existing shared account settings remain independent.
+This feature covers Codex runtimes; Pi's separately authorized OpenAI provider is
+unchanged.
+
+The current fallback policy is `shared_on_exhaustion`. This is a temporary
+product choice, not a personal spend cap: a long task can consume shared quota
+after the user's subscription is exhausted. The notice identifies the switch;
+it does not ask for approval. Future policy work should decide whether users can
+disable fallback, whether shared consumption needs a budget, and who receives
+that usage attribution. No budget or future permission gate is implied today.
+
+## Implementation and ownership
+
+- Existing records without `scope` remain shared. Personal records add
+  `scope: personal`, `ownerPersonId`, `personalEnabled` and `boundAt` to the
+  existing instance account store; each gets a separate credential home. Metadata
+  updates use the existing lock. Shared selection rejects unknown ownership.
+- The server validates the request's authenticated identity against its Person
+  and freezes `codexAccountPolicy` at admission. Submitted owner/account fields
+  are not authority. Personal ownership takes precedence over any prior shared
+  Session binding and does not rewrite that binding.
+- Native inputs may join a personal execution only with the same Person and
+  personal binding. Other inputs remain queued for an execution using their own
+  policy. A saved thread can continue after a quota failure; the original task
+  is not replayed on a fresh conversation.
+- Successful provider authorization is inspected before activation. Hashed
+  OpenAI subject and workspace identity prevent the same login entering both
+  personal and shared scopes, or two different Persons' bindings. A rejected
+  duplicate cannot disable the original accepted account. Login replacement
+  temporarily removes the target from assignment; active tasks prevent
+  reauthorization and unbinding.
+- Login jobs, device codes, cancellation and expiry are per Person. Completed
+  bindings survive restart. Graceful server shutdown cancels pending device
+  logins and releases their leases; users restart unfinished authorization.
+  A crash during authorization may leave the provider login alive until it
+  exits/expires; it cannot activate an unverified personal binding.
+- The runner carries explicit exhaustion evidence to immediate failover rather
+  than waiting for asynchronous quota-cache projection. Run state records
+  `codexAccount.scope` and `personalCodexFallback`. The controller appends a
+  system notice to Web history and enqueues it through the existing durable
+  source outbox, keyed by Run; repeated observation or restart cannot create a
+  second logical delivery.
+- Ownership and allocation are enforced by this instance's server. Credentials
+  remain on its trusted runtime host; this is not an OS sandbox or a
+  cross-instance reservation registry. Do not register a personal credential in
+  another instance's shared pool.
+
+Personal endpoints require the user's own RemoteLab login, including for admins;
+service tokens cannot perform these operations. They accept no owner, filesystem
+path or credential material:
+
+| Endpoint | Request |
+| --- | --- |
+| `GET /api/personal-codex/status` | Own status; `?refresh=1` refreshes quota |
+| `POST /api/personal-codex/device-login` | `{ "restart": true }` |
+| `POST /api/personal-codex/cancel-login` | `{}` |
+| `POST /api/personal-codex/logout` | `{}` |
+
+Responses contain `codexAuth` with status, own account/usage, active device code
+and expiry, and the fallback policy. They are private/no-store. Shared APIs
+remain admin-only and omit personal account metadata.
+
+Implementation difficulty is moderate: native device authorization, credential
+homes, quota observation and saved-thread continuation already exist. The
+substantive changes are ownership at admission and allocation, login races,
+deterministic fallback notification, and a discoverable mobile UI.
+
+## Validation and rollback
+
+`tests/test-personal-codex.mjs` covers ownership, duplicates, low/unknown quota,
+rate limiting, exhaustion, independent login jobs, steering and notice deduplication.
+`tests/test-http-personal-codex.mjs` runs a real isolated server with synthetic
+provider authorization/inference, verifies two users, admin/service boundaries,
+continuation, restart and recovery. Set `PERSONAL_CODEX_TEST_PLAYWRIGHT` and
+`PERSONAL_CODEX_TEST_CHROME` to installed browser tooling for desktop/mobile UI
+acceptance. These tests do not consume real subscriptions or send group messages.
+The first real binding still requires its holder's OpenAI browser authorization.
+
+Deploy the ownership-aware allocator before accepting personal credentials.
+Rolling back UI or fallback behavior must retain ownership filtering. An older
+allocator that treats every record as shared is unsafe once personal records
+exist; never relabel a personal account as shared to make rollback work. Unbinding
+removes its active authorization and routing preference, not its private scope.
+
+## Shared pool
 
 Ask the instance's agent: “Enable balanced allocation for new Codex Sessions.
 First verify an isolated RemoteLab instance can distribute concurrent Sessions,
 resume the saved conversation across account failures and survive a control-plane restart. Preserve
 existing conversations and running tasks, then enable it on this instance.”
 
-The setting is under Settings → Connections → Codex: **Balance new Sessions
+The setting is under Settings → Connections → Shared Codex accounts: **Balance new Sessions
 across accounts; prefer the same account for healthy turns**. It is off by
 default for existing installations. The authenticated account-policy endpoint
 accepts `POST /api/codex-auth/accounts/policy` with `{ "balanceSessions": true }`;
@@ -17,7 +131,7 @@ turns on another saved subscription; balancing alone does not enable failover.
 
 - Operators can restrict this instance's pool with `routingAccountIds` on the same
   policy endpoint: an array of saved account IDs enables only those accounts;
-  `null` restores all saved accounts and `[]` pauses new admissions. Omission
+  `null` restores all saved shared accounts and `[]` pauses shared admissions. Omission
   preserves the current restriction. Credentials and observations remain intact.
   The restriction applies to default selection, Session affinity, failover,
   schedule preferences and background helpers, including helpers without a

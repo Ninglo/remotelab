@@ -806,11 +806,14 @@ async function main() {
 
     if (initialInvocation.isCodexFamily) {
       codexAccount = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+        accountPolicy: manifest.codexAccountPolicy || null,
         scheduleId: manifest.scheduleId || '',
         resumeThreadId: manifest.options?.codexThreadId || '',
         model: invocationOptions.model || '', isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       spawnEnv.CODEX_HOME = codexAccount.home;
-      await updateRun(runId, draft => ({ ...draft, codexAccount: { id: codexAccount.id,
+      await updateRun(runId, draft => ({ ...draft,
+        ...(codexAccount.personalFallback ? { personalCodexFallback: codexAccount.personalFallback } : {}),
+        codexAccount: { id: codexAccount.id, scope: codexAccount.scope, ownerPersonId: codexAccount.ownerPersonId,
         label: codexAccount.label, switched: codexAccount.switched,
         assignmentReason: codexAccount.assignmentReason || 'selected_default', selectedAt: nowIso() } }));
     }
@@ -971,6 +974,7 @@ async function main() {
     // fresh thread after tools/output may have run. Each subscription is tried
     // at most once per Run, including duplicate login aliases.
     const exhaustedAccounts = [];
+    const confirmedExhaustedAccounts = [];
     while (codexAccount && attempt.code !== 0 && current.cancelRequested !== true && !cancelSent) {
       const failure = attempt.error || lastCodexFailure || attempt.stderrText;
       const exhausted = isSubscriptionExhausted(failure);
@@ -984,14 +988,17 @@ async function main() {
       const threadId = current.codexThreadId || manifest.options?.codexThreadId;
       if (!threadId && codexProducedWork) break;
       exhaustedAccounts.push(codexAccount.id);
+      if (exhausted) confirmedExhaustedAccounts.push(codexAccount.id);
       const previousId = codexAccount.id;
       await codexAccount.lease.release();
       let next;
       try {
         next = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+          accountPolicy: manifest.codexAccountPolicy || null,
           scheduleId: manifest.scheduleId || '',
           model: invocationOptions.model || '', resumeThreadId: threadId || '',
           excludedAccountIds: exhaustedAccounts,
+          confirmedExhaustedAccountIds: confirmedExhaustedAccounts,
           isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       } catch (error) {
         await updateRun(runId, draft => ({ ...draft, codexFailover: {
@@ -1004,7 +1011,8 @@ async function main() {
       codexAccount = next;
       spawnEnv.CODEX_HOME = next.home;
       await updateRun(runId, draft => ({ ...draft,
-        codexAccount: { id: next.id, label: next.label, switched: true,
+        ...(next.personalFallback ? { personalCodexFallback: next.personalFallback } : {}),
+        codexAccount: { id: next.id, scope: next.scope, ownerPersonId: next.ownerPersonId, label: next.label, switched: true,
           assignmentReason: 'provider_failure_failover', selectedAt: nowIso() },
         codexFailover: { attempts: [...(draft.codexFailover?.attempts || []), {
           from: previousId, to: next.id, reason: exhausted ? 'quota_exhausted' : 'rate_limited',

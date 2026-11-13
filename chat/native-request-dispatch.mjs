@@ -3,6 +3,7 @@ import { threadContinuationExpired, sameFeishuConversation } from './feishu-thre
 import { submitNativeInput, readNativeInputReceipt } from './native-input-transport.mjs';
 import { nativeQuestionReplyText } from './native-user-questions.mjs';
 import { hasFeishuInputReplyContract } from '../lib/feishu-response-decision.mjs';
+import { sameCodexExecutionOwner } from '../lib/codex-account-ownership.mjs';
 
 const terminal = run => ['completed', 'failed', 'cancelled'].includes(run?.state);
 const endedContinuation = error => /Original execution ended|continuation cannot (?:re)?start/.test(String(error || ''));
@@ -11,6 +12,7 @@ const now = () => new Date().toISOString();
 // Admission and dispatch must agree on whether this request may join the
 // current execution. Internal work stays sequential on either side of the pair.
 export function canForwardNativeRequest(record, head) {
+  if (!sameCodexExecutionOwner(record?.options?.codexAccountPolicy, head?.options?.codexAccountPolicy)) return false;
   if (!record || !head || record.key === head.key || record.preparedAt || record.executionClaimedAt
       || record.options?.freshThread || head.cancelRequestedAt
       || record.options?.internalOperation || record.options?.routingRethink

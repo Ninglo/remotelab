@@ -13,7 +13,7 @@ const node = id => {
   return nodes.get(id);
 };
 const context = vm.createContext({
-  console, settingsPanel: {}, canManageInstanceSettingsFromUi: () => true,
+  console, settingsPanel: {}, currentPerson: { administrator: true }, canManageInstanceSettingsFromUi: () => true,
   document: { documentElement: { lang: 'zh-CN' }, getElementById: node, createElement: element },
   window: { setInterval: () => 1, clearInterval() {}, confirm: () => true },
 });

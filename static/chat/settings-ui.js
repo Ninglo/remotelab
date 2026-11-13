@@ -601,7 +601,8 @@ function initPeopleSettings() {
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
-    title: "Codex 登录",
+    title: "公共 Codex 账号",
+    scopeNote: "由管理员管理，供公共任务与个人额度耗尽后的任务使用。绑定个人账号请前往“我的 Codex”。",
     checking: "检测中…",
     authenticated: "已登录",
     awaiting: "等待登录",
@@ -635,7 +636,8 @@ function getCodexAuthCopy() {
     remaining: "剩余",
     day: "天", hour: "小时", minute: "分钟",
   } : {
-    title: "Codex login",
+    title: "Shared Codex accounts",
+    scopeNote: "Managed by administrators for shared tasks and personal quota fallback. Use My Codex to bind a personal account.",
     checking: "Checking…",
     authenticated: "Signed in",
     awaiting: "Waiting for sign-in",
@@ -671,8 +673,12 @@ function getCodexAuthCopy() {
   };
 }
 
+function canManageSharedCodexFromUi() {
+  return (typeof currentPerson !== "undefined" ? currentPerson : window.__REMOTELAB_BOOTSTRAP__?.auth?.person)?.administrator === true;
+}
+
 function ensureCodexAuthSection() {
-  if (!settingsPanel || !canManageInstanceSettingsFromUi()) return null;
+  if (!settingsPanel || !canManageSharedCodexFromUi()) return null;
   let section = document.getElementById("settingsCodexAuthSection");
   if (section) return section;
   section = document.createElement("div");
@@ -680,6 +686,7 @@ function ensureCodexAuthSection() {
   section.id = "settingsCodexAuthSection";
   section.innerHTML = `
     <div class="settings-section-title" id="settingsCodexAuthTitle"></div>
+    <p class="settings-section-note" id="settingsCodexScopeNote"></p>
     <div class="settings-connector-status">
       <span class="settings-connector-pill pending" id="settingsCodexAuthPill"></span>
     </div>
@@ -759,6 +766,8 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   const copy = getCodexAuthCopy();
   const state = codexAuthState || {};
   const title = document.getElementById("settingsCodexAuthTitle");
+  const scopeNote = document.getElementById("settingsCodexScopeNote");
+  if (scopeNote) scopeNote.textContent = copy.scopeNote;
   const pill = document.getElementById("settingsCodexAuthPill");
   const checkBtn = document.getElementById("settingsCodexAuthCheckBtn");
   const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
@@ -899,7 +908,7 @@ async function refreshCodexUsage(requestId, { force = false } = {}) {
 }
 
 async function refreshCodexAuthStatus({ silent = false, force = false, includeUsage = true } = {}) {
-  if (!canManageInstanceSettingsFromUi()) return;
+  if (!canManageSharedCodexFromUi()) return;
   const requestId = ++codexAuthRequestId;
   renderCodexAuthPanel({ checking: !silent });
   try {

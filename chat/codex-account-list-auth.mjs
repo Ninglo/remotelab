@@ -1,6 +1,7 @@
 import { codexAccounts } from '../lib/codex-accounts.mjs';
 import { readCodexAuthMetadata, codexAccountRevision } from '../lib/codex-account-status.mjs';
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
+import { isSharedCodexAccount } from '../lib/codex-account-ownership.mjs';
 
 export function createCodexAccountListAuthManager({ createManager, pool = codexAccounts,
   resolveCommand = () => resolveToolCommandPathAsync('codex') } = {}) {
@@ -29,18 +30,25 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     if (!account.account) await pool.refresh(account.id, await resolveCommand());
     const current = await pool.account(account.id);
     const metadata = await readCodexAuthMetadata(current.home);
-    const loggedIn = !!current.account && (!!metadata.revision || current.id === 'default');
+    const loggedIn = !current.credentialIssue && !!current.account && (!!metadata.revision || current.id === 'default');
     return withList({ available: Boolean(await resolveCommand()), loggedIn,
-      phase: loggedIn ? 'authenticated' : 'idle', deviceLoginActive: false,
+      phase: loggedIn ? 'authenticated' : current.credentialIssue ? 'failed' : 'idle', deviceLoginActive: false,
       account: loggedIn ? current.account : null, accountRevision: codexAccountRevision(metadata.revision, current.account),
-      checkedAt: current.checkedAt || new Date().toISOString(), error: '' });
+      checkedAt: current.checkedAt || new Date().toISOString(), error: current.credentialIssue || '' });
   }
   async function startLogin({ label = '', accountId, restart = false } = {}) {
     if (login && !restart) return readStatus();
     if (login) { await login.manager.stopActiveLogin(); await login.lease.release(); login = null; }
     const account = accountId ? await pool.account(accountId) : await pool.add(label);
+    if (!isSharedCodexAccount(account)) throw new Error('公共账号管理不能操作个人绑定');
+    // Stop new assignments before a login can replace this cache. The account
+    // becomes eligible again only after inspect validates its ownership.
+    await pool.mutate(data => { data.accounts.find(a => a.id === account.id).credentialIssue = '账号正在重新授权，请完成登录'; });
     const lease = await pool.lease(account, { wait: false });
-    if (!lease) throw new Error('这个账号正在执行任务，请等任务结束后重新登录');
+    if (!lease) {
+      await pool.mutate(data => { data.accounts.find(a => a.id === account.id).credentialIssue = account.credentialIssue || ''; });
+      throw new Error('这个账号正在执行任务，请等任务结束后重新登录');
+    }
     const manager = createManager({ resolveHome: () => account.home, resolveCommand,
       onProcess: child => lease.setToolProcessId(child.pid),
       credentialStore: account.id === 'default' ? undefined : 'file' });
