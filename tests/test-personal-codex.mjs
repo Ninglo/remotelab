@@ -95,6 +95,23 @@ try {
   const document = { people: [{ id: 'person_a', identities: [{ id: 'identity_a' }] }] };
   assert.equal((await captureCodexAccountPolicy({ viewPersonId: 'person_a', initiatedByIdentityId: 'identity_a' }, pool, document)).personalAccountId, a.id);
   assert.equal((await captureCodexAccountPolicy({ viewPersonId: 'person_b', initiatedByIdentityId: 'identity_a' }, pool, document)).personalAccountId, null);
+  // Scheduled/internal admissions have no human payer; absent identity is not
+  // authority to inherit the Session creator's private account.
+  const sharedPolicy = { version: 1, personId: '', personalAccountId: null };
+  for (const options of [
+    {},
+    { internalOperation: 'trigger_delivery' },
+    { initiatedByIdentityId: 'identity_missing' },
+    { initiatedByIdentityId: 'identity_missing', viewPersonId: 'person_a' },
+    { viewPersonId: 'person_a' },
+    { initiatedByIdentityId: 'identity_a' },
+    { initiatedByIdentityId: 'identity_a', viewPersonId: 'person_b' },
+    { internalOperation: 'trigger_delivery', viewPersonId: null },
+  ]) assert.deepEqual(await captureCodexAccountPolicy(options, pool, document), sharedPolicy);
+  const { SYSTEM_PERSON_ID } = await import('../lib/auth-config.mjs');
+  assert.deepEqual(await captureCodexAccountPolicy({
+    initiatedByIdentityId: 'identity_system', viewPersonId: SYSTEM_PERSON_ID,
+  }, pool, { people: [{ id: SYSTEM_PERSON_ID, identities: [{ id: 'identity_system' }] }] }), sharedPolicy);
   const head = { key: 'head', options: { codexAccountPolicy: policy }, runtimeSelection: { tool: 'codex' } };
   const input = { key: 'input', options: { codexAccountPolicy: policy }, runtimeSelection: { tool: 'codex' } };
   assert.equal(canForwardNativeRequest(input, head), true);
