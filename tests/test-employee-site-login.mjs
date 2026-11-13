@@ -48,6 +48,23 @@ await writeFile(join(source, 'index.html'), '<!doctype html><title>员工站点�
 await writeFile(join(source, 'data.json'), '{"fixture":"private"}');
 const one = await publishStaticSource({ source, slug: 'one', ownerPersonId: people[0].id, verify: false });
 const two = await publishStaticSource({ source, slug: 'two', ownerPersonId: people[1].id, verify: false });
+// Employee ingress can reject before the origin, with a different content type.
+const nativeFetch = globalThis.fetch;
+try {
+  for (const contentType of ['application/json', 'text/plain; charset=utf-8']) {
+    globalThis.fetch = async () => new Response('Employee login required', { status: 401, headers: { 'content-type': contentType } });
+    const verified = await publishStaticSource({ source, slug: 'one', replace: true, ownerPersonId: people[0].id });
+    assert.equal(verified.verification.anonymousBlocked, true);
+    assert.equal(verified.verification.contentVerified, false);
+    assert.equal(verified.verification.contentType, contentType);
+  }
+  const retained = await readFile(join(root, 'pages', 'one', '_remote_publish.json'), 'utf8');
+  for (const status of [200, 302, 403, 500]) {
+    globalThis.fetch = async () => new Response('Fixture', { status });
+    await assert.rejects(publishStaticSource({ source, slug: 'one', replace: true, ownerPersonId: people[0].id }), /verification failed/);
+    assert.equal(await readFile(join(root, 'pages', 'one', '_remote_publish.json'), 'utf8'), retained);
+  }
+} finally { globalThis.fetch = nativeFetch; }
 assert.equal(one.access, 'employee'); assert.equal(one.ownerPersonId, people[0].id); assert.deepEqual(one.adminPersonIds, []);
 assert.equal((await publishStaticSource({ source, slug: 'one', ownerPersonId: people[1].id, replace: true, verify: false })).ownerPersonId, people[0].id);
 await assert.rejects(publishStaticSource({ source, slug: 'no-owner', verify: false }), /Cannot identify site creator/);
