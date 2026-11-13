@@ -57,7 +57,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
       return account.usage || { status: 'unavailable', buckets: [], accountRevision: '' };
     },
     async listAccounts({ refresh = false } = {}) { return pool.list({ refresh, command: await resolveCommand() }); },
-    async setAccountPolicy(autoSwitch, balanceSessions) { return pool.policy(autoSwitch, balanceSessions); },
+    async setAccountPolicy(autoSwitch, balanceSessions, routingAccountIds) { return pool.policy(autoSwitch, balanceSessions, routingAccountIds); },
     switchAccount: ({ accountId } = {}) => serialize(async () => {
       if (!accountId) return startLogin({ restart: true });
       await pool.select(accountId); return readStatus();

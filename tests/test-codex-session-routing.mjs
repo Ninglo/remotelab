@@ -110,6 +110,56 @@ try {
   assert.equal((await readSessionAccount(pool.root,'reserve-session')).accountId,reserve.id);
   const proactive=await acquire('reserve-session');assert.notEqual(proactive.id,reserve.id);await proactive.lease.release();
   assert.equal((await pool.read()).switchEvents.at(-1).reason,'reserve');
+  await Promise.all(slots.map(slot => slot.lease.release())); slots.length = 0;
+  await pool.mutate(data => {
+    data.pendingSessions = {};
+    for (const account of data.accounts) {
+      account.usage = usage(90); delete account.cooldownUntil; delete account.blockedUntil;
+    }
+  });
+  const beforePause = await acquire('pause-existing'); await beforePause.lease.release();
+  const allowed = (await pool.read()).accounts.filter(account => account.account && account.id !== beforePause.id).slice(0, 2).map(account => account.id);
+  const restricted = await pool.policy(true, true, allowed);
+  assert.deepEqual(restricted.routingAccountIds, allowed);
+  assert.equal(restricted.accounts.find(account => account.id === beforePause.id).routingEnabled, false);
+  const afterPause = await acquire('pause-existing');
+  assert(allowed.includes(afterPause.id), 'a paused binding migrates without deleting its login');
+  assert((await pool.account(beforePause.id)).account);
+  await afterPause.lease.release();
+  await assert.rejects(pool.select(beforePause.id), /暂停分流/);
+  await assert.rejects(pool.policy(undefined, undefined, ['not-an-id']), /账号编号/);
+  await assert.rejects(pool.policy(undefined, undefined, ['12345678-1234-1234-1234-123456789012']), /不存在/);
+  assert.deepEqual((await pool.policy(true)).routingAccountIds, allowed, 'old policy clients preserve restrictions');
+  await pool.mutate(data => { for (const account of data.accounts) account.usage = usage(allowed.includes(account.id) ? 0 : 90); });
+  await pool.policy(true);
+  assert(allowed.includes((await pool.read()).activeId), 'reserve switching never selects a paused backup');
+  await assert.rejects(pool.acquireForRun(), /暂无可用/, 'exhausted enabled accounts never fall back outside the allowed pool');
+  await pool.mutate(data => { for (const account of data.accounts) account.usage = usage(90); });
+  const helperSlots = await Promise.all(Array.from({ length: 6 }, () => pool.acquireForRun())); slots.push(...helperSlots);
+  assert(helperSlots.every(slot => allowed.includes(slot.id)), 'helpers cannot bypass the restriction');
+  assert.deepEqual(Object.values(helperSlots.reduce((counts, slot) => {
+    counts[slot.id] = (counts[slot.id] || 0) + 1; return counts;
+  }, {})), [3, 3], 'sessionless helpers balance across enabled accounts');
+  assert.equal(await readSessionAccount(pool.root, ''), null);
+  await Promise.all(helperSlots.map(slot => slot.lease.release()));
+  await pool.mutate(data => {
+    data.automationRouting = { accountId: beforePause.id, scheduleIds: ['paused-schedule'], maxConcurrentRuns: 1 };
+  });
+  const scheduled = await pool.acquireForRun({ sessionId: 'paused-schedule', scheduleId: 'paused-schedule' }); slots.push(scheduled);
+  assert(allowed.includes(scheduled.id), 'a schedule preference cannot reactivate a paused account');
+  await scheduled.lease.release();
+  await pool.mutate(data => { delete data.automationRouting; });
+  await pool.policy(false, false, []);
+  await assert.rejects(pool.acquireForRun(), /暂停分流/);
+  await assert.rejects(acquire('pause-existing'), /暂停分流/);
+  await pool.policy(true, true, []);
+  await assert.rejects(pool.acquireForRun(), /暂无可用/);
+  await assert.rejects(acquire('pause-existing'), /暂无可用/);
+  const pausedRestart = new CodexAccounts({ root: pool.root, defaultHome: pool.defaultHome, now: () => now });
+  await assert.rejects(pausedRestart.acquireForRun(), /暂无可用/);
+  await pool.policy(undefined, undefined, null);
+  assert.equal((await pool.list()).routingAccountIds, null);
+  assert((await pool.list()).accounts.every(account => account.routingEnabled));
   console.log('Codex Session routing: balanced reservations, duplicate identities, sticky turns, legacy migration, restart, disable, cooldown, exhaustion and cancellation passed');
 } finally {
   await Promise.all(slots.map(slot => slot.lease.release()));

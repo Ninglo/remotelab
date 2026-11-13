@@ -73,6 +73,11 @@ try {
   await start();
   const policy = await request('POST', '/api/codex-auth/accounts/policy', { balanceSessions: true, autoSwitch: true });
   assert.equal(policy.accountList.balanceSessions, true);
+  const restrictedId = policy.accountList.accounts[0].id;
+  const restricted = await request('POST', '/api/codex-auth/accounts/policy', { routingAccountIds: [restrictedId] });
+  assert.deepEqual(restricted.accountList.routingAccountIds, [restrictedId]);
+  assert.equal(restricted.accountList.accounts.filter(account => account.routingEnabled).length, 1);
+  await request('POST', '/api/codex-auth/accounts/policy', { routingAccountIds: null });
   const sessions = await Promise.all(Array.from({ length: 6 }, (_, n) => request('POST', '/api/sessions', {
     folder: home, tool: 'balance-fixture', name: 'Balanced ' + n }).then(r => r.session.id)));
   const firstRuns = await Promise.all(sessions.map(id => submit(id, 'Hold this synthetic turn.')));

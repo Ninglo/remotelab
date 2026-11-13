@@ -15,6 +15,18 @@ turns on another saved subscription; balancing alone does not enable failover.
 
 ## Behavior
 
+- Operators can restrict this instance's pool with `routingAccountIds` on the same
+  policy endpoint: an array of saved account IDs enables only those accounts;
+  `null` restores all saved accounts and `[]` pauses new admissions. Omission
+  preserves the current restriction. Credentials and observations remain intact.
+  The restriction applies to default selection, Session affinity, failover,
+  schedule preferences and background helpers, including helpers without a
+  Session ID. Existing executions finish under their original authorization;
+  with `autoSwitch` enabled, their next execution migrates to an enabled account.
+  The account list exposes both the restriction and each account's `routingEnabled`.
+  An explicit selection of a paused account fails without resuming it.
+
+
 - An operator may temporarily reserve a saved account for selected schedules via
   `CodexAccounts.mutate`: `automationRouting: { accountId, scheduleIds, maxConcurrentRuns }`.
   Only executions with an explicitly listed `manifest.scheduleId` prefer that account.
@@ -26,6 +38,8 @@ turns on another saved subscription; balancing alone does not enable failover.
   The preference never rewrites a human Session binding or interrupts a live execution.
   The account list exposes `automationRouting`; removing it restores normal allocation.
 
+- Unbound background helpers also use balanced allocation when enabled; their
+  liveness counts toward load without creating an empty Session binding.
 - The first model execution for a new Session (including its input-label helper) chooses the eligible account with the
   fewest executing or starting Sessions. Ties go to the least recently assigned account.
   Allocation is equal-weight; plan names do not imply concurrency ratios.
