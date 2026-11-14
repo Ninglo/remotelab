@@ -257,6 +257,32 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
+To keep a Bot usable in external groups while admitting only your company's
+members, set `accessPolicy.mode` to `whitelist` and put only the company's
+verified tenant key in `allowed-senders.json`:
+
+```json
+{
+  "openIds": [],
+  "userIds": [],
+  "unionIds": [],
+  "tenantKeys": ["your_company_tenant_key"]
+}
+```
+
+An existing whitelist file takes precedence over `accessPolicy.allowedSenders`.
+Changing the mode requires restarting the owning connector; subsequent whitelist
+file changes take effect on the next check. Tenant admission requires a human
+sender ID and the sender's own authenticated tenant key. The event/header tenant
+and the group's tenant are never substitutes. Unknown sender tenants are denied,
+including event types that do not supply one, unless an exact sender ID has been
+explicitly allowed. All card callbacks pass admission before any handler runs;
+tenant allowlists use `operator.tenant_key`, never the callback header. Existing
+role policies and individual-ID allowances retain their separate rules.
+
+This controls who can invoke the Bot in groups, threads and private chats. Replies
+sent to an external group remain visible to that group's external members.
+
 `accessPolicy` decides who may use the Bot. Newly added groups default to active
 participation (`defaultGroupParticipation: "active"`): the main Session receives
 discussion and decides when a useful contribution is needed. The Bot-added event

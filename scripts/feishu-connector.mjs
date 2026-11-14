@@ -649,13 +649,31 @@ async function isAllowedByPolicy(policy, summary) {
     allowed.openIds.includes(sender.openId)
     || allowed.userIds.includes(sender.userId)
     || allowed.unionIds.includes(sender.unionId)
-    || allowed.tenantKeys.includes(sender.tenantKey || summary.tenantKey)
+    || (sender.senderType === 'user' && !!trimString(sender.openId || sender.userId || sender.unionId)
+      && allowed.tenantKeys.includes(trimString(sender.tenantKey)))
   );
 }
 
 function isAllowedCardAction(config, raw, summary) {
   const verified = summarizeFeishuCardAction(config, raw, summary);
-  return verified ? isAllowedByPolicy(config.accessPolicy, verified) : false;
+  if (!verified) return false;
+  if (config.accessPolicy.mode === 'whitelist') {
+    // The callback header identifies the app tenant, not the person clicking.
+    const event = raw?.event || raw;
+    verified.sender.tenantKey = trimString(event?.operator?.tenant_key);
+  }
+  return isAllowedByPolicy(config.accessPolicy, verified);
+}
+
+function withFeishuCardAccess(config, handler) {
+  return async raw => {
+    const event = raw?.event || raw;
+    const openId = trimString(event?.operator?.operator_id?.open_id || event?.operator?.open_id);
+    if (!await isAllowedCardAction(config, raw, { sender: { openId } })) {
+      return { toast: { type: 'error', content: '当前身份无权操作此机器人。' } };
+    }
+    return handler(raw);
+  };
 }
 
 async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed) {
@@ -2296,6 +2314,8 @@ export {
   submitRemoteLabRequest,
   handleMessage,
   isAllowedByPolicy,
+  isAllowedCardAction,
+  withFeishuCardAccess,
   initializeInbox,
   initializeFeishuInstanceRuntime,
   loadPersistedAccessState,
@@ -2567,7 +2587,7 @@ async function main() {
     'im.message.recalled_v1': displayHint('im.message.recalled_v1'),
     'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
     'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
-    'card.action.trigger': async raw => {
+    'card.action.trigger': withFeishuCardAccess(config, async raw => {
       const authorizeCard = summary => isAllowedCardAction(config, raw, summary);
       const automationFeedback = await handleAutomationCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
@@ -2606,7 +2626,7 @@ async function main() {
           console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
       }
       return { toast: feedback.toast };
-    },
+    }),
     'im.message.reaction.created_v1': persistReactionFeedback,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
