@@ -7,6 +7,13 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'personal-codex-'));
 setIsolatedTestHome(root);
+process.env.REMOTELAB_PERSONAL_CODEX_PERSON_IDS = 'person_a';
+const { isPersonalCodexAvailable } = await import('../chat/personal-codex-access.mjs');
+assert.equal(isPersonalCodexAvailable({ personId: 'person_a' }, ''), false);
+assert.equal(isPersonalCodexAvailable({ personId: 'person_a' }, '*'), false);
+assert.equal(isPersonalCodexAvailable({ personId: 'person_a' }, ' person_a,person_b '), true);
+assert.equal(isPersonalCodexAvailable({ personId: 'person_a', authKind: 'service' }), false);
+assert.equal(isPersonalCodexAvailable({ personId: 'person_system' }, 'person_system'), false);
 const { CodexAccounts } = await import('../lib/codex-accounts.mjs');
 const { readCodexAuthMetadata } = await import('../lib/codex-account-status.mjs');
 const { createPersonalCodexAuthManager } = await import('../chat/personal-codex-auth.mjs');
@@ -166,6 +173,13 @@ try {
   assert.equal((await route({ personId: 'person_a' }, '/api/personal-codex/status')).status, 200);
   assert.deepEqual(calls, ['person_a']);
   assert.equal((await route({ personId: 'person_a', authKind: 'service' }, '/api/personal-codex/status')).status, 403);
+  for (const actor of [null, { personId: 'person_b' }, { personId: 'person_admin', administrator: true }]) {
+    for (const action of ['status', 'device-login', 'cancel-login', 'logout']) {
+      assert.equal((await route(actor, '/api/personal-codex/' + action,
+        action === 'status' ? 'GET' : 'POST', action === 'status' ? undefined : {})).status, 403);
+    }
+  }
+  assert.deepEqual(calls, ['person_a'], 'unenrolled callers never reach account reads or mutations');
   assert.equal((await route({ personId: 'person_a' }, '/api/personal-codex/device-login', 'POST', { personId: 'person_b' })).status, 400);
   // Deterministic, restart-safe notice, separate from model publication.
   let record = { key: 'request-key', requestId: 'request', options: { codexAccountPolicy: policy },

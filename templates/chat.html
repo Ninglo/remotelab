@@ -94,7 +94,7 @@
         </button>
       </nav>
       <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
-        <button class="sidebar-nav-button" id="myCodexButton" type="button" aria-controls="settingsPanel">
+        <button class="sidebar-nav-button" id="myCodexButton" type="button" aria-controls="settingsPanel" data-personal-codex-access hidden>
           <span class="sidebar-nav-icon" data-icon="user" aria-hidden="true"></span>
           <span data-personal-codex-title>我的 Codex</span>
         </button>
@@ -314,7 +314,7 @@
             <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
           </header>
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
-            <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title>我的 Codex</a>
+            <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title data-personal-codex-access hidden>我的 Codex</a>
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
             <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
@@ -325,7 +325,7 @@
           </nav>
 
           <div class="settings-content">
-            <section class="settings-group" id="settings-personal-codex" data-settings-section>
+            <section class="settings-group" id="settings-personal-codex" data-settings-section data-personal-codex-access hidden>
               <header class="settings-group-header">
                 <h3 data-personal-codex-title>我的 Codex</h3>
                 <p id="personalCodexIntro">绑定你自己的 ChatGPT 账号，仅用于你发起的 Codex 任务。</p>

@@ -81,15 +81,17 @@ function initSettingsNavigation() {
   let updateQueued = false;
   const updateActiveSection = () => {
     updateQueued = false;
+    const visibleSections = sections.filter(section => !section.hidden);
+    if (!visibleSections.length) return;
     const remainingScroll = settingsPanel.scrollHeight - settingsPanel.scrollTop - settingsPanel.clientHeight;
     if (remainingScroll <= 2) {
-      setActiveSection(sections[sections.length - 1].id);
+      setActiveSection(visibleSections[visibleSections.length - 1].id);
       return;
     }
     const panelTop = settingsPanel.getBoundingClientRect().top;
     const activationLine = panelTop + (window.innerWidth < 768 ? 92 : 48);
-    let activeSection = sections[0];
-    for (const section of sections) {
+    let activeSection = visibleSections[0];
+    for (const section of visibleSections) {
       if (section.getBoundingClientRect().top <= activationLine) activeSection = section;
       else break;
     }
@@ -104,7 +106,7 @@ function initSettingsNavigation() {
   settingsToc.dataset.bound = "true";
   updateActiveSection();
   const linkedSection = document.getElementById(window.location.hash.slice(1));
-  if (linkedSection && sections.includes(linkedSection)) {
+  if (linkedSection && !linkedSection.hidden && sections.includes(linkedSection)) {
     window.requestAnimationFrame(() => {
       linkedSection.scrollIntoView({ behavior: "auto", block: "start" });
       setActiveSection(linkedSection.id);
@@ -602,7 +604,7 @@ function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "公共 Codex 账号",
-    scopeNote: "由管理员管理，供公共任务与个人额度耗尽后的任务使用。绑定个人账号请前往“我的 Codex”。",
+    scopeNote: "公共 Codex 账号由管理员统一添加与管理。",
     checking: "检测中…",
     authenticated: "已登录",
     awaiting: "等待登录",
@@ -637,7 +639,7 @@ function getCodexAuthCopy() {
     day: "天", hour: "小时", minute: "分钟",
   } : {
     title: "Shared Codex accounts",
-    scopeNote: "Managed by administrators for shared tasks and personal quota fallback. Use My Codex to bind a personal account.",
+    scopeNote: "Shared Codex accounts are added and managed by administrators.",
     checking: "Checking…",
     authenticated: "Signed in",
     awaiting: "Waiting for sign-in",

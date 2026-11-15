@@ -1,3 +1,4 @@
+[data-personal-codex-access][hidden] { display: none !important; }
 .personal-codex { padding: 18px; }
 .personal-codex p { margin: 10px 0; line-height: 1.6; }
 .personal-codex-status-row, .personal-codex-code-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }

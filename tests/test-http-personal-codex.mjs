@@ -15,7 +15,7 @@ await mkdir(config, { recursive: true }); await mkdir(bin); await mkdir(codexHom
 process.env.REMOTELAB_MACHINE_CODEX_HOME = codexHome; process.env.CODEX_HOME = codexHome;
 await copyFile(new URL('./fixtures/codex-personal-account.cjs', import.meta.url), join(bin, 'codex'));
 await chmod(join(bin, 'codex'), 0o755);
-const people = ['a', 'b', 'admin'].map((id, index) => ({ id: 'person_' + id, name: id, handle: id,
+const people = ['a', 'b', 'admin', 'c'].map((id, index) => ({ id: 'person_' + id, name: id, handle: id,
   credentials: [{ id: 'credential_' + id, type: 'token', token: String(index + 1).repeat(64) }],
   identities: [{ id: 'identity_' + id, kind: 'web', realm: 'remotelab', subjectId: id }] }));
 await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_admin',
@@ -49,9 +49,10 @@ async function waitFor(check, label, timeoutMs = 30000) {
     await new Promise(resolve => setTimeout(resolve, delay)); delay = Math.min(delay * 2, 2000);
   }
 }
-async function start() {
+async function start(previewPersonIds = 'person_a,person_b') {
   server = spawn(process.execPath, ['chat-server.mjs'], { env: { ...process.env,
     CHAT_PORT: String(port), REMOTELAB_CONFIG_DIR: config, REMOTELAB_PROJECT_ROOT: process.cwd(),
+    REMOTELAB_PERSONAL_CODEX_PERSON_IDS: previewPersonIds,
     REMOTELAB_CHAT_BASE_URL: base, REMOTELAB_MEMORY_DIR: join(home, 'memory'), REMOTELAB_WORK_ROOT_DIR: home,
     PATH: bin + ':' + process.env.PATH, SECURE_COOKIES: '0', REMOTELAB_MEMORY_WRITEBACK: 'off',
     REMOTELAB_USER_SHELL_ENV_B64: Buffer.from(JSON.stringify({ shell: '/bin/sh', mode: 'test', env: {} })).toString('base64'),
@@ -80,7 +81,18 @@ async function idle(sessionId) {
   await waitFor(async () => (await call('admin', '/api/sessions/' + sessionId)).session.activity.run.state === 'idle', 'session idle');
 }
 try {
+  await start('');
+  assert.equal((await call('a', '/api/auth/me')).features.personalCodexBinding, false);
+  await call('a', '/api/personal-codex/status', undefined, 403);
+  await stop();
   await start();
+  assert.equal((await call('a', '/api/auth/me')).features.personalCodexBinding, true);
+  for (const who of ['c', 'admin']) {
+    assert.equal((await call(who, '/api/auth/me')).features.personalCodexBinding, false);
+    for (const action of ['status', 'device-login', 'cancel-login', 'logout']) {
+      await call(who, '/api/personal-codex/' + action, action === 'status' ? undefined : {}, 403);
+    }
+  }
   await call('a', '/api/codex-auth/status', undefined, 403);
   await call('service', '/api/personal-codex/status', undefined, 403);
   await call('a', '/api/personal-codex/device-login', { personId: 'person_b' }, 400);
@@ -123,6 +135,31 @@ try {
   if (process.env.PERSONAL_CODEX_TEST_PLAYWRIGHT) {
     const { chromium } = await import(pathToFileURL(process.env.PERSONAL_CODEX_TEST_PLAYWRIGHT));
     browser = await chromium.launch({ executablePath: process.env.PERSONAL_CODEX_TEST_CHROME, headless: true, args: ['--no-sandbox'] });
+    for (const who of ['c', 'admin']) {
+      const deniedContext = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN' });
+      await deniedContext.addCookies([{ name: 'session_token', value: who, url: base }]);
+      const deniedPage = await deniedContext.newPage(), personalRequests = [], pageErrors = [];
+      deniedPage.on('request', req => { if (req.url().includes('/api/personal-codex/')) personalRequests.push(req.url()); });
+      deniedPage.on('pageerror', error => pageErrors.push(error.message));
+      await deniedPage.goto(base + '/?tab=settings&skipInstall=1#settings-personal-codex');
+      await deniedPage.locator('#settingsPanel.visible').waitFor();
+      for (const selector of ['#myCodexButton', '[data-settings-target="settings-personal-codex"]', '#settings-personal-codex']) {
+        assert.equal(await deniedPage.locator(selector).isVisible(), false, who + ' cannot see ' + selector);
+      }
+      if (who === 'admin') {
+        await deniedPage.locator('#settingsCodexAuthSection').waitFor({ timeout: 5000 }).catch(async error => {
+          console.error(JSON.stringify({ pageErrors, ui: await deniedPage.evaluate(() => ({
+            auth: window.__REMOTELAB_BOOTSTRAP__?.auth, person: currentPerson,
+            allowed: canManageSharedCodexFromUi(),
+          })) }));
+          throw error;
+        });
+        assert(!(await deniedPage.locator('#settingsCodexScopeNote').innerText()).includes('我的 Codex'));
+      } else assert.equal(await deniedPage.locator('#settingsCodexAuthSection').count(), 0);
+      assert.deepEqual(personalRequests, [], 'hidden preview performs no personal API requests');
+      assert.deepEqual(pageErrors, []);
+      await deniedContext.close();
+    }
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN', isMobile: true, hasTouch: true });
     await context.addCookies([{ name: 'session_token', value: 'a', url: base }]);
     const page = await context.newPage(), errors = [];
@@ -153,6 +190,7 @@ try {
     assert.deepEqual(errors, []);
     if (process.env.PERSONAL_CODEX_TEST_SCREENSHOT) await copyFile(join(home, 'personal-codex-mobile.png'), process.env.PERSONAL_CODEX_TEST_SCREENSHOT);
     console.log('PASS: real desktop/mobile binding UI, direct link, authorization code, cancel/retry, automatic completion, unbind and no JavaScript errors');
+    console.log('PASS: preview-only sidebar/settings/direct links for members and administrators; shared admin controls retained');
     await context.close();
   }
 } finally {

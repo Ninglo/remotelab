@@ -93,7 +93,7 @@
     return refreshPromise;
   }
   async function mutate(action) {
-    if (busy) return;
+    if (!initialized || busy) return;
     if (action === "logout" && !window.confirm(copy(
       "解绑后，新请求使用公共池。确认解绑你的个人 Codex 账号？",
       "New requests will use the shared pool. Unbind your personal Codex account?"))) return;
@@ -110,6 +110,7 @@
     } finally { busy = false; render(); schedule(); }
   }
   function open() {
+    if (!initialized) return;
     switchTab("settings");
     const url = new URL(window.location.href);
     url.hash = "settings-personal-codex";
@@ -134,7 +135,9 @@
   window.addEventListener("remotelab:localechange", render);
   window.remotelabPersonalCodex = {
     init(authInfo) {
-      initialized = Boolean(authInfo?.person);
+      initialized = Boolean(authInfo?.person && authInfo.features?.personalCodexBinding === true);
+      for (const element of document.querySelectorAll("[data-personal-codex-access]")) element.hidden = !initialized;
+      if (!initialized) stopPolling();
       if (initialized && window.location.hash === "#settings-personal-codex") open();
       else if (initialized && visible()) void refresh();
     },

@@ -92,6 +92,7 @@ import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleUsageRoutes } from './router-usage-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handlePersonalCodexRoutes } from './router-personal-codex-routes.mjs';
+import { isPersonalCodexAvailable } from './personal-codex-access.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
 import { handleClaudeAuthRoutes } from './router-claude-auth-routes.mjs';
 import { handleDisplayPublicRoutes, handleDisplaySettingsRoutes } from './router-display-routes.mjs';
@@ -663,6 +664,7 @@ function isSessionVisibleToAuthSession(authSession, session) {
 function buildAuthInfo(authSession) {
   if (!authSession) return null;
   const info = {
+    features: { personalCodexBinding: isPersonalCodexAvailable(authSession) },
     person: {
       id: authSession.personId,
       name: authSession.personName,

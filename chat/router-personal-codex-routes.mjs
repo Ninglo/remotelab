@@ -1,5 +1,6 @@
 import { readBody } from '../lib/utils.mjs';
 import { personalCodexAuthManager } from './personal-codex-auth.mjs';
+import { isPersonalCodexAvailable } from './personal-codex-access.mjs';
 
 export async function handlePersonalCodexRoutes({ req, res, pathname, authSession, writeJson,
   authManager = personalCodexAuthManager }) {
@@ -9,6 +10,9 @@ export async function handlePersonalCodexRoutes({ req, res, pathname, authSessio
   const personId = authSession?.personId;
   if (!personId || authSession.authKind === 'service' || personId === 'person_system') {
     writeJson(res, 403, { error: '请使用本人的 RemoteLab 账号登录后绑定' }); return true;
+  }
+  if (!isPersonalCodexAvailable(authSession)) {
+    writeJson(res, 403, { error: '个人 Codex 绑定尚未向当前用户开放' }); return true;
   }
   try {
     let state;
