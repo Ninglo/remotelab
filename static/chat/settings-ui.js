@@ -181,6 +181,7 @@ let connectorSurfacesCache = [];
 let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
+let codexRoutingPending = false;
 let codexAuthPollTimer = null;
 let piAuthPollTimer = null;
 let codexAuthRequestId = 0;
@@ -604,7 +605,13 @@ function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "公共 Codex 账号",
-    scopeNote: "公共 Codex 账号由管理员统一添加与管理。",
+    scopeNote: "公共 Codex 账号由管理员统一添加与管理。启停仅影响后续请求，正在运行的任务继续执行。",
+    routingOn: "已开启使用", routingOff: "已关闭使用",
+    routingStart: "开启使用", routingStop: "关闭使用",
+    routingLoginRequired: "请先登录", routingUnavailable: "需重新登录",
+    routingEmpty: "所有公共账号均已关闭，后续公共账号请求将无法启动。",
+    routingNoFailover: "自动切换已关闭：停用账号后，绑定它的对话需重新启用该账号或开启自动切换才能继续。",
+    routingStopLast: "这是最后一个已开启的公共账号。关闭后，后续公共账号请求将无法启动；正在运行的任务继续执行。仍要关闭吗？",
     checking: "检测中…",
     authenticated: "已登录",
     awaiting: "等待登录",
@@ -639,7 +646,13 @@ function getCodexAuthCopy() {
     day: "天", hour: "小时", minute: "分钟",
   } : {
     title: "Shared Codex accounts",
-    scopeNote: "Shared Codex accounts are added and managed by administrators.",
+    scopeNote: "Administrators manage shared accounts. Changes apply to subsequent requests; running tasks continue.",
+    routingOn: "Enabled", routingOff: "Disabled",
+    routingStart: "Enable use", routingStop: "Disable use",
+    routingLoginRequired: "Sign-in required", routingUnavailable: "Sign in again",
+    routingEmpty: "All shared accounts are disabled. Subsequent shared-account requests cannot start.",
+    routingNoFailover: "Automatic switching is off. Conversations bound to a disabled account can continue after re-enabling it or turning on automatic switching.",
+    routingStopLast: "This is the last enabled shared account. Disabling it prevents subsequent shared-account requests from starting; running tasks continue. Disable it?",
     checking: "Checking…",
     authenticated: "Signed in",
     awaiting: "Waiting for sign-in",
@@ -694,6 +707,7 @@ function ensureCodexAuthSection() {
     </div>
     <div class="settings-codex-account" id="settingsCodexAuthAccount" hidden></div>
     <div class="settings-app-empty settings-codex-usage" id="settingsCodexAuthUsage" aria-live="polite" hidden></div>
+    <p class="settings-section-note" id="settingsCodexRoutingNote" aria-live="polite" hidden></p>
     <div id="settingsCodexAccountList" hidden></div>
     <label class="settings-app-empty" id="settingsCodexAutoSwitchLabel" hidden>
       <input id="settingsCodexAutoSwitch" type="checkbox"><span id="settingsCodexAutoSwitchText"></span>
@@ -854,10 +868,18 @@ function renderCodexSavedAccounts() {
   const list = document.getElementById("settingsCodexAccountList");
   const label = document.getElementById("settingsCodexAutoSwitchLabel");
   const balanceLabel = document.getElementById("settingsCodexBalanceSessionsLabel");
-  const data = codexAuthState?.accountList;
+  const note = document.getElementById("settingsCodexRoutingNote");
+  const data = canManageSharedCodexFromUi() ? codexAuthState?.accountList : null;
+  if (note) note.hidden = !data;
   if (!list || !data) { if (list) list.hidden = true; if (label) label.hidden = true; if (balanceLabel) balanceLabel.hidden = true; return; }
   const copy = getCodexAuthCopy();
   list.hidden = false; label.hidden = false;
+  const selected = account => data.routingAccountIds == null || data.routingAccountIds.includes(account.id);
+  const anyEnabled = (data.accounts || []).some(selected);
+  if (note) {
+    note.textContent = !anyEnabled ? copy.routingEmpty : data.autoSwitch ? "" : copy.routingNoFailover;
+    note.hidden = !note.textContent;
+  }
   if (balanceLabel) balanceLabel.hidden = false;
   document.getElementById("settingsCodexBalanceSessions").checked = data.balanceSessions === true;
   document.getElementById("settingsCodexBalanceSessionsText").textContent = copy.balanceSessions;
@@ -876,7 +898,7 @@ function renderCodexSavedAccounts() {
       ? copy.unknownQuota : `${account.account?.planType || "Codex"} · ${copy.remaining} ${Math.min(...remaining)}%`;
     const button = document.createElement("button"); button.className = "settings-app-btn"; button.type = "button";
     button.textContent = !account.account ? copy.signIn : account.active ? copy.current : copy.select;
-    button.disabled = account.active && !!account.account;
+    button.disabled = !!account.account && (account.active || account.routingEnabled === false);
     button.addEventListener("click", () => {
       if (account.account) void switchCodexAccount(account.id);
       else void startCodexDeviceLogin(account.id);
@@ -887,7 +909,45 @@ function renderCodexSavedAccounts() {
       reauthorize.type = "button"; reauthorize.textContent = copy.reauthorize || "Sign in again";
       reauthorize.addEventListener("click", () => void startCodexDeviceLogin(account.id)); row.append(reauthorize);
     }
+    const enabled = selected(account);
+    const status = document.createElement("div"); status.className = "settings-app-empty";
+    status.textContent = `${enabled ? copy.routingOn : copy.routingOff}${!account.account
+      ? ` · ${copy.routingLoginRequired}` : enabled && account.routingEnabled === false ? ` · ${copy.routingUnavailable}` : ""}`;
+    const toggle = document.createElement("button"); toggle.className = "settings-app-btn"; toggle.type = "button";
+    toggle.dataset.codexRoutingAccount = account.id;
+    toggle.textContent = enabled ? copy.routingStop : copy.routingStart;
+    toggle.setAttribute("aria-label", `${toggle.textContent} · ${account.label}`);
+    toggle.disabled = codexRoutingPending;
+    toggle.addEventListener("click", () => void setCodexAccountRouting(account.id, !enabled));
+    row.append(status, toggle);
     list.append(row);
+  }
+}
+
+async function setCodexAccountRouting(accountId, enabled) {
+  if (!canManageSharedCodexFromUi() || codexRoutingPending) return;
+  const data = codexAuthState?.accountList;
+  if (!data) return;
+  const copy = getCodexAuthCopy();
+  const enabledAccounts = (data.accounts || []).filter(account => data.routingAccountIds == null || data.routingAccountIds.includes(account.id));
+  if (!enabled && enabledAccounts.length === 1 && enabledAccounts[0].id === accountId
+      && !window.confirm(copy.routingStopLast)) return;
+  codexRoutingPending = true;
+  ++codexAuthRequestId; // Ignore reads started before this write.
+  renderCodexSavedAccounts();
+  try {
+    const saved = await fetchJsonOrRedirect("/api/codex-auth/accounts/routing", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId, enabled }), revalidate: false,
+    });
+    if (codexAuthState) codexAuthState.accountList = saved.accountList;
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message);
+  } finally {
+    // Read back even after an uncertain response; never retry a write blindly.
+    await refreshCodexAuthStatus({ silent: true, includeUsage: false });
+    codexRoutingPending = false;
+    renderCodexSavedAccounts();
   }
 }
 

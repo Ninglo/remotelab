@@ -66,6 +66,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     },
     async listAccounts({ refresh = false } = {}) { return pool.list({ refresh, command: await resolveCommand() }); },
     async setAccountPolicy(autoSwitch, balanceSessions, routingAccountIds) { return pool.policy(autoSwitch, balanceSessions, routingAccountIds); },
+    async setAccountRouting(accountId, enabled) { return pool.setRoutingEnabled(accountId, enabled); },
     switchAccount: ({ accountId } = {}) => serialize(async () => {
       if (!accountId) return startLogin({ restart: true });
       await pool.select(accountId); return readStatus();

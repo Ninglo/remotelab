@@ -28,6 +28,14 @@ export async function handleCodexAuthRoutes({
     return true;
   }
 
+  if (pathname === '/api/codex-auth/accounts/routing' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req, 4096) || '{}');
+      writeJson(res, 200, { accountList: await authManager.setAccountRouting(body.accountId, body.enabled) });
+    } catch { writeJson(res, 400, { error: 'Invalid Codex account routing setting' }); }
+    return true;
+  }
+
   if (pathname === '/api/codex-auth/status' && req.method === 'GET') {
     try {
       writeJson(res, 200, { codexAuth: await authManager.getStatus() });

@@ -164,6 +164,23 @@ omitting `autoSwitch` preserves the independent automatic-switch setting. Enable
 `autoSwitch` to migrate unavailable bindings and continue failed quota/rate-limited
 turns on another saved subscription; balancing alone does not enable failover.
 
+Each saved account has an **Enable use / Disable use** button in the same Settings
+section, visible only to administrators. The saved selection is distinct from
+sign-in and quota availability: enabling a signed-out account still requires
+sign-in. Disabling keeps credentials and current executions intact. With automatic
+switching enabled, the next request uses an enabled account; with it disabled,
+a conversation bound to a disabled account waits for re-enabling or automatic
+switching. Disabling the last selected account asks for confirmation and the page
+shows that subsequent shared-account requests cannot start. Opening the page or
+upgrading does not change existing selections or other routing policies.
+
+Buttons use `POST /api/codex-auth/accounts/routing` with
+`{ "accountId": "<saved ID>", "enabled": false }`. This updates one shared account
+under the existing metadata lock, preserving concurrent changes to other accounts,
+automatic switching, balancing, schedule preferences and personal bindings. The
+normal administrator API boundary also rejects direct calls from ordinary users.
+The page reads back status after saving, including when the response is uncertain.
+
 ## Behavior
 
 - Operators can restrict this instance's pool with `routingAccountIds` on the same

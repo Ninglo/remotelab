@@ -160,6 +160,30 @@ try {
   await pool.policy(undefined, undefined, null);
   assert.equal((await pool.list()).routingAccountIds, null);
   assert((await pool.list()).accounts.every(account => account.routingEnabled));
+  // Per-account buttons preserve other administrators' choices and active work.
+  await pool.policy(true, true, null);
+  const running = await acquire('button-running');
+  const before = await pool.read();
+  await Promise.all([pool.setRoutingEnabled(a.id, false), pool.setRoutingEnabled(b.id, false)]);
+  const toggled = await pool.read();
+  assert(!toggled.routingAccountIds.includes(a.id) && !toggled.routingAccountIds.includes(b.id));
+  assert.equal(toggled.autoSwitch, before.autoSwitch);
+  assert.equal(toggled.balanceSessions, before.balanceSessions);
+  assert.deepEqual(toggled.accounts, before.accounts, 'buttons preserve credentials, usage and observations');
+  await pool.setRoutingEnabled(running.id, false);
+  assert((await pool.registeredRuns(await pool.account(running.id))).length > 0,
+    'disabling never unregisters or interrupts an in-flight execution');
+  const next = await acquire('button-running');
+  assert.notEqual(next.id, running.id);
+  await next.lease.release(); await running.lease.release();
+  await pool.setRoutingEnabled(a.id, true);
+  const restored = await restarted.list();
+  assert(restored.accounts.find(account => account.id === a.id).routingEnabled);
+  assert(!restored.accounts.find(account => account.id === b.id).routingEnabled);
+  await assert.rejects(pool.setRoutingEnabled(a.id, 'true'), /无效/);
+  await assert.rejects(pool.setRoutingEnabled('unknown', true), /无效/);
+  const personal = await pool.ensurePersonalAccount('person_test');
+  await assert.rejects(pool.setRoutingEnabled(personal.id, true), /不存在/);
   console.log('Codex Session routing: balanced reservations, duplicate identities, sticky turns, legacy migration, restart, disable, cooldown, exhaustion and cancellation passed');
 } finally {
   await Promise.all(slots.map(slot => slot.lease.release()));
