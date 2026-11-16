@@ -1409,3 +1409,7 @@ writes again. The durable role-delivery context retains normalized attachment
 metadata for the original file event. The fixed command comes only from operator
 configuration, never from a message or a model result. Timeout/error replies do
 not imply rollback; the business receipt owns recovery of any completed steps.
+
+### Pool B reset-card approvals
+
+Pool B `reset-credit` requests use the group connector as the human approval boundary. The connector accepts `批准 Reset <request-id>` or `拒绝 Reset <request-id>` only from the requesting person in the same chat and topic, then records the idempotent execution receipt. See [Pool B 重置卡审批](pool-b-reset-approval.md).

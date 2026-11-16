@@ -40,6 +40,13 @@ import {
 } from '../connectors/feishu/runtime-commands.mjs';
 import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
+import {
+  approveAndConsumePoolBReset,
+  formatPoolBResetResult,
+  parsePoolBResetApprovalCommand,
+  rejectPoolBResetRequest,
+  resolvePoolBResetStateDir,
+} from '../lib/pool-b-reset-approval.mjs';
 import { getFeishuConversationSettings, handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
 import { startFeishuPrivateConversation, filterPrivateConversationContext } from '../connectors/feishu/private-conversations.mjs';
 import { initializeFeishuEventLog, migrateFeishuEventLog, appendFeishuEvent, readFeishuEvents } from '../lib/feishu-event-log.mjs';
@@ -1767,6 +1774,8 @@ function extractLocalCommand(summary) {
   const privateChat = ['p2p', 'private'].includes(summary.chatType);
   const normalized = privateChat && ['开启新对话', '新对话', 'New conversation'].includes(commandText.trim()) ? '/new'
     : privateChat && ['我的设置', '个人设置', '使用说明', 'My settings', 'How to use'].includes(commandText.trim()) ? '/settings' : commandText;
+  const resetCommand = parsePoolBResetApprovalCommand(commandText);
+  if (resetCommand) return { poolBReset: resetCommand };
   const parsed = parseFeishuCommandBlock(normalized);
   if (parsed.error) return parsed;
   return parsed.commands.length > 0 ? parsed : null;
@@ -2046,6 +2055,30 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 
 async function processFeishuMessage(runtime, summary, command, helpers) {
   const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+  if (command?.poolBReset) {
+    const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+    const stateDir = resolvePoolBResetStateDir(
+      runtime?.config?.poolBResetApproval?.stateDir
+        || join(runtime?.config?.storageDir || CONFIG_DIR, 'pool-b-reset-approvals'),
+    );
+    try {
+      const request = command.poolBReset.type === 'reject_pool_b_reset'
+        ? await rejectPoolBResetRequest({
+          stateDir, requestId: command.poolBReset.requestId, rejecter: summary.sender,
+          chatId: summary.chatId, threadId: summary.threadId,
+        })
+        : await approveAndConsumePoolBReset({
+          stateDir, requestId: command.poolBReset.requestId, approver: summary.sender,
+          chatId: summary.chatId, threadId: summary.threadId,
+        });
+      const text = command.poolBReset.type === 'reject_pool_b_reset'
+        ? `已记录拒绝，Reset 请求 ${request.requestId} 不会执行。`
+        : formatPoolBResetResult(request);
+      return enqueue(runtime, summary, text);
+    } catch (error) {
+      return enqueue(runtime, summary, `Reset 审批未执行：${error?.message || String(error)}`);
+    }
+  }
   const projectCommand = command?.commands?.find(entry => entry.name === 'project');
   if (projectCommand) {
     const enqueue = helpers.queueFeishuReply || queueFeishuReply;
