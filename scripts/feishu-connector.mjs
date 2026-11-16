@@ -897,7 +897,9 @@ async function loadFeishuUserProfile(runtime, openId) {
       if (!profile.name && !profile.englishName) return { profile: null, verification: { status: 'failed', reason: 'not_visible_or_name_empty', retryable: true, appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
       return { profile, verification: { status: 'verified', source: 'feishu.contact.v3.user.get', appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
     } catch (error) {
-      const reason = error?.name === 'TimeoutError' || /timeout/i.test(error?.message || '') ? 'timeout' : (error?.code === 99991672 || error?.status === 401 || error?.status === 403 ? 'missing_scope' : 'directory_lookup_failed');
+      const apiCode = error?.code ?? error?.response?.code;
+      const status = error?.status ?? error?.response?.status;
+      const reason = error?.name === 'TimeoutError' || /timeout/i.test(error?.message || '') ? 'timeout' : (apiCode === 99991672 || status === 401 || status === 403 ? 'missing_scope' : 'directory_lookup_failed');
       console.warn(`[feishu-connector] failed to load user profile for ${normalizedOpenId}: ${error?.message || error}`);
       return { profile: null, verification: { status: 'failed', reason, retryable: true, appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
     }
