@@ -700,11 +700,8 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
   const allowed = ['interviewer', 'recruiting_intern'].includes(role) || await isAllowedByPolicy(runtime.config.accessPolicy, summary);
-  const linkedHumanMessage = allowed
-    && trimString(summary?.sender?.senderType).toLowerCase() === 'user'
-    && runtime.config.projectLinks?.some(link => link.discussionChatId === summary.chatId
-      || link.workChatId === summary.chatId);
-  const recordedSummary = linkedHumanMessage
+  // Resolve names for every authenticated human event, including blocked and pre-model intercepted messages.
+  const recordedSummary = trimString(summary?.sender?.senderType).toLowerCase() === 'user'
     ? await enrichSummaryWithSenderProfile(runtime, summary) : summary;
   await recordConnectorEvent(runtime, sourceLabel, recordedSummary, raw, allowed);
   await updateKnownSenders(runtime.storagePaths.knownSendersPath, recordedSummary);
@@ -883,60 +880,42 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
 
 async function loadFeishuUserProfile(runtime, openId) {
   const normalizedOpenId = trimString(openId);
-  if (!normalizedOpenId || !runtime?.appClient?.contact?.v3?.user?.get) return null;
+  if (!normalizedOpenId || !runtime?.appClient?.contact?.v3?.user?.get) return { profile: null, verification: { status: 'failed', reason: 'source_app_client_unavailable', retryable: true } };
   if (!runtime.userProfileCache) runtime.userProfileCache = new Map();
-  if (runtime.userProfileCache.has(normalizedOpenId)) {
-    return await runtime.userProfileCache.get(normalizedOpenId);
-  }
-
+  const cacheKey = [trimString(runtime.config?.appId), trimString(runtime.config?.tenantKey), normalizedOpenId].join(':');
+  const cached = runtime.userProfileCache.get(cacheKey);
+  if (cached?.status === 'verified' && cached.expiresAt > Date.now()) return cached.value;
+  if (cached?.pending) return await cached.pending;
   const pending = (async () => {
+    const checkedAt = new Date().toISOString();
     try {
-      const timeoutMs = Math.min(
-        normalizePositiveTimeout(runtime?.config?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
-        5_000,
-      );
-      const response = await withTimeout(
-        () => runtime.appClient.contact.v3.user.get({
-          params: { user_id_type: 'open_id' },
-          path: { user_id: normalizedOpenId },
-        }),
-        timeoutMs,
-        'Feishu user profile lookup',
-      );
-      if (response.code !== undefined && response.code !== 0) {
-        throw new Error(response.msg || `Failed to load Feishu user profile (${response.code})`);
-      }
+      const timeoutMs = Math.min(normalizePositiveTimeout(runtime?.config?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS), 5_000);
+      const response = await withTimeout(() => runtime.appClient.contact.v3.user.get({ params: { user_id_type: 'open_id' }, path: { user_id: normalizedOpenId } }), timeoutMs, 'Feishu user profile lookup');
+      if (response.code !== undefined && response.code !== 0) { const error = new Error(response.msg || `Failed to load Feishu user profile (${response.code})`); error.code = response.code; throw error; }
       const user = response.data?.user || response.data || {};
-      const profile = {
-        name: trimString(user.name || user.nickname),
-        englishName: trimString(user.en_name),
-      };
-      return profile.name || profile.englishName ? profile : null;
+      const profile = { name: trimString(user.name || user.nickname), englishName: trimString(user.en_name) };
+      if (!profile.name && !profile.englishName) return { profile: null, verification: { status: 'failed', reason: 'not_visible_or_name_empty', retryable: true, appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
+      return { profile, verification: { status: 'verified', source: 'feishu.contact.v3.user.get', appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
     } catch (error) {
+      const reason = error?.name === 'TimeoutError' || /timeout/i.test(error?.message || '') ? 'timeout' : (error?.code === 99991672 || error?.status === 401 || error?.status === 403 ? 'missing_scope' : 'directory_lookup_failed');
       console.warn(`[feishu-connector] failed to load user profile for ${normalizedOpenId}: ${error?.message || error}`);
-      return null;
+      return { profile: null, verification: { status: 'failed', reason, retryable: true, appId: runtime.config?.appId, tenantKey: runtime.config?.tenantKey, openId: normalizedOpenId, checkedAt } };
     }
   })();
-  runtime.userProfileCache.set(normalizedOpenId, pending);
-  const profile = await pending;
-  runtime.userProfileCache.set(normalizedOpenId, profile);
-  return profile;
+  runtime.userProfileCache.set(cacheKey, { pending });
+  const value = await pending; runtime.userProfileCache.delete(cacheKey);
+  if (value?.verification?.status === 'verified') runtime.userProfileCache.set(cacheKey, { status: 'verified', expiresAt: Date.now() + 300_000, value });
+  return value;
 }
 
 async function enrichSummaryWithSenderProfile(runtime, summary) {
   if (!summary || typeof summary !== 'object') return summary;
   const sender = summary.sender && typeof summary.sender === 'object' ? summary.sender : {};
   if (trimString(sender.senderType).toLowerCase() !== 'user') return summary;
-  const profile = await loadFeishuUserProfile(runtime, sender.openId);
-  if (!profile) return summary;
-  return {
-    ...summary,
-    sender: {
-      ...sender,
-      name: trimString(sender.name) || profile.name || profile.englishName,
-      englishName: trimString(sender.englishName) || profile.englishName,
-    },
-  };
+  const result = await loadFeishuUserProfile(runtime, sender.openId); const profile = result?.profile;
+  const nameResolution = { ...(result?.verification || { status: 'failed', reason: 'lookup_unavailable', retryable: true }),
+    tenantKey: trimString(sender.tenantKey) || trimString(result?.verification?.tenantKey) || trimString(runtime.config?.tenantKey) || undefined };
+  return { ...summary, sender: { ...sender, name: trimString(sender.name) || profile?.name || profile?.englishName || '', englishName: trimString(sender.englishName) || profile?.englishName || '', nameResolution } };
 }
 
 async function reconcileKnownFeishuPeople(runtime) {
