@@ -5,6 +5,7 @@ import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 import { nativeQuestionAnswers } from '../native-user-questions.mjs';
 import { projectMainlineHooks, mainlineFinalAllowed } from '../../lib/project-mainline.mjs';
+import { buildCodexToolBridgeOverrides } from '../codex-tool-bridge-config.mjs';
 
 const nativeStatus = value => value === 'inProgress' ? 'in_progress' : value === 'declined' ? 'failed' : value;
 const textInput = text => [{ type: 'text', text: String(text), text_elements: [] }];
@@ -41,7 +42,12 @@ function execItem(item) {
 export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, onQuestion = async () => ({ answers: {} }), options = {}, cwd } = {}) {
   if (typeof send !== 'function') throw new TypeError('Codex driver requires send');
   const configuredOptions = { ...options, model: normalizeCodexModelId(options.model), threadId: options.threadId || options.codexThreadId,
-    reasoningEffort: clampReasoningEffort(options.reasoningEffort || options.effort) };
+    reasoningEffort: clampReasoningEffort(options.reasoningEffort || options.effort),
+    codexConfigOverrides: [
+      ...(Array.isArray(options.codexConfigOverrides) ? options.codexConfigOverrides : []),
+      ...buildCodexToolBridgeOverrides(),
+    ],
+  };
   const legacyArgs = buildCodexArgs('', configuredOptions);
   const args = ['app-server', '--listen', 'stdio://'];
   let sandbox = 'danger-full-access';

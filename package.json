@@ -69,6 +69,7 @@
     "start": "node chat-server.mjs",
     "chat": "node chat-server.mjs",
     "test:antigravity": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-antigravity-adapter.mjs tests/test-native-antigravity.mjs",
+    "test:codex-tool-bridge": "node scripts/run-with-clean-instance-env.mjs node tests/test-codex-tool-bridge.mjs",
     "readme:showcase": "python3 scripts/generate-readme-showcase.py",
     "diag:tunnel": "node scripts/tunnel-latency-diagnose.mjs",
     "feishu:check": "node scripts/feishu-check.mjs",

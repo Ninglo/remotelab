@@ -58,6 +58,24 @@ it does not ask for approval. Future policy work should decide whether users can
 disable fallback, whether shared consumption needs a budget, and who receives
 that usage attribution. No budget or future permission gate is implied today.
 
+## Codex tool bridge
+
+Every native Codex App Server run receives a session-scoped stdio MCP server named `remotelab`. The server starts from the trusted RemoteLab checkout and inherits the runner's `REMOTELAB_SESSION_ID`, service authentication and local-helper base URL; the model never receives a service token or a second session identifier.
+
+The bridge publishes only the existing local-helper contract:
+
+- `remotelab_local_bridge_status`
+- `remotelab_local_bridge_list`
+- `remotelab_local_bridge_find`
+- `remotelab_local_bridge_stat`
+- `remotelab_local_bridge_read_text`
+- `remotelab_local_bridge_stage`
+- `remotelab_local_bridge_pack`
+
+Reads are bounded and paths are sent as root aliases plus relative paths. `stage` and `pack` are explicit Session-attachment writes. Pairing/bootstrap operations and arbitrary device commands are not exposed to the model. A robot action adapter can be added only when the local helper publishes a stable, allowlisted command schema; the bridge does not turn an arbitrary JSON command into hardware control.
+
+The bridge is injected through Codex config overrides in `chat/native/codex.mjs`, so saved-thread continuation and personal-account failover use the same tool surface. Personal quota selection remains the existing `codexAccountPolicy` path described above; this bridge does not change account ownership or fallback.
+
 ## Implementation and ownership
 
 - Existing records without `scope` remain shared. Personal records add
