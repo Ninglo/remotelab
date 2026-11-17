@@ -1,4 +1,5 @@
 import { automationDeliveryOptions } from './automation-delivery.mjs';
+import { buildAutomationAttribution } from '../lib/automation-attribution.mjs';
 import { prepareAutomationHomeRun } from './automation-home.mjs';
 import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
@@ -19,7 +20,7 @@ import {
   submitHttpMessage,
   updateSessionInitiatorIdentity,
 } from './session-manager.mjs';
-import { findSessionConversation, updateSessionConversation } from './session-conversations.mjs';
+import { findSessionConversation, updateSessionConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { requests } from './requests.mjs';
 import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
@@ -282,6 +283,7 @@ function isTriggerTerminal(trigger) {
 }
 
 function buildTriggerStatusText(trigger, { queued = false } = {}) {
+  if (trigger?.deliveryMode === 'access_denied') return `scheduled trigger blocked by access check: ${trigger.title || trigger.id}`;
   const prefix = queued ? 'scheduled trigger queued' : 'scheduled trigger fired';
   const title = trimString(trigger?.title);
   return title ? `${prefix}: ${title}` : `${prefix}: ${trigger?.id || 'unknown trigger'}`;
@@ -775,11 +777,17 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
     const accepted = await requests.byRequest(session.id, current.requestId);
     const deliveryOptions = accepted ? {} : await automationDeliveryOptions(current);
     const homeContext = accepted ? '' : await prepareAutomationHomeRun(current, session);
+    const executionText = current.text + homeContext;
+    const sourceOptions = deliveryOptions.suppressSourceDelivery ? deliveryOptions : current.sessionTemplate?.reuse === 'fixed_session'
+      ? current.sessionTemplate?.conversation ? { sourceDelivery: current.sessionTemplate.conversation } : { suppressSourceDelivery: true }
+      : {};
+    const automationAttribution = accepted ? undefined : await buildAutomationAttribution(current, executionText,
+      resolveSessionDeliveryPlan(session, { internalOperation: 'trigger_delivery', ...sourceOptions }));
     // Admission is already durable. An upgrade must not reconstruct different
     // options for that identity or execute it again after a lost acknowledgement.
     const outcome = accepted ? { duplicate: true, run: { id: accepted.runId },
       queued: !accepted.result && !await getRun(accepted.runId),
-    } : await submitHttpMessage(session.id, current.text + homeContext, [], {
+    } : await submitHttpMessage(session.id, executionText, [], {
       requestId: current.requestId,
       tool: current.executionRuntime?.tool || current.tool || undefined,
       model: current.executionRuntime?.model || current.model || undefined,
@@ -793,26 +801,24 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       automationPolicy: current.automationPolicy || undefined,
       scheduleId: current.scheduleId || undefined,
       occurrenceId: current.occurrenceId || undefined,
-      ...(deliveryOptions.suppressSourceDelivery ? deliveryOptions : current.sessionTemplate?.reuse === 'fixed_session'
-        ? current.sessionTemplate?.conversation
-          ? { sourceDelivery: current.sessionTemplate.conversation }
-          : { suppressSourceDelivery: true }
-        : {}),
+      automationAttribution,
+      ...sourceOptions,
     });
 
     const deliveredAt = nowIso();
+    const accessDenied = outcome.accessDenied === true || Boolean(accepted?.options?.accessGuard?.category);
     const next = {
       ...current,
-      status: TRIGGER_STATUS_DELIVERED,
+      status: accessDenied ? TRIGGER_STATUS_FAILED : TRIGGER_STATUS_DELIVERED,
       enabled: false,
-      deliveredAt,
+      deliveredAt: accessDenied ? '' : deliveredAt,
       updatedAt: deliveredAt,
       claimedAt: '',
       nextAttemptAt: '',
-      lastError: '',
-      lastErrorAt: '',
+      lastError: accessDenied ? 'Access check denied this occurrence; no model was started.' : '',
+      lastErrorAt: accessDenied ? deliveredAt : '',
       runId: trimString(outcome?.run?.id),
-      deliveryMode: outcome?.queued ? 'queued' : 'run',
+      deliveryMode: accessDenied ? 'access_denied' : outcome?.queued ? 'queued' : 'run',
     };
     triggers[index] = next;
     await saveTriggers(triggers);

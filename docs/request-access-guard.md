@@ -17,6 +17,32 @@ Feishu identities use the validated connector route and tenant; body text,
 display names and Session ownership never grant access. Internal operations
 retain existing scopes; a guard is not an automation authorization system.
 
+Scheduled requests carry `automationAttribution`, built at dispatch from the
+durable Trigger and current identity directory. It records the creator's
+Person/identity/name, task/occurrence/source identifiers, the definition hash,
+the full dispatched-text hash, and the resolved delivery-plan hash. These are
+audit facts, not `viewPersonId`/`initiatedByIdentityId` impersonation or general
+HR permission. HTTP message payloads cannot supply this scheduler-only field.
+
+An operator-approved `automations` entry matches the exact task, creator and
+definition hash. New entries with `approvalRef` additionally require `personId`,
+`sourceSessionId`, `deliverySha256`, `expiresAt`, and optionally `notBefore`.
+The Person/identity pair must still have current data eligibility. The scheduler
+snapshot binds any added task-home context to the complete execution text while
+the approval remains bound to the original task definition. Changes to the task,
+recipient, actor or expiry require renewed review; an automation data grant does
+not grant a protection/permission mutation. Existing exact legacy entries remain
+exact and require the internal trigger-delivery path. Do not add a broad
+exception for all internal tasks or all tasks created by an HR user.
+
+Denial metadata retains the task title, trigger/schedule/occurrence and verified
+creator attribution so the observer can identify an automated request without
+guessing from its Session owner. A refused scheduled Request is a failed
+occurrence even when the fixed refusal reply completed successfully. It never
+starts a model. Both new delivery records and historical guard-refusal receipts
+project as failures; repeated admission retains the original Request and never
+silently retries it with a different identity.
+
 Version 2 replaces substring-based decisions with explicit content/operation
 requests. Its rules also have a stable `id` identifying the protected target.
 `protected` rules describe confidential resources and require a data acquisition
@@ -97,6 +123,10 @@ and Feishu restricted-access/role-delivery/interview-conversation suites. These
 use synthetic temporary state and never send real alerts or invoke a model.
 V2 regression: `node scripts/run-with-clean-instance-env.mjs node
 tests/test-request-content-operation.mjs`.
+Scheduler attribution and refusal regression:
+`node scripts/run-with-clean-instance-env.mjs node tests/test-automation-attribution.mjs`,
+`node scripts/run-with-clean-instance-env.mjs node tests/test-automation-trigger-guard.mjs`,
+and `node scripts/run-with-clean-instance-env.mjs node --test tests/test-automation-health.mjs`.
 
 ### Restricted recruiting intern queries
 

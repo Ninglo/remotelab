@@ -43,7 +43,7 @@ try {
   assert.equal(await check('change whitelist',{viewPersonId:'allowed',initiatedByIdentityId:'verified'}),null);
   policy.automations = [{ id: 'fixed', identityId: 'other', textSha256: createHash('sha256').update('Vault private logs').digest('hex') }];
   await writeFile(path, JSON.stringify(policy));
-  assert.equal(await check('Vault private logs', { scheduleId: 'fixed' }), null);
+  assert.equal(await check('Vault private logs', { scheduleId: 'fixed', internalOperation: 'trigger_delivery' }), null);
   assert.equal((await check('Vault private salary', { scheduleId: 'fixed' })).blocked, true);
   const denials = await Promise.all((await readdir(join(stateRoot, 'denials/pending'))).map(name => readFile(join(stateRoot, 'denials/pending', name), 'utf8')));
   assert.ok(denials.length >= 6);

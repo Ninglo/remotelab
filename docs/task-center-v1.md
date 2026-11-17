@@ -443,3 +443,11 @@ mixed-language buttons within a Chinese task card. Runtime configuration and
 evaluation collection membership are unchanged.
 
 自动任务页在任务数据旁提供默认折叠的“何时提醒、怎么处理”：展开可看失败提醒条件、补救边界、原执行会话及结果出口。说明复用监管快照，不增加执行器；页面刷新保留展开选择。磁盘、账号、API、服务和用量说明分别放在各自数据旁，不再在基础资源顶部排列说明卡片。
+## Scheduled access refusals
+
+A scheduled occurrence refused before model admission is displayed as failed,
+including historical occurrences whose fixed refusal reply has a completed
+Request receipt. Trigger delivery does not imply model execution or business
+success. The original refusal receipt and occurrence ID remain unchanged; a
+restart does not turn a refused occurrence into a new execution. Creator audit
+attribution and exact task grants are documented in [request access guard](request-access-guard.md).

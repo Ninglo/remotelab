@@ -7,6 +7,7 @@ import { readRecord, writeDurableJson, serialQueue } from '../lib/durable-record
 import { isLimitedInterviewQuestion, limitedInterviewReply } from './limited-interview.mjs';
 import { confidentialActorAllowed } from '../lib/hr-access-authorization.mjs';
 import { explicitAccessIntents } from './access-intent.mjs';
+import { matchingAutomationGrant } from '../lib/automation-attribution.mjs';
 
 const queue = serialQueue();
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -70,10 +71,9 @@ async function contentOperationDecision(input, config, compiled, stateRoot, now)
       entry.route === source.sourceRouteId && entry.tenant === source.tenantKey && entry.openId === source.sender.openId);
   const business = Boolean(config.interview && isLimitedInterviewQuestion(String(input.text || ''))
     && (!allowed || businessActor) && !options.restrictedRecruiting && !options.internalOperation && !options.deliveryOnly);
-  const automation = (config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
-    && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()));
-  const matched = !automation && intents.find(intent => !(intent.category === 'bypass'
-    ? operationGranted(config, input, 'bypass') : allowed && privateChannel));
+  const automation = matchingAutomationGrant(config, input, now);
+  const matched = intents.find(intent => !(intent.category === 'bypass'
+    ? operationGranted(config, input, 'bypass') : (allowed && privateChannel) || Boolean(automation)));
   const denied = Boolean(matched);
   // Every unrelated turn clears the prior target. No conversation-history
   // substring search and no same-person 24-hour taint inheritance.
@@ -100,6 +100,9 @@ async function persistDenial(input, decision, stateRoot, now) {
     guardDecisionAt: new Date(now).toISOString(), options: {
       viewPersonId: options.viewPersonId, initiatedByIdentityId: options.initiatedByIdentityId,
       usageSurface: options.usageSurface, feishuConnectorAuthenticated: options.feishuConnectorAuthenticated,
+      internalOperation: options.internalOperation, triggerId: options.triggerId, scheduleId: options.scheduleId,
+      occurrenceId: options.occurrenceId, automationTitle: options.automationTitle,
+      automationAttribution: options.automationAttribution,
       accessGuard: decision,
       sourceContext: { connector: source.connector, sourceRouteId: source.sourceRouteId, tenantKey: source.tenantKey,
         messageId: source.messageId, sender: source.sender && { openId: source.sender.openId, senderType: source.sender.senderType } },
@@ -148,8 +151,7 @@ export async function evaluateRequestAccess(input, {
       && !options.internalOperation && !options.deliveryOnly;
     if ((allowed || connectorAllowed) && !privilegedBypass && !privateOnly && !business) return null;
     // Existing internal operations retain their scopes; scheduled exceptions are exact.
-    if ((config.automations || []).some(task => task.id === (options.scheduleId || options.triggerId)
-        && task.identityId === options.initiatedByIdentityId && task.textSha256 === hash(String(input.text || '').trim()))) return null;
+    if (matchingAutomationGrant(config, input, now)) return null;
     if (options.deliveryOnly || options.internalOperation) return null;
     if (String(input.text || '').length > 65536) return persistDenial(input, {
       blocked: true, category: 'protected', policyId: config.policyId, reason: 'inspection_limit',

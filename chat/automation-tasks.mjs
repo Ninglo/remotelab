@@ -96,6 +96,7 @@ async function projectCreatedByIdentityId(record) {
 }
 
 function projectExecutionState(trigger, run) {
+  if (trigger?.deliveryMode === 'access_denied') return 'failed';
   if (run?.state) return trimString(run.state);
   switch (trigger?.status) {
     case 'pending': return 'scheduled';
@@ -113,8 +114,9 @@ async function resolveExecutionRun(runId, { readRun = getRun, readRequest = id =
   const storedRun = runId ? await readRun(runId) : null;
   const receipt = !storedRun && runId ? await readRequest(runId) : null;
   const run = storedRun || (receipt?.nativeDispatchRunId ? await readNativeRun(runId)
-    : receipt?.result ? { state: receipt.result.state, sessionId: receipt.sessionId,
-      completedAt: receipt.settledAt, failureReason: receipt.result.error } : null);
+    : receipt?.result ? { state: receipt.options?.accessGuard?.category ? 'failed' : receipt.result.state, sessionId: receipt.sessionId,
+      completedAt: receipt.settledAt, failureReason: receipt.options?.accessGuard?.category
+        ? 'Access check denied this occurrence; no model was started.' : receipt.result.error } : null);
   return { storedRun, receipt, run };
 }
 

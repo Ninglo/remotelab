@@ -6,6 +6,19 @@ import { createMonitoringReader } from '../chat/monitoring.mjs';
 const at = '2026-10-12T10:00:00Z';
 const trigger = (id, fields = {}) => ({ id, status: 'delivered', enabled: true, scheduledAt: at, ...fields });
 
+test('access guard refusals are failed executions even when their reply Request completed', async () => {
+  const reader = createAutomationHealthReader({ getSchedules: async () => [],
+    getTriggers: async () => [trigger('legacy-denied', { runId: 'refusal' }),
+      trigger('new-denied', { status: 'failed', deliveryMode: 'access_denied', lastError: 'Access check denied', runId: 'refusal' })],
+    readRun: async () => null,
+    readRequest: async () => ({ options: { accessGuard: { blocked: true, category: 'protected' } },
+      result: { state: 'completed', error: null }, settledAt: at, sessionId: 's' }),
+  });
+  const tasks = await reader();
+  assert(tasks.every(t => t.state === 'failed'));
+  assert(tasks.every(t => t.lastExecution.error.includes('Access check denied')));
+});
+
 test('health reads the latest occurrence, preserves stable ties, and shares run reads only within a collection', async () => {
   let state = 'failed';
   const reads = [];
