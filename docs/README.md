@@ -1,5 +1,7 @@
 # Documentation Map
 
+[Codex shared allocation and failure diagnostics](codex-session-routing.md#shared-pool) describes the unified enabled-account allocator, temporary disabling, and account-specific capacity/quota failure records. The asynchronous quota sink (`lib/codex-usage-updates.mjs`) retains failure category, model and observation time without delaying an admitted turn.
+
 [Project SOP and todo](project-mainline.md) describes the explicit Session binding,
 persistent evidence/revision contract, and native Codex checkpoint before final
 publication. External waits retain their actual callback or Trigger reference.

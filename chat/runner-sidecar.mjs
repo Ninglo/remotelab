@@ -25,7 +25,7 @@ import {
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
-import { codexAccounts, isSubscriptionExhausted } from '../lib/codex-accounts.mjs';
+import { codexAccounts, classifyCodexAccountFailure } from '../lib/codex-accounts.mjs';
 import { isCodexMissingRolloutFailure } from './provider-runtime-errors.mjs';
 import {
   acquireProviderRuntimeLease,
@@ -978,11 +978,17 @@ async function main() {
     const confirmedExhaustedAccounts = [];
     while (codexAccount && attempt.code !== 0 && current.cancelRequested !== true && !cancelSent) {
       const failure = attempt.error || lastCodexFailure || attempt.stderrText;
-      const exhausted = isSubscriptionExhausted(failure);
-      const rateLimited = /\b429\b|too many requests/i.test(failure || '');
-      if (!exhausted && !rateLimited) break;
+      const kind = classifyCodexAccountFailure(failure);
+      if (!kind) break;
+      const exhausted = kind === 'quota_exhausted';
+      const accountFailure = { kind, accountId: codexAccount.id, accountLabel: codexAccount.label,
+        model: invocationOptions.model || '', at: nowIso() };
+      await updateRun(runId, draft => ({ ...draft, codexAccountFailure: accountFailure }));
+      const explanation = `Codex ${kind} · ${codexAccount.label} [${codexAccount.id}]`;
+      attempt = { ...attempt, error: new Error(explanation) };
       await recordStdoutLine(JSON.stringify({
         type: exhausted ? 'remotelab.codex_quota_exhausted' : 'remotelab.codex_rate_limited',
+        kind, accountId: codexAccount.id,
         model: invocationOptions.model || '',
       }));
       if (!codexAccount.autoSwitch || !manifest.sessionId) break;
@@ -1006,7 +1012,7 @@ async function main() {
           ...(draft.codexFailover || {}), stoppedReason: normalizeErrorMessage(error),
         } }));
         current = await getRun(runId) || current;
-        attempt = { ...attempt, error };
+        attempt = { ...attempt, error: new Error(`${explanation}；${normalizeErrorMessage(error)}`) };
         break;
       }
       codexAccount = next;
@@ -1017,7 +1023,7 @@ async function main() {
         codexAccount: { id: next.id, scope: next.scope, ownerPersonId: next.ownerPersonId, label: next.label, switched: true,
           assignmentReason: 'provider_failure_failover', selectedAt: nowIso() },
         codexFailover: { attempts: [...(draft.codexFailover?.attempts || []), {
-          from: previousId, to: next.id, reason: exhausted ? 'quota_exhausted' : 'rate_limited',
+          from: previousId, to: next.id, reason: kind,
           threadId: threadId || null, at: nowIso(),
         }] },
       }));

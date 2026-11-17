@@ -612,7 +612,7 @@ function getCodexAuthCopy() {
     loginHint: "点击“开启使用”完成登录",
     routingLoginRequired: "请先登录", routingUnavailable: "需重新登录",
     routingEmpty: "暂无已开启的公共账号，后续公共账号请求将无法启动。",
-    routingNoFailover: "自动切换已关闭：停用账号后，绑定它的对话需重新启用该账号或开启自动切换才能继续。",
+    routingNoFailover: "执行中发生限流或额度耗尽时会报错；下次请求仍会从可用账号重新分配。",
     routingStopLast: "这是最后一个已开启的公共账号。禁用后，后续公共账号请求将无法启动；正在运行的任务继续执行。仍要禁用吗？",
     checking: "检测中…",
     authenticated: "已登录",
@@ -628,7 +628,8 @@ function getCodexAuthCopy() {
     copied: "已复制",
     switchAccount: "添加账号",
     switching: "正在切换…",
-    autoSwitch: "低额度时调整默认账号，账号耗尽或限流后自动换号续接",
+    recentFailure: "最近失败",
+    autoSwitch: "执行中账号耗尽或限流后自动换号续接",
     balanceSessions: "新 Session 按负载分配账号，正常续聊沿用账号",
     select: "切换", current: "当前", signIn: "登录", reauthorize: "重新登录", unknownQuota: "额度待查询",
     logoutFailed: "Codex 退出失败",
@@ -655,7 +656,7 @@ function getCodexAuthCopy() {
     loginHint: "Choose Enable use to complete sign-in",
     routingLoginRequired: "Sign-in required", routingUnavailable: "Sign in again",
     routingEmpty: "No shared accounts are enabled. Subsequent shared-account requests cannot start.",
-    routingNoFailover: "Automatic switching is off. Conversations bound to a disabled account can continue after re-enabling it or turning on automatic switching.",
+    routingNoFailover: "Failed work will stop on rate limits or exhaustion. The next request can still use another enabled account.",
     routingStopLast: "This is the last enabled shared account. Disabling it prevents subsequent shared-account requests from starting; running tasks continue. Disable it?",
     checking: "Checking…",
     authenticated: "Signed in",
@@ -671,7 +672,8 @@ function getCodexAuthCopy() {
     copied: "Copied",
     switchAccount: "Add account",
     switching: "Switching…",
-    autoSwitch: "Change the default at low quota; automatically continue on another account after exhaustion or rate limits",
+    recentFailure: "Last failure",
+    autoSwitch: "Automatically continue failed work on another account after exhaustion or rate limits",
     balanceSessions: "Balance new Sessions across accounts; prefer the same account for healthy turns",
     select: "Switch", current: "Current", signIn: "Sign in", unknownQuota: "Usage not checked",
     logoutFailed: "Codex logout failed",
@@ -885,7 +887,7 @@ function renderCodexSavedAccounts() {
     note.textContent = !anyEnabled ? copy.routingEmpty : data.autoSwitch ? "" : copy.routingNoFailover;
     note.hidden = !note.textContent;
   }
-  if (balanceLabel) balanceLabel.hidden = false;
+  if (balanceLabel) balanceLabel.hidden = true;
   document.getElementById("settingsCodexBalanceSessions").checked = data.balanceSessions === true;
   document.getElementById("settingsCodexBalanceSessionsText").textContent = copy.balanceSessions;
   document.getElementById("settingsCodexAutoSwitch").checked = data.autoSwitch === true;
@@ -906,6 +908,12 @@ function renderCodexSavedAccounts() {
     const status = document.createElement("div"); status.className = "settings-app-empty";
     status.textContent = `${enabled ? copy.routingOn : copy.routingOff}${needsLogin ? ` · ${account.credentialIssue || copy.routingLoginRequired} · ${copy.loginHint}` : ""}`;
     row.append(name, usage, status);
+    const failure = account.lastFailure;
+    if (failure) {
+      const detail = document.createElement("div"); detail.className = "settings-app-empty";
+      detail.textContent = `${copy.recentFailure}: ${failure.kind} · ${failure.model || "Codex"} · ${failure.at} · ID: ${account.id}`;
+      row.append(detail);
+    }
     for (const [action, title, disabled] of [
       ["enable", copy.routingStart, enabled && !needsLogin],
       ["disable", copy.routingStop, !enabled],

@@ -187,7 +187,7 @@ try {
   responses.set(backup.home, usage(100)); await pool.refresh(backup.id, 'fake'); await pool.policy(true);
   const firstJob = await pool.acquireForRun({ command: 'fake' });
   const secondJob = await pool.acquireForRun({ command: 'fake' });
-  assert.equal(firstJob.id, secondJob.id, 'ordinary concurrency does not change the selected account');
+  assert.notEqual(firstJob.id, secondJob.id, 'ordinary concurrency balances across enabled accounts');
   await firstJob.lease.release(); await secondJob.lease.release();
   await assert.rejects(pool.acquireForRun({ isCancelled: () => true }), { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
   console.log('Codex background reserve switching, concurrent request startup without quota RPCs, persistence and independent login passed');

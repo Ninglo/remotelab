@@ -11,6 +11,7 @@ process.env.REMOTELAB_CONFIG_DIR = config; process.env.REMOTELAB_MACHINE_CODEX_H
 const command = join(root, 'codex-fixture');
 await copyFile(new URL('./fixtures/codex-account-failover.cjs', import.meta.url), command); await chmod(command, 0o755);
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'quota-fixture', name: 'Quota fixture', command, runtimeFamily: 'codex-json' }]));
+const { bindSessionAccount, readSessionAccount } = await import('../lib/codex-session-routing.mjs');
 const { codexAccounts: pool } = await import('../lib/codex-accounts.mjs');
 const { createRun, getRun, getRunManifest, readRunSpoolRecords } = await import('../chat/runs.mjs');
 const { createRunProjectionService } = await import('../chat/run-projection.mjs');
@@ -30,6 +31,7 @@ try {
   await pool.refresh(backup.id, command); await pool.policy(true);
   let sessionId = 'quota-session';
   const run = async (native = false, codexThreadId = null) => {
+    if (!await readSessionAccount(pool.root, sessionId)) await bindSessionAccount(pool.root, sessionId, await pool.account('default'), 'fixture', Date.now());
     const record = await createRun({ status: { sessionId, requestId: 'quota-request', tool: 'quota-fixture' },
       manifest: { sessionId, requestId: 'quota-request', tool: 'quota-fixture', folder: root,
         inputMode: native ? 'native' : 'batch', prompt: 'Perform one synthetic action then complete.',
@@ -51,7 +53,7 @@ try {
     await pool.refresh('default', command); await pool.refresh(backup.id, command); await pool.select('default');
     const before = (await calls().catch(() => [])).length;
     const completed = await run(native);
-    assert.equal(completed.exit, 0, completed.output); assert.equal(completed.record.state, 'completed');
+    assert.equal(completed.exit, 0, completed.output + JSON.stringify(completed.record)); assert.equal(completed.record.state, 'completed');
     assert.equal(completed.record.codexAccount.id, backup.id);
     assert.equal(completed.record.codexFailover.attempts.length, 1);
     const after = await calls(); assert.deepEqual(after.slice(before).map(c => c.account), ['initial', 'backup']);
@@ -80,6 +82,16 @@ try {
   const beforeMissing = (await calls()).length;
   assert.notEqual((await run()).exit, 0);
   assert.equal((await calls()).length, beforeMissing + 1, 'never replay a task with completed effects and no saved thread');
+  sessionId = 'capacity-error';
+  await seed(home, 'initial', 'model is at capacity; try again');
+  await pool.refresh('default', command); await pool.refresh(backup.id, command);
+  const capacity = await run(true);
+  assert.equal(capacity.exit, 0, capacity.output);
+  assert.equal(capacity.record.codexAccountFailure.accountId, 'default');
+  assert.equal(capacity.record.codexAccountFailure.kind, 'capacity');
+  assert.equal(capacity.record.codexFailover.attempts[0].reason, 'capacity');
+  assert.equal((await pool.list()).accounts.find(a => a.id === 'default').lastFailure.kind, 'capacity');
+  await pool.mutate(data => { for (const a of data.accounts) delete a.cooldownUntil; });
   sessionId = 'auth-error';
   await seed(home, 'initial', '401 Unauthorized');
   await pool.refresh('default', command); await pool.select('default');

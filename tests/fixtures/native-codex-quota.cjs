@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
 const readline = require('node:readline');
 const emit = message => process.stdout.write(JSON.stringify(message) + '\n');
 const limits = () => ({rateLimits:{primary:{
@@ -21,7 +23,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     result = {thread:{id:'quota-background-thread'}};
   else if (message.method === 'turn/start') {
     result = {turn:{id:'quota-turn',status:'inProgress'}};
-    setImmediate(() => {
+    setImmediate(async () => {
+      const gate = process.env.CODEX_TEST_QUOTA_GATE;
+      if (gate) await new Promise(resolve => {
+        const watcher = fs.watch(path.dirname(gate), () => {
+          if (fs.existsSync(gate + '.release')) { watcher.close(); resolve(); }
+        });
+        fs.writeFileSync(gate + '.ready', 'ready');
+      });
       emit({method:'account/rateLimits/updated',params:limits()});
       if (!process.env.QUOTA_FIXTURE_HOLD) finish();
     });

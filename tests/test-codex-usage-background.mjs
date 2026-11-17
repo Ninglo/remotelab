@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, copyFile, chmod, rm } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { watch, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -49,21 +50,27 @@ const makeProjection = usageUpdates => createRunProjectionService({
   materializeRunSpoolLine:async (_,record) => record.line,normalizeRunEvents:(_,events) => events,
   clipPreview:text => text,readLatestCodexSessionMetrics:async () => null,buildCodexContextMetricsPayload:() => null,
 });
-async function runNative() {
+async function runNative(onStarted = null) {
+  const gate = join(root, 'gate-' + randomBytes(8).toString('hex'));
+  let watcher;
+  const started = onStarted ? new Promise(resolve => {
+    watcher = watch(root, () => { if (existsSync(gate + '.ready')) { watcher.close(); resolve(); } });
+  }) : Promise.resolve();
   const record = await runs.createRun({status:{sessionId:'quota-audit',requestId:'quota-audit',tool:'quota-observer-fixture'},
     manifest:{sessionId:'quota-audit',tool:'quota-observer-fixture',folder:root,inputMode:'native',prompt:'synthetic',
       options:{model:'fixture',skipSessionStartPreflight:true}}});
-  const child = spawn(process.execPath,['chat/runner-sidecar.mjs',record.id],{cwd:repo,env:process.env,
+  const child = spawn(process.execPath,['chat/runner-sidecar.mjs',record.id],{cwd:repo,env:{...process.env, ...(onStarted ? {CODEX_TEST_QUOTA_GATE:gate} : {})},
     stdio:['ignore','ignore','pipe']});
   let stderr='';
   child.stderr.on('data',chunk => {stderr+=chunk;});
   try {
+    if (onStarted) { await bounded(started); await onStarted(); await writeFile(gate + '.release', 'go'); }
     const code = await bounded(new Promise((resolve,reject) => {child.once('error',reject);child.once('close',resolve);}));
     assert.equal(code,0,stderr);
     const finished = await runs.getRun(record.id);
     assert.equal(finished.state,'completed',stderr);
     return finished;
-  } finally {if(child.exitCode===null) child.kill('SIGKILL');}
+  } finally {watcher?.close();if(child.exitCode===null) child.kill('SIGKILL');}
 }
 try {
   await pool.refresh('default','synthetic');
@@ -71,13 +78,18 @@ try {
   await writeFile(join(backup.home,'auth.json'),'{"tokens":{}}');
   await pool.refresh(backup.id,'synthetic'); await pool.policy(true);
 
+  const { bindSessionAccount } = await import('../lib/codex-session-routing.mjs');
+  await bindSessionAccount(pool.root, 'quota-audit', await pool.account('default'), 'fixture', Date.now());
+
   // Real detached execution completes while the account metadata lock is held.
-  const lock = await acquireProviderRuntimeLease({queueKey:'metadata',rootDir:join(pool.root,'locks')});
+  let lock;
   const updates = createCodexUsageUpdates({pool,onError:() => assert.fail('Unexpected cache failure')});
   const projection = makeProjection(updates);
   let flush;
   try {
-    const finished = await runNative();
+    const finished = await runNative(async () => {
+      lock = await acquireProviderRuntimeLease({queueKey:'metadata',rootDir:join(pool.root,'locks')});
+    });
     const observed = await projection.collectNormalizedRunEvents(finished,await runs.getRunManifest(finished.id));
     assert.ok(observed.normalizedEvents.some(event => event.content==='QUOTA_INDEPENDENT'));
     assert.ok((await runs.readRunSpoolRecords(finished.id)).some(record => record.json?.type==='remotelab.codex_usage'),
@@ -146,7 +158,7 @@ try {
   let foreground;
   try {
     foreground=await bounded(pool.acquireForRun());
-    assert.equal(foreground.id,'default');
+    assert(['default',backup.id].includes(foreground.id));
     assert.equal(nativeReads,1,'one quota RPC per account despite multiple collectors and parallel jobs');
   } finally {
     finish.resolve(quota(9));await bounded(refreshes);
@@ -161,7 +173,7 @@ try {
   await pool.mutate(data => {data.accounts.find(a => a.id==='default').usage=quota(80,new Date(Date.now()-31000).toISOString());});
   const activePool = new CodexAccounts({root:pool.root,defaultHome:home,query:pool.query});
   const runId='run_'+randomBytes(12).toString('hex');
-  const slot=await activePool.acquireForRun({runId});
+  const slot=await activePool.acquireForRun({runId,sessionId:'quota-audit'});
   const ready=deferred();
   let child,settled=false;
   const host=runNativeHost({directory:join(config,'chat-runs',runId),command,runtimeFamily:'codex-json',
