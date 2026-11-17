@@ -193,10 +193,40 @@ try {
     console.log('PASS: preview-only sidebar/settings/direct links for members and administrators; shared admin controls retained');
     await context.close();
   }
+  await stop(); await start('*');
+  for (const who of ['a', 'b', 'c', 'admin']) {
+    assert.equal((await call(who, '/api/auth/me')).features.personalCodexBinding, true);
+    await call(who, '/api/personal-codex/status');
+  }
+  await call('service', '/api/personal-codex/status', undefined, 403);
+  await call('c', '/api/codex-auth/status', undefined, 403);
+  await call('admin', '/api/codex-auth/status');
+  await call('c', '/api/personal-codex/device-login', { personId: 'person_a' }, 400);
+  await call('c', '/api/personal-codex/device-login', { restart: true });
+  const c = await pool.personalAccount('person_c');
+  await writeFile(join(c.home, 'approve.json'), JSON.stringify({ sub: 'c' }));
+  await waitFor(async () => (await call('c', '/api/personal-codex/status')).codexAuth.loggedIn, 'binding newly enrolled member');
+  const cSession = (await call('c', '/api/sessions', { folder: home, tool: 'personal-fixture', name: 'all-members' }, 201)).session.id;
+  const cRun = await finished(await submit('c', cSession));
+  assert.equal(cRun.codexAccount.id, c.id);
+  assert.equal(cRun.codexAccount.ownerPersonId, 'person_c');
+  await idle(cSession);
+  if (browser) {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'zh-CN' });
+    await context.addCookies([{ name: 'session_token', value: 'c', url: base }]);
+    const page = await context.newPage();
+    await page.goto(base + '/?tab=settings&skipInstall=1#settings-personal-codex');
+    await page.locator('#personalCodexStatus').filter({ hasText: /已绑定|Bound/ }).waitFor();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator('#myCodexButton').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#settingsCodexAuthSection').count(), 0);
+    await context.close();
+  }
+  console.log('PASS: all-member enrollment, newly admitted member binding/UI/routing, service rejection and shared-admin isolation');
 } finally {
   await browser?.close();
   if (server?.exitCode === null && !server.signalCode) {
-    await Promise.allSettled(['a', 'b'].map(who => call(who, '/api/personal-codex/cancel-login', {})));
+    await Promise.allSettled(['a', 'b', 'c'].map(who => call(who, '/api/personal-codex/cancel-login', {})));
   }
   await stop();
   for (const id of runs) {

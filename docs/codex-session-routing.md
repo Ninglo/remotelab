@@ -1,7 +1,7 @@
 # Codex personal binding and shared account allocation
 
-Enrolled preview users bind their own account from **My Codex** in the sidebar (also the first
-Settings section). Direct link: `/?tab=settings#settings-personal-codex`.
+Users with binding access bind their own account from **My Codex** in the sidebar
+(also the first Settings section). Direct link: `/?tab=settings#settings-personal-codex`.
 Choose **Bind my account**, copy the device code, authorize on the official
 OpenAI page and return. Status updates automatically while this page is open.
 No password or credential-file upload is required. The user may need to enable
@@ -14,24 +14,29 @@ link identities. One personal account is supported per Person. Public account
 binding remains under **Settings → Connections → Shared Codex accounts** and
 requires administrator access.
 
-Personal binding is an opt-in preview per instance. Set
-`REMOTELAB_PERSONAL_CODEX_PERSON_IDS` on the chat service to the comma-separated
-verified Person IDs approved for the preview, then restart that service. An
-unset or empty value opens it to nobody; administrator status does not grant
-preview access. Actual participant IDs belong in instance configuration.
+Personal binding is enabled per instance. Set
+`REMOTELAB_PERSONAL_CODEX_PERSON_IDS` on the chat service, then restart it:
+
+- `*` opens binding to all authenticated People, including newly registered members.
+- A comma-separated list of verified Person IDs limits access to those people.
+- An unset or empty value opens it to nobody.
+
+Service identities, the system Person and anonymous visitors cannot bind an
+account in any mode. Administrator status does not bypass a selective list.
+Actual participant IDs and rollout choices belong in instance configuration.
 Bootstrap and `/api/auth/me` expose only the caller's
 `features.personalCodexBinding` boolean. The sidebar, Settings directory and
 section remain hidden without that capability, including direct links; all
-`/api/personal-codex/*` operations reject unenrolled callers with 403. Shared
-account administration remains unchanged.
+`/api/personal-codex/*` operations reject callers without binding access with 403.
+Shared account administration remains unchanged.
 The frontend bootstrap preserves both this capability and the server's
 administrator flag, so an unenrolled administrator still sees shared controls.
 
 This switch controls access to binding settings, not existing execution:
-removing someone from the preview does not unbind their account, interrupt
+removing someone's binding access does not unbind their account, interrupt
 tasks or change ownership/routing. Keep an existing owner enrolled while they
 need to manage a binding; unbind deliberately before retiring it. To withdraw
-the preview UI, clear the list and restart; restoring the list restores access.
+the binding UI, clear the setting and restart; restoring it restores access.
 
 ## Personal routing policy
 
@@ -138,8 +143,9 @@ deterministic fallback notification, and a discoverable mobile UI.
 rate limiting, exhaustion, independent login jobs, steering and notice deduplication.
 `tests/test-http-personal-codex.mjs` runs a real isolated server with synthetic
 provider authorization/inference, verifies two users, admin/service boundaries,
-continuation, restart and recovery. Set `PERSONAL_CODEX_TEST_PLAYWRIGHT` and
-`PERSONAL_CODEX_TEST_CHROME` to installed browser tooling for desktop/mobile UI
+continuation, restart, recovery and instance-wide enrollment. Set
+`PERSONAL_CODEX_TEST_PLAYWRIGHT` and `PERSONAL_CODEX_TEST_CHROME` to installed
+browser tooling for desktop/mobile UI
 acceptance. These tests do not consume real subscriptions or send group messages.
 The first real binding still requires its holder's OpenAI browser authorization.
 
