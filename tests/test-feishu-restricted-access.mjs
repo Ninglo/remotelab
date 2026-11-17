@@ -97,6 +97,23 @@ try {
   assert.equal(hrCalls,2);
   assert.equal(await queryHrRecruiting(hrWorkflowPolicy,hr,{workflowImpl:async()=>({handled:false})}),null,
     'normal HR tasks still reach the general assistant');
+  const hrRuntime = {config:{appId:'cli_test',accessPolicy:hrWorkflowPolicy,
+    storageDir:join(dir,'hr-routing'),sourceRouteId:'test',responsePolicy:{group:'mention_only'}}};
+  const hrHelpers = {enrichSummaryWithChatMetadata:async (_r,s)=>s,
+    queryHrRecruiting:async()=> 'saved intake',
+    queueFeishuReply:async (_r,s,text)=>{
+      assert.equal(s.hrRecruitingWorkflow,true);assert.equal(text,'saved intake');return {workflow:true};
+    },submitRemoteLabRequest:async()=>{throw new Error('Handled intake reached general agent');}};
+  assert.deepEqual(await handleMessage(hrRuntime,{...hr,chatId:'oc_hr',messageId:'om_hr_new'},'test',hrHelpers),{workflow:true});
+  assert.deepEqual(await handleMessage(hrRuntime,{...hr,chatId:'oc_hr',messageId:'om_hr_failed'},'test',{
+    ...hrHelpers,queryHrRecruiting:async()=>{throw new Error('fixture interrupted after write');},
+    queueFeishuReply:async(_r,s,text)=>{assert.equal(s.hrRecruitingWorkflow,true);assert.match(text,/核对原操作/);return {recover:true};}
+  }),{recover:true});
+  const normal = await handleMessage(hrRuntime,{...hr,chatId:'oc_hr',messageId:'om_hr_general'},'test',{
+    ...hrHelpers,queryHrRecruiting:async()=>null,
+    submitRemoteLabRequest:async()=>({sessionId:'hr-general-session',requestId:'hr-general-request'}),
+    addProcessingReaction:async()=>null});
+  assert.equal(normal.sessionId,'hr-general-session');
   const collaborator = { ...event, sender: { ...event.sender, openId: 'ou_collaborator' } };
   assert.equal(feishuAccessRole(policy, collaborator), 'collaborator');
   assert.equal(await isAllowedByPolicy(policy, collaborator), true);

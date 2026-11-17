@@ -1410,11 +1410,6 @@ metadata for the original file event. The fixed command comes only from operator
 configuration, never from a message or a model result. Timeout/error replies do
 not imply rollback; the business receipt owns recovery of any completed steps.
 
-### Pool B reset-card approvals
-
-Pool B `reset-credit` requests use the group connector as the human approval boundary. The connector accepts `批准 Reset <request-id>` or `拒绝 Reset <request-id>` only from the requesting person in the same chat and topic, then records the idempotent execution receipt. See [Pool B 重置卡审批](pool-b-reset-approval.md).
-
-
 ### Full-HR attachment intake
 
 `roles.hrRecruitingWorkflow: true` opts verified `hrOpenIds` into the same fixed
@@ -1430,3 +1425,7 @@ Handled replies are marked in the connector's trusted delivery context. Before
 publication the connector invokes the executor in receipt-only mode; delivery
 retries cannot repeat candidate/calendar writes. An execution failure cannot
 fall through to a second model execution on the same input.
+
+### Pool B reset-card approvals
+
+Pool B `reset-credit` requests use the group connector as the human approval boundary. The connector accepts `批准 Reset <request-id>` or `拒绝 Reset <request-id>` only from the requesting person in the same chat and topic, then records the idempotent execution receipt. See [Pool B 重置卡审批](pool-b-reset-approval.md).
