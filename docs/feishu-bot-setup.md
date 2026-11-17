@@ -1413,3 +1413,20 @@ not imply rollback; the business receipt owns recovery of any completed steps.
 ### Pool B reset-card approvals
 
 Pool B `reset-credit` requests use the group connector as the human approval boundary. The connector accepts `批准 Reset <request-id>` or `拒绝 Reset <request-id>` only from the requesting person in the same chat and topic, then records the idempotent execution receipt. See [Pool B 重置卡审批](pool-b-reset-approval.md).
+
+
+### Full-HR attachment intake
+
+`roles.hrRecruitingWorkflow: true` opts verified `hrOpenIds` into the same fixed
+`recruitingWorkflowCommand` for private-chat attachments and their follow-up
+instructions. The default is false. The executor must return `handled:false`
+for unrelated HR work, retaining the normal Session path. It must check active
+business membership and candidate scope, preserve the authenticated source
+message for download, and keep durable operation receipts. Collaborators,
+interviewers and groups never enter this HR path. Existing intern restrictions
+are unchanged.
+
+Handled replies are marked in the connector's trusted delivery context. Before
+publication the connector invokes the executor in receipt-only mode; delivery
+retries cannot repeat candidate/calendar writes. An execution failure cannot
+fall through to a second model execution on the same input.

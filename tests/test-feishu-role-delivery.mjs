@@ -58,6 +58,18 @@ try {
   await processSourceDeliveryOnce(runtime(), helpers);
   assert.equal((await getSourceDelivery(forged.id)).state, 'cancelled'); assert.equal(sends, 1);
   const hr = { ...event, messageId: 'om_hr', chatId: 'oc_hr', sender: { ...event.sender, openId: 'ou_hr' } };
+  const hrWorkflow = {...hr,messageId:'om_hr_workflow',hrRecruitingWorkflow:true};
+  await recordRoleDeliveryContext(runtime(), hrWorkflow, {responseId:'feishu:om_hr_workflow'});
+  const hrWorkflowReply = await enqueueSourceDelivery({responseId:'feishu:om_hr_workflow',
+    text:'STALE completion', sourceDelivery:sourceDelivery(hrWorkflow)});
+  await processSourceDeliveryOnce(runtime(), {...helpers,
+    queryHrRecruiting: async (_p,s,options) => {
+      assert.equal(options.readOnly,true);assert.equal(s.hrRecruitingWorkflow,true);
+      assert.equal(s.sender.openId,'ou_hr');return 'verified saved receipt';
+    },sendFeishuText: async (_r,s,text)=>{
+      assert.equal(s.chatId,'oc_hr');assert.equal(text,'verified saved receipt');return {message_id:'om_hr_workflow_reply'};
+    }});
+  assert.equal((await getSourceDelivery(hrWorkflowReply.id)).state,'delivered');
   await recordRoleDeliveryContext(runtime(), hr, { responseId: 'feishu:om_hr', sessionId: 'hr-session' });
   const hrReply = await enqueueSourceDelivery({ responseId: 'feishu:om_hr', sessionId: 'hr-session',
     text: 'HR authorized answer', sourceDelivery: sourceDelivery(hr) });

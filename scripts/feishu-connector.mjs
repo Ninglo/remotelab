@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview,
+import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview, queryHrRecruiting,
   restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
 import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
@@ -1555,10 +1555,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         if (!resolved.response.ok) throw new Error('Unable to suppress unauthorized delivery');
         return resolved.json?.delivery;
     }
-    if (['interviewer', 'recruiting_intern'].includes(authorization.role)) {
+    if (['interviewer', 'recruiting_intern'].includes(authorization.role) || authorization.summary.hrRecruitingWorkflow) {
       // Requery immediately before publication: a queued answer cannot retain a
       // revoked assignment or an expired resume URL. No old Session output is used.
-      try { delivery.text = await (helpers.queryRestrictedInterview || queryRestrictedInterview)(policy, authorization.summary,
+      try { delivery.text = await (authorization.summary.hrRecruitingWorkflow
+        ? (helpers.queryHrRecruiting || queryHrRecruiting) : (helpers.queryRestrictedInterview || queryRestrictedInterview))(policy, authorization.summary,
         {...restrictedInterviewOptions(runtime), readOnly: true}); }
       catch (error) {
         console.error('[feishu-restricted] delivery query unavailable:', error.message);
@@ -1965,6 +1966,20 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   const admission = await withFeishuHandoffLock(runtime, summary,
     () => prepareFeishuMessage(runtime, summary, helpers));
   if (admission.receipt) return admission.receipt;
+  if (!admission.command && role === 'hr' && runtime.config.accessPolicy.roles.hrRecruitingWorkflow) {
+    const candidate = admission.summary;
+    try {
+      const text = await (helpers.queryHrRecruiting || queryHrRecruiting)(runtime.config.accessPolicy,
+        candidate, restrictedInterviewOptions(runtime));
+      if (text) return (helpers.queueFeishuReply || queueFeishuReply)(runtime,
+        {...candidate, hrRecruitingWorkflow:true}, text);
+    } catch (error) {
+      // A saved partial write must not be executed again by the general model.
+      console.error('[feishu-recruiting] workflow unavailable:', error.message);
+      return (helpers.queueFeishuReply || queueFeishuReply)(runtime,
+        {...candidate, hrRecruitingWorkflow:true}, '招聘办理尚未确认完成，请发送“继续办理”核对原操作。');
+    }
+  }
   return processFeishuMessage(runtime, admission.summary, admission.command, helpers);
 }
 

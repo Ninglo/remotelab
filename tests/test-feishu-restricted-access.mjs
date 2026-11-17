@@ -3,7 +3,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHmac } from 'node:crypto';
-import { normalizeRoleAccess, feishuAccessRole, summarizeFeishuCardAction, parseInterviewQuery, queryRestrictedInterview,
+import { normalizeRoleAccess, feishuAccessRole, summarizeFeishuCardAction, parseInterviewQuery, queryRestrictedInterview, queryHrRecruiting,
   requireFullFeishuAccess, INTERVIEW_QUERY_UNAVAILABLE } from '../connectors/feishu/restricted-access.mjs';
 import { handleMessage, isAllowedByPolicy, submitRemoteLabRequest, processSourceDeliveryOnce } from '../scripts/feishu-connector.mjs';
 
@@ -83,6 +83,20 @@ try {
   const hr = { ...event, sender: { ...event.sender, openId: 'ou_hr' } };
   assert.equal(feishuAccessRole(policy, hr), 'hr');
   assert.equal(await isAllowedByPolicy(policy, hr), true);
+  const hrWorkflowPolicy = {mode:'roles',roles:normalizeRoleAccess({...workflowPolicy.roles,hrRecruitingWorkflow:true})};
+  let hrCalls = 0;
+  const hrExecutor = async (command, summary, options) => {
+    hrCalls++; assert.equal(summary.sender.openId,'ou_hr');
+    return {handled:true,text:options.readOnly?'HR saved receipt':'HR saved operation'};
+  };
+  assert.equal(await queryHrRecruiting(workflowPolicy,hr,{workflowImpl:hrExecutor}),null);
+  assert.equal(await queryHrRecruiting(hrWorkflowPolicy,hr,{workflowImpl:hrExecutor}),'HR saved operation');
+  assert.equal(await queryHrRecruiting(hrWorkflowPolicy,hr,{workflowImpl:hrExecutor,readOnly:true}),'HR saved receipt');
+  for (const denied of [intern,event,{...hr,chatType:'group'},{...hr,appId:'other'}])
+    assert.equal(await queryHrRecruiting(hrWorkflowPolicy,denied,{workflowImpl:hrExecutor}),null);
+  assert.equal(hrCalls,2);
+  assert.equal(await queryHrRecruiting(hrWorkflowPolicy,hr,{workflowImpl:async()=>({handled:false})}),null,
+    'normal HR tasks still reach the general assistant');
   const collaborator = { ...event, sender: { ...event.sender, openId: 'ou_collaborator' } };
   assert.equal(feishuAccessRole(policy, collaborator), 'collaborator');
   assert.equal(await isAllowedByPolicy(policy, collaborator), true);

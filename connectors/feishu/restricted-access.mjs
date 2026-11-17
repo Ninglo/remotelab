@@ -25,7 +25,9 @@ export function normalizeRoleAccess(value) {
       || !value.recruitingWorkflowCommand.length || !value.recruitingWorkflowCommand[0].startsWith('/')
       || value.recruitingWorkflowCommand.some(arg => typeof arg !== 'string' || !arg || arg.includes('\0'))))
     throw new Error('Invalid fixed recruiting workflow command');
-  return { ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
+  if (value.hrRecruitingWorkflow !== undefined && typeof value.hrRecruitingWorkflow !== 'boolean')
+    throw new Error('Invalid HR recruiting workflow flag');
+  return { hrRecruitingWorkflow: value.hrRecruitingWorkflow === true, ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
     hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
     interviewerOpenIds: [...value.interviewerOpenIds], recruitingInternOpenIds: [...recruitingInternOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };
@@ -122,6 +124,24 @@ function resolvedQuery(result, original) {
       || (q.action === 'resume' && (q.question || q.context))) throw new Error('Invalid interview query resolution');
   return { action: q.action, candidateIds: q.candidateIds,
     ...(q.action === 'answer' ? {question: original.question, ...(original.context ? {context:original.context} : {})} : {}) };
+}
+
+// Full-HR attachment intake is optional; unrelated work stays with the agent.
+export async function queryHrRecruiting(policy, summary, {sourceRouteId, readOnly = false,
+  workflowImpl = executeRecruitingWorkflow} = {}) {
+  if (feishuAccessRole(policy, summary) !== 'hr' || !policy.roles.hrRecruitingWorkflow
+      || !policy.roles.recruitingWorkflowCommand || !['p2p','private'].includes(summary.chatType)
+      || summary.eventType !== 'im.message.receive_v1' || !['text','post','file'].includes(summary.messageType)
+      || (summary.messageText?.length || 0) > 4000) return null;
+  const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
+  const denied = await evaluateRequestAccess({sessionId: 'recruiting:' + summary.chatId,
+    text: summary.messageText, options: {requestId:'feishu:' + summary.messageId,
+      feishuConnectorAuthenticated:true, usageSurface:'feishu-hr-recruiting',
+      sourceContext:{connector:'feishu',sourceRouteId,tenantKey:summary.tenantKey,
+        messageId:summary.messageId,chatType:summary.chatType,sender:summary.sender}}});
+  if (denied?.blocked) return denied.reply;
+  const result = await workflowImpl(policy.roles.recruitingWorkflowCommand, summary, {readOnly});
+  return result.handled ? result.text : null;
 }
 
 export async function queryRestrictedInterview(policy, summary, { fetchImpl = fetch, now = Date.now, store, sourceRouteId, readOnly = false, workflowImpl = executeRecruitingWorkflow } = {}) {

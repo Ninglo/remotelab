@@ -22,6 +22,7 @@ export async function recordRoleDeliveryContext(runtime, summary, { responseId, 
         openId: summary.sender.openId, senderType: summary.sender.senderType, tenantKey: summary.sender.tenantKey },
       eventType: summary.eventType, messageType: summary.messageType, messageId: summary.messageId,
       messageText: summary.messageText, chatId: summary.chatId, chatType: summary.chatType,
+      ...(summary.hrRecruitingWorkflow ? {hrRecruitingWorkflow:true} : {}),
       ...(summary.messageType === 'file' ? {resources: getSummaryFeishuResources(summary)} : {}),
     } };
   await storeFor(runtime).mutate(key(responseId), existing => {
