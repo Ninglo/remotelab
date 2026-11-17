@@ -65,7 +65,7 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
     runtimeFamily: invocation.runtimeFamily,
   });
   const account = invocation.runtimeFamily === 'codex-json'
-    ? await codexAccounts.acquireForRun({ sessionId: sessionMeta.id || '', model: options.model ?? model }) : null;
+    ? await codexAccounts.acquireForRun({ sessionId: sessionMeta.id || '', model: options.model ?? model, waitTimeoutMs: timeoutMs }) : null;
   if (account) {
     env.CODEX_HOME = account.home;
     env.CODEX_SQLITE_HOME = account.sqliteHome;

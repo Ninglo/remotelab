@@ -157,9 +157,10 @@ removes its active authorization and routing preference, not its private scope.
 
 ## Shared pool
 
-Ask the instance's agent: “Review enabled shared Codex accounts, verify balanced
-allocation and temporary disabling in an isolated instance, then deploy without
-interrupting running work.”
+Ask the instance's agent: “Configure each shared Codex account's concurrency
+limit and priority, verify overflow and waiting in isolation, then deploy while
+preserving running work. Use the requested account values; do not tune limits
+automatically.”
 
 Settings → Connections → Shared Codex accounts has **Enable use**, **Temporarily
 disable**, and **Remove** controls. New accounts default to enabled. Disabling
@@ -173,26 +174,44 @@ Removal uses `/api/codex-auth/accounts/remove`. Per-account mutations run under 
 metadata lock, so stale browsers cannot overwrite another account's setting.
 Personal bindings retain their independent ownership and fallback policy.
 
+Each row also has **Concurrency limit** (positive integer; blank means unlimited)
+and **Priority** (non-negative integer; lower goes first), plus a Save button.
+The defaults are unlimited and priority 10. The same routing endpoint accepts
+`{ "accountId": "<saved ID>", "maxConcurrent": 3, "priority": 1 }`; JSON `null`
+means unlimited. Omitted fields retain their values. Settings are saved under
+the metadata lock and applied to every known login alias of that subscription.
+An alias cannot multiply capacity. Enabling/disabling remains a per-entry control.
+
+The list shows current execution occupancy, effective limit, exclusion reason,
+distinct assignable subscriptions and the shared waiting count. A new configuration
+applies to subsequent allocation without restarting. Lowering a limit below current
+occupancy lets existing executions finish and admits no more until space is available.
+These controls govern this instance's independent executions, including background
+helpers, not the provider's internal requests, native subagents or other instances.
+No account's manual limit is automatically raised or lowered after a rate-limit error.
+
 ### One allocation path
 
 - `disabledAccountIds` stores explicit exclusions. Legacy `routingAccountIds`
   remains an API compatibility projection; omitted fields preserve choices and
   new accounts still default to enabled.
-- New Sessions, background helpers and scheduled work all use the same equal-weight
-  allocator: fewest running/starting Sessions, then least recently assigned.
+- New turns, background helpers and scheduled work all use the same allocator:
+  eligibility and spare capacity, then lowest priority number, then same-account
+  continuation within that priority, then fewest active executions and rotation.
   `balanceSessions: false`, the selected default and legacy `automationRouting`
   no longer select a separate admission path or reserve accounts.
-- Healthy Session continuations retain their authorization and native thread.
-  Disabled, removed, signed-out, cooling, exhausted or changed-identity bindings
-  are reassigned on the next request. Low positive or unknown quota does not
-  trigger migration. This balances new assignments, not token consumption or
-  the number of historical conversations on each account.
+- Each new execution considers priority again, including a recurring automation
+  whose Session previously used a lower-priority account. Native threads continue
+  across authorization changes. Active executions are not moved. Disabled,
+  removed, signed-out, cooling, exhausted, changed-identity or full bindings are
+  skipped. Low positive or unknown quota is still eligible. Occupancy measures
+  independent active executions, not tokens or historical conversations.
 - Duplicate known subscription identities count once, including their live load,
   failure exclusions and cooldown. Personal accounts never join shared candidates.
 - Selection, binding and liveness registration share one short metadata lock;
-  inference remains concurrent and does not hold that lock. A helper and its
-  main run count once. Completed startup helpers retain a 60-second reservation
-  until the main run registers. No foreground quota RPC is added.
+  inference remains concurrent and does not hold that lock. An independent helper
+  and its main run each occupy a slot; completed helpers hold none. Steering an
+  existing execution does not allocate another slot. No foreground quota RPC is added.
 - Quota observations and the legacy background default indicator remain compatible
   with older readers; that default does not override balanced admission.
 
@@ -205,9 +224,19 @@ tried at most once. Completed tool effects are preserved; without a saved thread
 work that already produced effects is never replayed from scratch. Authentication
 and network failures do not trigger blind account retries.
 
-If no candidate remains, `CODEX_NO_AVAILABLE_ACCOUNT` reports counts of disabled /
-credential-error, signed-out, cooling, exhausted and already-attempted entries.
-It starts no model request and adds no global capacity cap or retry queue.
+If otherwise eligible accounts are full or cooling, the original execution waits
+without starting a model request. Its visible status says it is waiting for an
+account and the normal stop action cancels it. Release and account-file changes
+wake waiters through filesystem notifications; a bounded two-second liveness check
+recovers dead-runner slots and observes cancellation. Waiting expires after ten
+minutes by default (`REMOTELAB_CODEX_CAPACITY_WAIT_MS` changes this wait budget;
+callers may supply a shorter `waitTimeoutMs`). No metadata lock is held while waiting.
+This is not an execution timeout. Wait records are removed on acquisition, failure
+or cancellation; expired/dead-owner records are reclaimed on observation.
+
+If no temporary candidate remains, `CODEX_NO_AVAILABLE_ACCOUNT` reports counts
+of disabled / credential-error, signed-out, exhausted and already-attempted entries.
+Permanently unavailable pools fail clearly rather than waiting for a login or refill.
 
 The runner records `codexAccountFailure` with account ID, display label, model,
 time and kind (`capacity`, `rate_limited`, `quota_exhausted`). Terminal errors include
@@ -224,9 +253,12 @@ accounts. Historical failure information remains visible after recovery.
 
 ### Validation and deployment
 
+`test-codex-allocation-limits.mjs` covers concurrent limits, priority overflow,
+unlimited fallback, duplicate identities, helper occupancy, wait/release,
+configuration wakeup, cancellation, deadlines, shrinking, restart and crash recovery.
 `test-codex-session-routing.mjs` covers concurrent equal allocation, aliases,
 personal isolation, disabled bindings with retry off, all-disabled diagnostics,
-quota recovery, helper reservations, cancellation and restart. The scheduled test
+quota recovery, helper allocation, cancellation and restart. The scheduled test
 verifies that old reservation settings cannot exclude or reactivate an account.
 `test-codex-account-failover.mjs` exercises batch/native continuation, capacity
 attribution, finite exhaustion and no replay after effects. Background quota tests

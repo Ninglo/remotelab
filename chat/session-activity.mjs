@@ -44,6 +44,7 @@ export function buildSessionActivity(meta, runtimeState, { runState, run, queued
   const waiting = runState === 'running' && run?.cancelRequested !== true && (
     (nativeQuestion?.state === 'pending' && !nativeQuestionDeadlineExpired(nativeQuestion.deadline))
     || run?.providerRuntimeQueue?.state === 'waiting'
+    || run?.codexAccountQueue?.state === 'waiting'
     || run?.sessionStartPreflight?.state === 'waiting_retry'
   );
 

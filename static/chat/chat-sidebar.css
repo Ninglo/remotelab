@@ -496,6 +496,32 @@ body:not([data-app-view="sessions"]) .session-item.active {
   gap: 8px;
   margin-top: 10px;
 }
+
+.settings-codex-allocation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin: 10px 0;
+}
+.settings-codex-allocation label {
+  display: flex;
+  flex: 1 1 150px;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.settings-codex-allocation input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+}
 .settings-voice-shortcut {
   margin-top: 14px;
 }

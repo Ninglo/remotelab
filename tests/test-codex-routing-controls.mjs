@@ -52,9 +52,20 @@ try {
     const expected = who ? 403 : 401;
     assert.equal((await call(who, '/api/codex-auth/accounts')).status, expected);
     assert.equal((await call(who, route, { accountId: 'default', enabled: false })).status, expected);
+    assert.equal((await call(who, route, { accountId: 'default', maxConcurrent: 3, priority: 1 })).status, expected);
     assert.equal((await call(who, '/api/codex-auth/accounts/remove', { accountId: 'default' })).status, expected);
   }
   assert.equal((await call('admin', route, { accountId: 'default', enabled: 'false' })).status, 400);
+  for (const patch of [{ maxConcurrent: 0 }, { maxConcurrent: '3' }, { priority: -1 }, { maxConcurrent: 1.5 }]) {
+    assert.equal((await call('admin', route, { accountId: 'default', ...patch })).status, 400);
+  }
+  const limits = await call('admin', route, { accountId: 'default', maxConcurrent: 3, priority: 1 });
+  assert.equal(limits.status, 200);
+  assert.equal(limits.data.accountList.accounts.find(a => a.id === 'default').maxConcurrent, 3);
+  assert.equal(limits.data.accountList.accounts.find(a => a.id === 'default').priority, 1);
+  assert.equal(limits.data.accountList.accounts.find(a => a.id === 'default').routingEnabled, true);
+  assert.equal((await call('admin', route, { accountId: 'default', maxConcurrent: null })).status, 200);
+  assert.equal((await pool.account('default')).priority, 1, 'partial writes preserve other settings');
   const stopped = await call('admin', route, { accountId: 'default', enabled: false });
   assert.equal(stopped.status, 200);
   assert.equal(stopped.data.accountList.accounts.find(a => a.id === 'default').routingEnabled, false);
@@ -83,6 +94,19 @@ try {
           const button = page.locator('[data-codex-routing-account="default"][data-codex-account-action="disable"]');
           const enable = page.locator('[data-codex-routing-account="default"][data-codex-account-action="enable"]');
           await button.waitFor({ state: 'visible' });
+          const limit = page.locator('[data-codex-concurrency="default"]');
+          const priority = page.locator('[data-codex-priority="default"]');
+          const save = page.locator('[data-codex-allocation-save="default"]');
+          await limit.fill('3'); await priority.fill('1'); await save.click();
+          await page.waitForFunction(() => !document.querySelector('[data-codex-allocation-save="default"]').disabled);
+          assert.equal((await pool.account('default')).maxConcurrent, 3);
+          await page.reload(); await save.waitFor({ state: 'visible' });
+          assert.equal(await limit.inputValue(), '3'); assert.equal(await priority.inputValue(), '1');
+          assert.equal(await page.locator('#settingsCodexAuthSection').evaluate(el => el.scrollWidth > el.clientWidth), false,
+            'allocation controls fit the mobile viewport');
+          await limit.fill(''); await save.click();
+          await page.waitForFunction(() => !document.querySelector('[data-codex-allocation-save="default"]').disabled);
+          assert.equal((await pool.account('default')).maxConcurrent, null);
           await button.click();
           await page.waitForFunction(() => {
             const b = document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="enable"]');
@@ -131,7 +155,7 @@ try {
         }
         await context.close();
       }
-      console.log('Browser: administrator enable/disable, reload persistence, desktop/mobile controls and member isolation passed');
+      console.log('Browser: allocation caps/priority/unlimited, enable/disable, reload persistence, desktop/mobile controls and member isolation passed');
     } finally { await browser.close(); }
   }
   console.log('HTTP: administrator-only routing writes, validation, persistence and unchanged routing policies passed');

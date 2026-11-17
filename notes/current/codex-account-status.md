@@ -19,8 +19,12 @@ The instance-local `config/codex-accounts/accounts.json` stores the list and pol
 Regression coverage: `test-codex-account-lifecycle.mjs` checks legacy migration, new-account defaults even after disabling every current account, browser-independent login completion, disabled reauthorization, lease recovery, and removal while a run remains active. `test-codex-routing-controls.mjs` checks administrator-only HTTP operations, desktop/mobile controls, persisted disable/remove, and ordinary-member isolation.
 
 Foreground requests use one shared allocator for new Sessions, helpers and scheduled work.
-Healthy Session continuations retain their account. Disabled or unavailable bindings
-are reassigned independently of automatic retry; low positive quota is still usable.
+Each account has a manual concurrency limit (or unlimited) and priority. Each new
+execution chooses the highest-priority eligible subscription with free capacity;
+Session affinity applies within that priority. Running work retains its account.
+Full/cooling pools wait with cancellation and a bounded wait budget; permanently
+unavailable pools fail explicitly. Disabled or unavailable bindings are reassigned
+independently of automatic retry; low positive quota is still usable.
 The selected default and legacy scheduling reservations no longer control admission.
 See [Codex shared allocation](../../docs/codex-session-routing.md#shared-pool) for
 current selection, diagnostics, compatibility and deployment behavior.

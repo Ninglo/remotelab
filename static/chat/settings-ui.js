@@ -629,6 +629,11 @@ function getCodexAuthCopy() {
     switchAccount: "添加账号",
     switching: "正在切换…",
     recentFailure: "最近失败",
+    concurrency: "并发上限", unlimited: "不限", priority: "优先级（数字越小越优先）", saveAllocation: "保存分流设置",
+    allocationInvalid: "并发上限须为正整数或留空不限，优先级须为非负整数",
+    occupied: "当前占用", waiting: "等待账号名额", readyAccounts: "可分配订阅",
+    routingStates: { ready: "可接新任务", at_capacity: "并发已满", rate_limited: "限流冷却", quota_exhausted: "额度耗尽",
+      signed_out: "未登录", disabled_or_credentials: "停用或授权异常", identity_changed: "登录身份已改变" },
     autoSwitch: "执行中账号耗尽或限流后自动换号续接",
     balanceSessions: "新 Session 按负载分配账号，正常续聊沿用账号",
     select: "切换", current: "当前", signIn: "登录", reauthorize: "重新登录", unknownQuota: "额度待查询",
@@ -673,6 +678,11 @@ function getCodexAuthCopy() {
     switchAccount: "Add account",
     switching: "Switching…",
     recentFailure: "Last failure",
+    concurrency: "Concurrency limit", unlimited: "Unlimited", priority: "Priority (lower first)", saveAllocation: "Save routing settings",
+    allocationInvalid: "Concurrency must be a positive integer or blank for unlimited; priority must be a non-negative integer",
+    occupied: "Active executions", waiting: "Waiting for an account", readyAccounts: "Assignable subscriptions",
+    routingStates: { ready: "Ready", at_capacity: "Concurrency full", rate_limited: "Cooling down", quota_exhausted: "Quota exhausted",
+      signed_out: "Signed out", disabled_or_credentials: "Disabled or credential issue", identity_changed: "Login identity changed" },
     autoSwitch: "Automatically continue failed work on another account after exhaustion or rate limits",
     balanceSessions: "Balance new Sessions across accounts; prefer the same account for healthy turns",
     select: "Switch", current: "Current", signIn: "Sign in", unknownQuota: "Usage not checked",
@@ -884,8 +894,10 @@ function renderCodexSavedAccounts() {
     : data.routingAccountIds == null || data.routingAccountIds.includes(account.id);
   const anyEnabled = (data.accounts || []).some(selected);
   if (note) {
-    note.textContent = !anyEnabled ? copy.routingEmpty : data.autoSwitch ? "" : copy.routingNoFailover;
-    note.hidden = !note.textContent;
+    const ready = new Set((data.accounts || []).filter(a => selected(a) && a.routingState === "ready").map(a => a.identityId || a.id)).size;
+    note.textContent = `${copy.readyAccounts}: ${ready} · ${copy.waiting}: ${data.waitingCount || 0}`
+      + (!anyEnabled ? ` · ${copy.routingEmpty}` : data.autoSwitch ? "" : ` · ${copy.routingNoFailover}`);
+    note.hidden = false;
   }
   if (balanceLabel) balanceLabel.hidden = true;
   document.getElementById("settingsCodexBalanceSessions").checked = data.balanceSessions === true;
@@ -908,6 +920,36 @@ function renderCodexSavedAccounts() {
     const status = document.createElement("div"); status.className = "settings-app-empty";
     status.textContent = `${enabled ? copy.routingOn : copy.routingOff}${needsLogin ? ` · ${account.credentialIssue || copy.routingLoginRequired} · ${copy.loginHint}` : ""}`;
     row.append(name, usage, status);
+    const allocationStatus = document.createElement("div"); allocationStatus.className = "settings-app-empty";
+    allocationStatus.textContent = `${copy.occupied}: ${account.activeExecutions || 0} / ${account.maxConcurrent ?? copy.unlimited}`
+      + ` · ${copy.routingStates[account.routingState] || ""}`;
+    const allocationForm = document.createElement("form"); allocationForm.className = "settings-codex-allocation";
+    const limitLabel = document.createElement("label"); limitLabel.textContent = copy.concurrency;
+    const limit = document.createElement("input"); limit.type = "number"; limit.min = "1"; limit.step = "1";
+    limit.placeholder = copy.unlimited; limit.value = account.maxConcurrent ?? "";
+    limit.dataset.codexConcurrency = account.id; limit.setAttribute("aria-label", `${copy.concurrency} · ${account.label}`);
+    const priorityLabel = document.createElement("label"); priorityLabel.textContent = copy.priority;
+    const priority = document.createElement("input"); priority.type = "number"; priority.min = "0"; priority.step = "1";
+    priority.required = true; priority.value = account.priority ?? 10;
+    priority.dataset.codexPriority = account.id; priority.setAttribute("aria-label", `${copy.priority} · ${account.label}`);
+    limit.disabled = priority.disabled = codexRoutingPending;
+    limitLabel.append(limit); priorityLabel.append(priority);
+    const save = document.createElement("button"); save.type = "submit"; save.className = "settings-app-btn";
+    save.textContent = copy.saveAllocation; save.disabled = codexRoutingPending;
+    save.dataset.codexAllocationSave = account.id;
+    allocationForm.append(limitLabel, priorityLabel, save);
+    allocationForm.addEventListener("submit", async event => {
+      event.preventDefault();
+      const maxConcurrent = String(limit.value).trim() === "" ? null : Number(limit.value);
+      const order = Number(priority.value);
+      if ((maxConcurrent !== null && (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1))
+        || String(priority.value).trim() === "" || !Number.isSafeInteger(order) || order < 0) {
+        if (typeof showToast === "function") showToast(copy.allocationInvalid);
+        return;
+      }
+      await setCodexAccountRouting(account.id, undefined, { maxConcurrent, priority: order });
+    });
+    row.append(allocationStatus, allocationForm);
     const failure = account.lastFailure;
     if (failure) {
       const detail = document.createElement("div"); detail.className = "settings-app-empty";
@@ -934,14 +976,17 @@ function renderCodexSavedAccounts() {
   }
 }
 
-async function setCodexAccountRouting(accountId, enabled) {
+async function setCodexAccountRouting(accountId, enabled, allocation = {}) {
   if (!canManageSharedCodexFromUi() || codexRoutingPending) return;
   const data = codexAuthState?.accountList;
   if (!data) return;
   const copy = getCodexAuthCopy();
   const enabledAccounts = (data.accounts || []).filter(account => data.disabledAccountIds != null
     ? !data.disabledAccountIds.includes(account.id) : data.routingAccountIds == null || data.routingAccountIds.includes(account.id));
-  if (!enabled && enabledAccounts.length === 1 && enabledAccounts[0].id === accountId
+  const readyAccounts = enabledAccounts.filter(account => account.routingState === "ready");
+  const disablesLast = enabledAccounts.length === 1 && enabledAccounts[0].id === accountId
+    || readyAccounts.length === 1 && readyAccounts[0].id === accountId;
+  if (enabled === false && disablesLast
       && !window.confirm(copy.routingStopLast)) return;
   codexRoutingPending = true;
   ++codexAuthRequestId; // Ignore reads started before this write.
@@ -949,7 +994,7 @@ async function setCodexAccountRouting(accountId, enabled) {
   try {
     const saved = await fetchJsonOrRedirect("/api/codex-auth/accounts/routing", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId, enabled }), revalidate: false,
+      body: JSON.stringify({ accountId, ...(enabled !== undefined ? { enabled } : {}), ...allocation }), revalidate: false,
     });
     if (codexAuthState) codexAuthState.accountList = saved.accountList;
     return true;

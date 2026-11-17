@@ -31,7 +31,9 @@ export async function handleCodexAuthRoutes({
   if (pathname === '/api/codex-auth/accounts/routing' && req.method === 'POST') {
     try {
       const body = JSON.parse(await readBody(req, 4096) || '{}');
-      writeJson(res, 200, { accountList: await authManager.setAccountRouting(body.accountId, body.enabled) });
+      const allocation = {};
+      for (const key of ['maxConcurrent', 'priority']) if (Object.hasOwn(body, key)) allocation[key] = body[key];
+      writeJson(res, 200, { accountList: await authManager.setAccountRouting(body.accountId, body.enabled, allocation) });
     } catch { writeJson(res, 400, { error: 'Invalid Codex account routing setting' }); }
     return true;
   }

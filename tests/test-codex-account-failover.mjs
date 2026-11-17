@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 const root = await mkdtemp(join(tmpdir(), 'remotelab-account-failover-'));
 const home = join(root, 'legacy'); const config = join(root, 'config');
 await mkdir(home); await mkdir(config);
@@ -13,7 +14,8 @@ await copyFile(new URL('./fixtures/codex-account-failover.cjs', import.meta.url)
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'quota-fixture', name: 'Quota fixture', command, runtimeFamily: 'codex-json' }]));
 const { bindSessionAccount, readSessionAccount } = await import('../lib/codex-session-routing.mjs');
 const { codexAccounts: pool } = await import('../lib/codex-accounts.mjs');
-const { createRun, getRun, getRunManifest, readRunSpoolRecords } = await import('../chat/runs.mjs');
+const { createRun, getRun, getRunManifest, readRunSpoolRecords, updateRun } = await import('../chat/runs.mjs');
+const { buildSessionActivity } = await import('../chat/session-activity.mjs');
 const { createRunProjectionService } = await import('../chat/run-projection.mjs');
 const { createToolInvocation } = await import('../chat/process-runner.mjs');
 const { codexUsageUpdates } = await import('../lib/codex-usage-updates.mjs');
@@ -30,7 +32,7 @@ try {
   const backup = await pool.add('backup'); await seed(backup.home, 'backup', null);
   await pool.refresh(backup.id, command); await pool.policy(true);
   let sessionId = 'quota-session';
-  const run = async (native = false, codexThreadId = null) => {
+  const run = async (native = false, codexThreadId = null, onStarted = null) => {
     if (!await readSessionAccount(pool.root, sessionId)) await bindSessionAccount(pool.root, sessionId, await pool.account('default'), 'fixture', Date.now());
     const record = await createRun({ status: { sessionId, requestId: 'quota-request', tool: 'quota-fixture' },
       manifest: { sessionId, requestId: 'quota-request', tool: 'quota-fixture', folder: root,
@@ -38,6 +40,7 @@ try {
         options: { model: 'fixture', codexThreadId, skipSessionStartPreflight: true } } });
     const child = spawn(process.execPath, ['chat/runner-sidecar.mjs', record.id], { cwd: repo, env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'] });
+    onStarted?.(record.id);
     let output = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
     const timer = setTimeout(() => child.kill('SIGKILL'), 15000);
     const exit = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); }); clearTimeout(timer);
@@ -104,6 +107,38 @@ try {
   const beforeDisabled = (await calls()).length;
   assert.notEqual((await run()).exit, 0);
   assert.equal((await calls()).length, beforeDisabled + 1, 'disabled policy performs no automatic continuation');
+  await pool.policy(true, undefined, [backup.id]);
+  await pool.setRoutingSettings(backup.id, { maxConcurrent: 1 });
+  await seed(backup.home, 'backup', null); await pool.refresh(backup.id, command);
+  const observeWaiting = async id => {
+    const deadline = Date.now() + 5000; let interval = 20;
+    do {
+      const state = await getRun(id);
+      if (state.codexAccountQueue?.state === 'waiting') return state;
+      await delay(interval); interval = Math.min(250, interval * 2);
+    } while (Date.now() < deadline);
+    assert.fail('sidecar did not expose account waiting');
+  };
+  for (const cancel of [false, true]) {
+    sessionId = cancel ? 'capacity-cancel' : 'capacity-resume';
+    const held = await pool.acquireForRun({ sessionId: 'capacity-owner' });
+    const callsBeforeWaiting = (await calls()).length;
+    try {
+      let started; const start = new Promise(resolve => { started = resolve; });
+      const completion = run(true, '00000000-0000-4000-8000-000000000001', started);
+      const id = await start;
+      const waiting = await observeWaiting(id);
+      assert.equal(buildSessionActivity({}, {}, { runState: 'running', run: waiting }).run.waiting, true);
+      if (cancel) await updateRun(id, { cancelRequested: true });
+      else await held.lease.release();
+      const outcome = await completion;
+      assert.equal(outcome.record.state, cancel ? 'cancelled' : 'completed', outcome.output);
+      assert.equal((await calls()).length, callsBeforeWaiting + (cancel ? 0 : 1), 'waiting and cancellation never start an extra model call');
+      if (!cancel) assert.equal(outcome.record.codexAccountQueue.state, 'active');
+      assert.equal((await pool.list()).waitingCount, 0);
+    } finally { await held.lease.release(); }
+  }
   console.log('Batch/native automatic account migration preserves thread/actions; per-attempt quota attribution, bounded exhaustion and disabled policy passed');
+  console.log('Native account-capacity waiting is visible, resumes on release, and cancels without starting inference');
 
 } finally { await rm(root, { recursive: true, force: true }); }

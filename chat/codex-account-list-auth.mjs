@@ -75,7 +75,9 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     },
     async listAccounts({ refresh = false } = {}) { return pool.list({ refresh, command: await resolveCommand() }); },
     async setAccountPolicy(autoSwitch, balanceSessions, routingAccountIds) { return pool.policy(autoSwitch, balanceSessions, routingAccountIds); },
-    async setAccountRouting(accountId, enabled) { return pool.setRoutingEnabled(accountId, enabled); },
+    async setAccountRouting(accountId, enabled, allocation = {}) {
+      return pool.setRoutingSettings(accountId, { ...(enabled !== undefined ? { enabled } : {}), ...allocation });
+    },
     removeAccount: accountId => serialize(async () => {
       if (login?.id === accountId) {
         await login.manager.stopActiveLogin(); await login.lease.release(); login = null;

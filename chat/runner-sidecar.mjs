@@ -736,6 +736,21 @@ async function main() {
   };
 
   const providerQueueKey = resolveProviderRuntimeQueueKey(initialInvocation);
+  const accountWaitOptions = {
+    onWait: async info => {
+      await updateRun(runId, draft => ({ ...draft, codexAccountQueue: {
+        state: 'waiting', queuedAt: nowIso(), ...info,
+      } }));
+      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_account_wait',
+        message: '正在等待 Codex 账号并发名额或限流冷却，可取消本次任务。' }));
+    },
+    onReady: async () => {
+      await updateRun(runId, draft => ({ ...draft, codexAccountQueue: {
+        ...draft.codexAccountQueue, state: 'active', acquiredAt: nowIso(),
+      } }));
+      await recordStdoutLine(JSON.stringify({ type: 'remotelab.codex_account_ready', message: '已取得 Codex 账号名额，继续执行。' }));
+    },
+  };
   let attempt;
   let current = await getRun(runId) || run;
   const acquireProviderLease = async () => {
@@ -806,6 +821,7 @@ async function main() {
 
     if (initialInvocation.isCodexFamily) {
       codexAccount = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+        ...accountWaitOptions,
         accountPolicy: manifest.codexAccountPolicy || null,
         scheduleId: manifest.scheduleId || '',
         resumeThreadId: manifest.options?.codexThreadId || '',
@@ -816,7 +832,7 @@ async function main() {
         ...(codexAccount.personalFallback ? { personalCodexFallback: codexAccount.personalFallback } : {}),
         codexAccount: { id: codexAccount.id, scope: codexAccount.scope, ownerPersonId: codexAccount.ownerPersonId,
         label: codexAccount.label, switched: codexAccount.switched,
-        assignmentReason: codexAccount.assignmentReason || 'selected_default', selectedAt: nowIso() } }));
+        assignmentReason: codexAccount.assignmentReason || 'selected_default', allocation: codexAccount.allocation, selectedAt: nowIso() } }));
     }
 
     if (initialInvocation.isCodexFamily) await fileChangeCapture.prepare(manifest.options?.codexThreadId);
@@ -1001,6 +1017,7 @@ async function main() {
       let next;
       try {
         next = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
+          ...accountWaitOptions,
           accountPolicy: manifest.codexAccountPolicy || null,
           scheduleId: manifest.scheduleId || '',
           model: invocationOptions.model || '', resumeThreadId: threadId || '',
@@ -1021,7 +1038,7 @@ async function main() {
       await updateRun(runId, draft => ({ ...draft,
         ...(next.personalFallback ? { personalCodexFallback: next.personalFallback } : {}),
         codexAccount: { id: next.id, scope: next.scope, ownerPersonId: next.ownerPersonId, label: next.label, switched: true,
-          assignmentReason: 'provider_failure_failover', selectedAt: nowIso() },
+          assignmentReason: 'provider_failure_failover', allocation: next.allocation, selectedAt: nowIso() },
         codexFailover: { attempts: [...(draft.codexFailover?.attempts || []), {
           from: previousId, to: next.id, reason: kind,
           threadId: threadId || null, at: nowIso(),

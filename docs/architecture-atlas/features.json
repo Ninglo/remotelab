@@ -340,11 +340,11 @@
         },
         {
           "id": "accounts",
-          "name": "个人 Codex 绑定、公共账号分配与额度观察",
-          "purpose": "个人账号仅供本人优先使用，确认耗尽后提醒并临时转用公共池；公共账号继续由管理员管理，保留原有分流与续接。",
-          "entry": "试用名单内的用户可在侧栏“我的 Codex”（设置首项）绑定；公共账号登录后默认开启，只记录禁用例外。管理员在设置 → 连接 → 公共 Codex 账号使用“开启使用／暂时禁用／移出”，禁用保留登录，移出后不再分配新请求；正在运行的任务继续执行。",
-          "condition": "个人绑定入口及 API 仅向实例 REMOTELAB_PERSONAL_CODEX_PERSON_IDS 名单开放，默认关闭，管理员身份不自动加入。须本人在 OpenAI 页面完成设备码授权。同一登录身份不能同时绑定个人和公共池；普通限流、登录失效和未知额度不触发个人转公共。隐藏入口不解绑既有账号或改变运行任务；公共池内部自动换号仍受原自动切换设置控制。",
-          "example": "绑定自己的账号，查看额度；耗尽后在原对话收到转用公共池的提醒，额度恢复后新请求优先回个人。",
+          "name": "个人 Codex 绑定、公共账号优先级与并发配置",
+          "purpose": "个人账号供本人优先使用，确认耗尽后提醒并转公共池；公共池按管理员设置的优先级和并发上限分配，满载时顺延或等待。",
+          "entry": "管理员在设置 → 连接 → 公共 Codex 账号逐项设置并发上限（留空不限）和优先级（数字越小越优先），保存后影响后续分配。页面显示当前占用、可分配订阅和等待数；开启使用／暂时禁用／移出保留原含义。个人绑定由实例设置向全部成员或指定名单开放，入口为“我的 Codex”。",
+          "condition": "每轮执行先比较优先级，同级优先原账号，再按占用分配；运行中的任务保持原账号。独立后台调用也占名额，同一订阅的重复登录共用上限。满载或冷却进入可取消等待，默认最多十分钟，可按实例配置调整；额度耗尽或登录失效仍明确报错。调低上限等待存量自然结束，不自动调参。个人账号保持本人专用和确认耗尽才转公共的规则。",
+          "example": "把优先使用的公共账号设为并发3、优先级1，其他账号设为不限、优先级2。",
           "sources": [
             "chat/router-codex-auth-routes.mjs",
             "chat/codex-account-list-auth.mjs",
@@ -371,10 +371,13 @@
             "static/chat/personal-codex.js",
             "static/chat/personal-codex.css",
             "tests/test-personal-codex.mjs",
-            "tests/test-http-personal-codex.mjs"
+            "tests/test-http-personal-codex.mjs",
+            "lib/codex-allocation-wait.mjs",
+            "tests/test-codex-allocation-limits.mjs",
+            "tests/test-codex-routing-controls.mjs",
+            "static/chat/chat-sidebar.css"
           ],
-          "commands": [],
-          "sourceRevision": "99e01ca0bc84cd54b8fa546ecd832f47016764ef"
+          "commands": []
         },
         {
           "id": "questions",

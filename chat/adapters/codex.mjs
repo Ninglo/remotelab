@@ -82,6 +82,9 @@ export function createCodexAdapter() {
       } catch {
         return [];
       }
+      if (['remotelab.codex_account_wait', 'remotelab.codex_account_ready'].includes(obj.type)) {
+        return [statusEvent(obj.message)];
+      }
 
       const questionEvent = nativeQuestionEvent(obj);
       if (questionEvent) return [questionEvent];
