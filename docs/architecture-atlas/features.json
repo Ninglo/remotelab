@@ -377,7 +377,8 @@
             "tests/test-codex-routing-controls.mjs",
             "static/chat/chat-sidebar.css"
           ],
-          "commands": []
+          "commands": [],
+          "sourceRevision": "64277afac8f8c2966a56eb2aee10088c788ea195"
         },
         {
           "id": "questions",
