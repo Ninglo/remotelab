@@ -18,15 +18,21 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
       const status = await login.manager.getStatus();
       if (status.loggedIn) {
         const completed = login;
-        await pool.inspect(await pool.account(completed.id), await resolveCommand(), completed.lease);
-        await pool.select(completed.id);
-        login = null; await completed.lease.release();
+        try {
+          await pool.inspect(await pool.account(completed.id), await resolveCommand(), completed.lease, { includeRateLimits: false });
+          const list = await pool.list();
+          if (list.accounts.find(a => a.id === completed.id)?.routingEnabled) await pool.select(completed.id);
+        } finally {
+          login = null; await completed.lease.release();
+        }
         return readStatus();
       }
       if (!status.deviceLoginActive) { await login.lease.release(); login = null; }
       return withList(status);
     }
     const account = await pool.account();
+    if (account.removedAt) return withList({ available: Boolean(await resolveCommand()), loggedIn: false,
+      phase: 'idle', deviceLoginActive: false, account: null, error: '' });
     if (!account.account) await pool.refresh(account.id, await resolveCommand());
     const current = await pool.account(account.id);
     const metadata = await readCodexAuthMetadata(current.home);
@@ -40,7 +46,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     if (login && !restart) return readStatus();
     if (login) { await login.manager.stopActiveLogin(); await login.lease.release(); login = null; }
     const account = accountId ? await pool.account(accountId) : await pool.add(label);
-    if (!isSharedCodexAccount(account)) throw new Error('公共账号管理不能操作个人绑定');
+    if (!isSharedCodexAccount(account) || account.removedAt) throw new Error('找不到可管理的公共账号');
     // Stop new assignments before a login can replace this cache. The account
     // becomes eligible again only after inspect validates its ownership.
     await pool.mutate(data => { data.accounts.find(a => a.id === account.id).credentialIssue = '账号正在重新授权，请完成登录'; });
@@ -50,7 +56,10 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
       throw new Error('这个账号正在执行任务，请等任务结束后重新登录');
     }
     const manager = createManager({ resolveHome: () => account.home, resolveCommand,
+      resolveSqliteHome: () => account.sqliteHome || account.home,
       onProcess: child => lease.setToolProcessId(child.pid),
+      onLoginExit: () => { void serialize(() => login?.manager === manager ? readStatus() : null)
+        .catch(() => { /* The saved account remains available for status recovery. */ }); },
       credentialStore: account.id === 'default' ? undefined : 'file' });
     login = { id: account.id, manager, lease };
     try { return withList(await manager.startDeviceLogin({ restart: true })); }
@@ -67,6 +76,12 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
     async listAccounts({ refresh = false } = {}) { return pool.list({ refresh, command: await resolveCommand() }); },
     async setAccountPolicy(autoSwitch, balanceSessions, routingAccountIds) { return pool.policy(autoSwitch, balanceSessions, routingAccountIds); },
     async setAccountRouting(accountId, enabled) { return pool.setRoutingEnabled(accountId, enabled); },
+    removeAccount: accountId => serialize(async () => {
+      if (login?.id === accountId) {
+        await login.manager.stopActiveLogin(); await login.lease.release(); login = null;
+      }
+      return pool.remove(accountId);
+    }),
     switchAccount: ({ accountId } = {}) => serialize(async () => {
       if (!accountId) return startLogin({ restart: true });
       await pool.select(accountId); return readStatus();
@@ -76,6 +91,7 @@ export function createCodexAccountListAuthManager({ createManager, pool = codexA
       if (!lease) throw new Error('这个账号正在执行任务，请等任务结束后退出');
       try {
         const manager = createManager({ resolveHome: () => account.home, resolveCommand,
+          resolveSqliteHome: () => account.sqliteHome || account.home,
           credentialStore: account.id === 'default' ? undefined : 'file' });
         await manager.logout(); await pool.inspect(account, await resolveCommand(), lease); return readStatus();
       } finally { await lease.release(); }

@@ -45,6 +45,14 @@ export async function handleCodexAuthRoutes({
     return true;
   }
 
+  if (pathname === '/api/codex-auth/accounts/remove' && req.method === 'POST') {
+    try {
+      const body = JSON.parse(await readBody(req, 4096) || '{}');
+      writeJson(res, 200, { accountList: await authManager.removeAccount(body.accountId) });
+    } catch { writeJson(res, 400, { error: 'Failed to remove shared Codex account' }); }
+    return true;
+  }
+
   if (pathname === '/api/codex-auth/rate-limits' && req.method === 'GET') {
     try {
       const force = new URL(req.url || pathname, 'http://localhost').searchParams.get('refresh') === '1';

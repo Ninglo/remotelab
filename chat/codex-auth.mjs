@@ -113,6 +113,7 @@ function terminateProcess(child, timeoutMs = 1000) {
 export function createCodexAuthManager({
   resolveCommand = () => resolveToolCommandPathAsync('codex'),
   resolveHome = resolveCodexHomeDir,
+  resolveSqliteHome,
   spawnProcess = spawn,
   readAccountStatus = readCodexAccountStatus,
   baseEnv = () => process.env,
@@ -169,6 +170,7 @@ export function createCodexAuthManager({
         ...baseEnv(),
         HOME: resolveMachineAccountHomeDir(),
         CODEX_HOME: codexHome,
+        CODEX_SQLITE_HOME: resolveSqliteHome ? await resolveSqliteHome() : codexHome,
       },
     };
   }

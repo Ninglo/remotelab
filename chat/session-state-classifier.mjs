@@ -175,6 +175,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     ? await codexAccounts.acquireForRun({ sessionId, model }) : null;
   if (account) {
     subEnv.CODEX_HOME = account.home;
+    subEnv.CODEX_SQLITE_HOME = account.sqliteHome;
     if (account.id !== 'default') args.unshift('-c', 'cli_auth_credentials_store="file"');
   }
 

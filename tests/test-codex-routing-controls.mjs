@@ -52,6 +52,7 @@ try {
     const expected = who ? 403 : 401;
     assert.equal((await call(who, '/api/codex-auth/accounts')).status, expected);
     assert.equal((await call(who, route, { accountId: 'default', enabled: false })).status, expected);
+    assert.equal((await call(who, '/api/codex-auth/accounts/remove', { accountId: 'default' })).status, expected);
   }
   assert.equal((await call('admin', route, { accountId: 'default', enabled: 'false' })).status, 400);
   const stopped = await call('admin', route, { accountId: 'default', enabled: false });
@@ -79,30 +80,31 @@ try {
           assert.equal(await page.evaluate(async path => (await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accountId: 'default', enabled: false }) })).status, route), 403);
         } else {
-          const button = page.locator('[data-codex-routing-account="default"]');
+          const button = page.locator('[data-codex-routing-account="default"][data-codex-account-action="disable"]');
+          const enable = page.locator('[data-codex-routing-account="default"][data-codex-account-action="enable"]');
           await button.waitFor({ state: 'visible' });
           await button.click();
           await page.waitForFunction(() => {
-            const b = document.querySelector('[data-codex-routing-account="default"]');
-            return b && !b.disabled && /开启|Enable/.test(b.textContent);
+            const b = document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="enable"]');
+            return b && !b.disabled;
           });
           assert.equal((await pool.list()).accounts.find(a => a.id === 'default').routingEnabled, false);
           await page.reload();
           await button.waitFor({ state: 'visible' });
-          assert.match(await button.textContent(), /开启|Enable/);
-          await button.click();
+          assert.equal(await enable.isEnabled(), true);
+          await enable.click();
           await page.waitForFunction(() => {
-            const b = document.querySelector('[data-codex-routing-account="default"]');
-            return b && !b.disabled && /关闭|Disable/.test(b.textContent);
+            const b = document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="disable"]');
+            return b && !b.disabled;
           });
           await page.setViewportSize({ width: 1440, height: 1000 });
-          assert.equal(await page.locator('[data-codex-routing-account]').count(), 2);
+          assert.equal(await page.locator('[data-codex-routing-account]').count(), 6);
           const overflow = await page.locator('#settingsCodexAuthSection').evaluate(el => el.scrollWidth > el.clientWidth);
           assert.equal(overflow, false);
           assert.equal((await pool.list()).accounts.find(a => a.id === 'default').routingEnabled, true);
           await button.click();
-          const last = page.locator(`[data-codex-routing-account="${backup.id}"]`);
-          await page.waitForFunction(() => !document.querySelector('[data-codex-routing-account="default"]').disabled);
+          const last = page.locator(`[data-codex-routing-account="${backup.id}"][data-codex-account-action="disable"]`);
+          await page.waitForFunction(() => !document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="enable"]').disabled);
           page.once('dialog', dialog => dialog.dismiss());
           await last.click();
           assert.equal((await pool.list()).accounts.find(a => a.id === backup.id).routingEnabled, true);
@@ -110,15 +112,22 @@ try {
           await last.click();
           await page.waitForFunction(() => {
             const note = document.getElementById('settingsCodexRoutingNote');
-            return note && !note.hidden && /所有|All/.test(note.textContent);
+            return note && !note.hidden && /暂无|No shared/.test(note.textContent);
           });
           assert.deepEqual((await pool.read()).routingAccountIds, []);
-          await page.waitForFunction(() => !document.querySelector('[data-codex-routing-account="default"]').disabled);
-          await button.click();
+          await page.waitForFunction(() => !document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="enable"]').disabled);
+          await enable.click();
           await page.waitForFunction(() => {
-            const b = document.querySelector('[data-codex-routing-account="default"]');
-            return b && !b.disabled && /关闭|Disable/.test(b.textContent);
+            const b = document.querySelector('[data-codex-routing-account="default"][data-codex-account-action="disable"]');
+            return b && !b.disabled;
           });
+          page.once('dialog', dialog => dialog.accept());
+          await page.locator(`[data-codex-routing-account="${backup.id}"][data-codex-account-action="remove"]`).click();
+          await page.waitForFunction(id => !document.querySelector(`[data-codex-routing-account="${id}"]`), backup.id);
+          assert.equal((await pool.list()).accounts.some(a => a.id === backup.id), false);
+          await page.reload();
+          await button.waitFor({ state: 'visible' });
+          assert.equal(await page.locator(`[data-codex-routing-account="${backup.id}"]`).count(), 0);
         }
         await context.close();
       }

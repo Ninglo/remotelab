@@ -64,6 +64,7 @@ export function createPersonalCodexAuthManager({ pool = codexAccounts,
         throw new Error('个人账号仍在执行任务，请在任务结束后重新授权');
       }
       const manager = createManager({ resolveHome: () => account.home, resolveCommand,
+        resolveSqliteHome: () => account.sqliteHome || account.home,
         credentialStore: 'file', onProcess: child => lease.setToolProcessId(child.pid),
         onLoginExit: () => { void serial(personId, () => status(personId)).catch(() => {}); } });
       const job = { id: account.id, manager, lease, timer: null };
@@ -96,7 +97,8 @@ export function createPersonalCodexAuthManager({ pool = codexAccounts,
         throw new Error('个人账号仍在执行任务，请在任务结束后解绑');
       }
       try {
-        await createManager({ resolveHome: () => account.home, resolveCommand, credentialStore: 'file' }).logout();
+        await createManager({ resolveHome: () => account.home, resolveCommand, credentialStore: 'file',
+          resolveSqliteHome: () => account.sqliteHome || account.home }).logout();
         await pool.setPersonalEnabled(account.id, personId, false, { unbind: true });
         await pool.inspect(account, await resolveCommand(), lease);
         failures.delete(personId);

@@ -605,13 +605,15 @@ function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "公共 Codex 账号",
-    scopeNote: "公共 Codex 账号由管理员统一添加与管理。启停仅影响后续请求，正在运行的任务继续执行。",
-    routingOn: "已开启使用", routingOff: "已关闭使用",
-    routingStart: "开启使用", routingStop: "关闭使用",
+    scopeNote: "新增账号登录后默认开启使用。暂时禁用保留登录；移出会从公共账号池移除。正在运行的任务继续执行。",
+    routingOn: "已开启使用", routingOff: "已暂时禁用",
+    routingStart: "开启使用", routingStop: "暂时禁用", remove: "移出",
+    removeConfirm: "移出此公共账号？后续请求不再使用它，正在运行的任务继续执行。需要时可重新添加。",
+    loginHint: "点击“开启使用”完成登录",
     routingLoginRequired: "请先登录", routingUnavailable: "需重新登录",
-    routingEmpty: "所有公共账号均已关闭，后续公共账号请求将无法启动。",
+    routingEmpty: "暂无已开启的公共账号，后续公共账号请求将无法启动。",
     routingNoFailover: "自动切换已关闭：停用账号后，绑定它的对话需重新启用该账号或开启自动切换才能继续。",
-    routingStopLast: "这是最后一个已开启的公共账号。关闭后，后续公共账号请求将无法启动；正在运行的任务继续执行。仍要关闭吗？",
+    routingStopLast: "这是最后一个已开启的公共账号。禁用后，后续公共账号请求将无法启动；正在运行的任务继续执行。仍要禁用吗？",
     checking: "检测中…",
     authenticated: "已登录",
     awaiting: "等待登录",
@@ -631,7 +633,7 @@ function getCodexAuthCopy() {
     select: "切换", current: "当前", signIn: "登录", reauthorize: "重新登录", unknownQuota: "额度待查询",
     logoutFailed: "Codex 退出失败",
     switchTimedOut: "切换请求超时，正在重新读取登录状态…",
-    account: "当前账号",
+    account: "默认账号",
     accountUnknown: "账号信息未提供",
     apiKey: "API Key 登录",
     usageChecking: "额度检测中…",
@@ -646,11 +648,13 @@ function getCodexAuthCopy() {
     day: "天", hour: "小时", minute: "分钟",
   } : {
     title: "Shared Codex accounts",
-    scopeNote: "Administrators manage shared accounts. Changes apply to subsequent requests; running tasks continue.",
-    routingOn: "Enabled", routingOff: "Disabled",
-    routingStart: "Enable use", routingStop: "Disable use",
+    scopeNote: "New accounts are enabled after sign-in. Temporary disable keeps the login; remove takes the account out of the shared pool. Running tasks continue.",
+    routingOn: "Enabled", routingOff: "Temporarily disabled",
+    routingStart: "Enable use", routingStop: "Temporarily disable", remove: "Remove",
+    removeConfirm: "Remove this shared account? Subsequent requests will not use it; running tasks continue. You can add it again later.",
+    loginHint: "Choose Enable use to complete sign-in",
     routingLoginRequired: "Sign-in required", routingUnavailable: "Sign in again",
-    routingEmpty: "All shared accounts are disabled. Subsequent shared-account requests cannot start.",
+    routingEmpty: "No shared accounts are enabled. Subsequent shared-account requests cannot start.",
     routingNoFailover: "Automatic switching is off. Conversations bound to a disabled account can continue after re-enabling it or turning on automatic switching.",
     routingStopLast: "This is the last enabled shared account. Disabling it prevents subsequent shared-account requests from starting; running tasks continue. Disable it?",
     checking: "Checking…",
@@ -672,7 +676,7 @@ function getCodexAuthCopy() {
     select: "Switch", current: "Current", signIn: "Sign in", unknownQuota: "Usage not checked",
     logoutFailed: "Codex logout failed",
     switchTimedOut: "Account switch timed out. Reloading login status…",
-    account: "Current account",
+    account: "Default account",
     accountUnknown: "Account details not provided",
     apiKey: "API key sign-in",
     usageChecking: "Checking usage…",
@@ -874,7 +878,8 @@ function renderCodexSavedAccounts() {
   if (!list || !data) { if (list) list.hidden = true; if (label) label.hidden = true; if (balanceLabel) balanceLabel.hidden = true; return; }
   const copy = getCodexAuthCopy();
   list.hidden = false; label.hidden = false;
-  const selected = account => data.routingAccountIds == null || data.routingAccountIds.includes(account.id);
+  const selected = account => data.disabledAccountIds != null ? !data.disabledAccountIds.includes(account.id)
+    : data.routingAccountIds == null || data.routingAccountIds.includes(account.id);
   const anyEnabled = (data.accounts || []).some(selected);
   if (note) {
     note.textContent = !anyEnabled ? copy.routingEmpty : data.autoSwitch ? "" : copy.routingNoFailover;
@@ -889,37 +894,34 @@ function renderCodexSavedAccounts() {
   for (const account of data.accounts || []) {
     const row = document.createElement("div"); row.className = "settings-app-card";
     const name = document.createElement("div"); name.className = "settings-app-name";
-    name.textContent = `${account.active ? `${copy.current} · ` : ""}${account.label}`;
+    name.textContent = [account.label, account.account?.email].filter((value, index, all) => value && all.indexOf(value) === index).join(" · ");
     const usage = document.createElement("div"); usage.className = "settings-app-empty";
     const bucket = account.usage?.buckets?.find(item => item.id === "codex");
     const remaining = [bucket?.primary, bucket?.secondary].filter(Boolean)
       .filter(item => Number.isFinite(item.remainingPercent)).map(item => item.remainingPercent);
     usage.textContent = account.availability === "unknown" || !remaining.length
       ? copy.unknownQuota : `${account.account?.planType || "Codex"} · ${copy.remaining} ${Math.min(...remaining)}%`;
-    const button = document.createElement("button"); button.className = "settings-app-btn"; button.type = "button";
-    button.textContent = !account.account ? copy.signIn : account.active ? copy.current : copy.select;
-    button.disabled = !!account.account && (account.active || account.routingEnabled === false);
-    button.addEventListener("click", () => {
-      if (account.account) void switchCodexAccount(account.id);
-      else void startCodexDeviceLogin(account.id);
-    });
-    row.append(name, usage, button);
-    if (account.account) {
-      const reauthorize = document.createElement("button"); reauthorize.className = "settings-app-btn";
-      reauthorize.type = "button"; reauthorize.textContent = copy.reauthorize || "Sign in again";
-      reauthorize.addEventListener("click", () => void startCodexDeviceLogin(account.id)); row.append(reauthorize);
-    }
     const enabled = selected(account);
+    const needsLogin = !account.account || !!account.credentialIssue;
     const status = document.createElement("div"); status.className = "settings-app-empty";
-    status.textContent = `${enabled ? copy.routingOn : copy.routingOff}${!account.account
-      ? ` · ${copy.routingLoginRequired}` : enabled && account.routingEnabled === false ? ` · ${copy.routingUnavailable}` : ""}`;
-    const toggle = document.createElement("button"); toggle.className = "settings-app-btn"; toggle.type = "button";
-    toggle.dataset.codexRoutingAccount = account.id;
-    toggle.textContent = enabled ? copy.routingStop : copy.routingStart;
-    toggle.setAttribute("aria-label", `${toggle.textContent} · ${account.label}`);
-    toggle.disabled = codexRoutingPending;
-    toggle.addEventListener("click", () => void setCodexAccountRouting(account.id, !enabled));
-    row.append(status, toggle);
+    status.textContent = `${enabled ? copy.routingOn : copy.routingOff}${needsLogin ? ` · ${account.credentialIssue || copy.routingLoginRequired} · ${copy.loginHint}` : ""}`;
+    row.append(name, usage, status);
+    for (const [action, title, disabled] of [
+      ["enable", copy.routingStart, enabled && !needsLogin],
+      ["disable", copy.routingStop, !enabled],
+      ["remove", copy.remove, false],
+    ]) {
+      const button = document.createElement("button"); button.className = "settings-app-btn"; button.type = "button";
+      button.dataset.codexRoutingAccount = account.id; button.dataset.codexAccountAction = action;
+      button.textContent = title; button.setAttribute("aria-label", `${title} · ${account.label}`);
+      button.disabled = codexRoutingPending || disabled;
+      button.addEventListener("click", async () => {
+        if (action === "remove") return removeCodexAccount(account.id);
+        const saved = await setCodexAccountRouting(account.id, action === "enable");
+        if (saved && action === "enable" && needsLogin) await startCodexDeviceLogin(account.id);
+      });
+      row.append(button);
+    }
     list.append(row);
   }
 }
@@ -929,7 +931,8 @@ async function setCodexAccountRouting(accountId, enabled) {
   const data = codexAuthState?.accountList;
   if (!data) return;
   const copy = getCodexAuthCopy();
-  const enabledAccounts = (data.accounts || []).filter(account => data.routingAccountIds == null || data.routingAccountIds.includes(account.id));
+  const enabledAccounts = (data.accounts || []).filter(account => data.disabledAccountIds != null
+    ? !data.disabledAccountIds.includes(account.id) : data.routingAccountIds == null || data.routingAccountIds.includes(account.id));
   if (!enabled && enabledAccounts.length === 1 && enabledAccounts[0].id === accountId
       && !window.confirm(copy.routingStopLast)) return;
   codexRoutingPending = true;
@@ -941,10 +944,33 @@ async function setCodexAccountRouting(accountId, enabled) {
       body: JSON.stringify({ accountId, enabled }), revalidate: false,
     });
     if (codexAuthState) codexAuthState.accountList = saved.accountList;
+    return true;
   } catch (error) {
     if (typeof showToast === "function") showToast(error.message);
   } finally {
     // Read back even after an uncertain response; never retry a write blindly.
+    await refreshCodexAuthStatus({ silent: true, includeUsage: false });
+    codexRoutingPending = false;
+    renderCodexSavedAccounts();
+  }
+}
+
+async function removeCodexAccount(accountId) {
+  if (!canManageSharedCodexFromUi() || codexRoutingPending) return;
+  const account = codexAuthState?.accountList?.accounts?.find(a => a.id === accountId);
+  if (!account || !window.confirm(`${account.label}\n${getCodexAuthCopy().removeConfirm}`)) return;
+  codexRoutingPending = true;
+  ++codexAuthRequestId;
+  renderCodexSavedAccounts();
+  try {
+    const saved = await fetchJsonOrRedirect("/api/codex-auth/accounts/remove", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId }), revalidate: false,
+    });
+    if (codexAuthState) codexAuthState.accountList = saved.accountList;
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message);
+  } finally {
     await refreshCodexAuthStatus({ silent: true, includeUsage: false });
     codexRoutingPending = false;
     renderCodexSavedAccounts();

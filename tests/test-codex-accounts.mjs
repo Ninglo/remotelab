@@ -28,12 +28,12 @@ for (const failure of ['429 Too many requests', '401 Unauthorized', 'Network dis
 }
 const responses = new Map([[home, usage(0)]]); let queries = 0;
 const query = async ({ env, includeRateLimits, credentialStore }) => {
-  queries++; assert.equal(includeRateLimits, true);
+  queries++; assert.equal(typeof includeRateLimits, 'boolean');
   if (env.CODEX_HOME !== home) assert.equal(credentialStore, 'file');
   const limits = responses.get(env.CODEX_HOME);
   if (limits instanceof Error) throw limits;
   const account = { type: 'chatgpt', name: 'Test', email: 'test@example.invalid', planType: 'pro' };
-  return { account, usage: limits || usage(100),
+  return { account, usage: includeRateLimits ? limits || usage(100) : null,
     accountRevision: codexAccountRevision((await readCodexAuthMetadata(env.CODEX_HOME)).revision, account), checkedAt: stamp };
 };
 const pool = new CodexAccounts({ root: join(root, 'pool'), defaultHome: home, query, now: () => now });

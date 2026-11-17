@@ -164,15 +164,21 @@ omitting `autoSwitch` preserves the independent automatic-switch setting. Enable
 `autoSwitch` to migrate unavailable bindings and continue failed quota/rate-limited
 turns on another saved subscription; balancing alone does not enable failover.
 
-Each saved account has an **Enable use / Disable use** button in the same Settings
-section, visible only to administrators. The saved selection is distinct from
-sign-in and quota availability: enabling a signed-out account still requires
-sign-in. Disabling keeps credentials and current executions intact. With automatic
+Each saved account has three administrator controls: **Enable use**, **Temporarily
+disable**, and **Remove** (开启使用、暂时禁用、移出). Accounts are enabled by default;
+only disabled exceptions are stored. Adding another account never requires updating
+an allowlist. Enable use starts sign-in when needed; healthy enabled accounts show
+that button disabled. Temporary disable keeps credentials and current executions intact. With automatic
 switching enabled, the next request uses an enabled account; with it disabled,
 a conversation bound to a disabled account waits for re-enabling or automatic
 switching. Disabling the last selected account asks for confirmation and the page
-shows that subsequent shared-account requests cannot start. Opening the page or
-upgrading does not change existing selections or other routing policies.
+shows that subsequent shared-account requests cannot start. Remove hides the entry
+and excludes it from subsequent routing; it preserves its home and history so
+running tasks can finish. Adding it again requires a fresh login. The interface
+shows email alongside the label to distinguish accounts with the same display name.
+An upgrade converts a legacy allowlist into disabled exceptions for existing
+accounts, preserving those choices and other routing policies. Reauthorization
+does not undo a disable.
 
 Buttons use `POST /api/codex-auth/accounts/routing` with
 `{ "accountId": "<saved ID>", "enabled": false }`. This updates one shared account
@@ -180,18 +186,23 @@ under the existing metadata lock, preserving concurrent changes to other account
 automatic switching, balancing, schedule preferences and personal bindings. The
 normal administrator API boundary also rejects direct calls from ordinary users.
 The page reads back status after saving, including when the response is uncertain.
+Remove uses `POST /api/codex-auth/accounts/remove` with `{ "accountId": "<saved ID>" }`
+and the same administrator boundary. It is idempotent and does not log out the
+authorization. A removed entry cannot be re-enabled through the routing endpoint.
 
 ## Behavior
 
-- Operators can restrict this instance's pool with `routingAccountIds` on the same
-  policy endpoint: an array of saved account IDs enables only those accounts;
-  `null` restores all saved shared accounts and `[]` pauses shared admissions. Omission
-  preserves the current restriction. Credentials and observations remain intact.
+- The canonical setting is `disabledAccountIds`; accounts absent from it are enabled.
+  For compatibility, the policy endpoint still accepts `routingAccountIds`: an
+  array disables existing accounts omitted from it, `null` clears disabled exceptions,
+  and `[]` disables all current accounts. Future additions still default to enabled.
+  Omission preserves the disabled exceptions. Credentials and observations remain intact.
   The restriction applies to default selection, Session affinity, failover,
   schedule preferences and background helpers, including helpers without a
   Session ID. Existing executions finish under their original authorization;
   with `autoSwitch` enabled, their next execution migrates to an enabled account.
-  The account list exposes both the restriction and each account's `routingEnabled`.
+  The account list exposes disabled exceptions, a compatibility allowlist projection,
+  and each account's effective `routingEnabled` (which also excludes credential errors).
   An explicit selection of a paused account fails without resuming it.
 
 

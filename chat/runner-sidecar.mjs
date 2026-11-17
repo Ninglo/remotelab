@@ -811,6 +811,7 @@ async function main() {
         resumeThreadId: manifest.options?.codexThreadId || '',
         model: invocationOptions.model || '', isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
       spawnEnv.CODEX_HOME = codexAccount.home;
+      spawnEnv.CODEX_SQLITE_HOME = codexAccount.sqliteHome;
       await updateRun(runId, draft => ({ ...draft,
         ...(codexAccount.personalFallback ? { personalCodexFallback: codexAccount.personalFallback } : {}),
         codexAccount: { id: codexAccount.id, scope: codexAccount.scope, ownerPersonId: codexAccount.ownerPersonId,
@@ -1010,6 +1011,7 @@ async function main() {
       }
       codexAccount = next;
       spawnEnv.CODEX_HOME = next.home;
+      spawnEnv.CODEX_SQLITE_HOME = next.sqliteHome;
       await updateRun(runId, draft => ({ ...draft,
         ...(next.personalFallback ? { personalCodexFallback: next.personalFallback } : {}),
         codexAccount: { id: next.id, scope: next.scope, ownerPersonId: next.ownerPersonId, label: next.label, switched: true,

@@ -68,6 +68,7 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
     ? await codexAccounts.acquireForRun({ sessionId: sessionMeta.id || '', model: options.model ?? model }) : null;
   if (account) {
     env.CODEX_HOME = account.home;
+    env.CODEX_SQLITE_HOME = account.sqliteHome;
     if (account.id !== 'default') invocation.args.unshift('-c', 'cli_auth_credentials_store="file"');
   }
 
