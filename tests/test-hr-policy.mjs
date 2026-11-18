@@ -55,9 +55,9 @@ try {
   const browser={authKind:'password',personId:'shared',identityId:'shared-web'};
   const admin={administratorPersonIds:['shared']};
   assert.equal(hrBrowserRestricted(browser),true);
-  assert.equal(canReadSession(browser,{createdAt:'2025-12-01',creatorIdentityId:'shared-web'},admin),false);
-  assert.equal(canReadSession(browser,{createdAt:'2026-02-01',creatorIdentityId:'owner-web'},admin),false);
-  assert.equal(canReadSession(browser,{createdAt:'2026-02-01',creatorIdentityId:'shared-web'},admin),true);
+  assert.equal(canReadSession(browser,{created:'2025-12-01',creatorIdentityId:'shared-web'},admin),false);
+  assert.equal(canReadSession(browser,{created:'2026-02-01',creatorIdentityId:'owner-web'},admin),false);
+  assert.equal(canReadSession(browser,{created:'2026-02-01',creatorIdentityId:'shared-web'},admin),true);
   const creds=join(root,'credentials.json');await writeFile(creds,JSON.stringify({apiKey:'fixture',signingKey:'fixture-signing'}));
   const originalFetch=globalThis.fetch;
   try {

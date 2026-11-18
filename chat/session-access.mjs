@@ -29,8 +29,8 @@ export function canReadSession(actor, session, document = getAuthReadSnapshot())
     const current = runtimeHrPolicy();
     const subject = resolveHrActor(current.policy, {viewPersonId:actor.personId, initiatedByIdentityId:actor.identityId}, current.instance);
     // Pre-cutover shared sessions may already contain protected history.
-    if (!subject?.shared || !Number.isFinite(Date.parse(current.enforceAfter)) || !Number.isFinite(Date.parse(session.createdAt))
-        || Date.parse(session.createdAt) < Date.parse(current.enforceAfter)
+    if (!subject?.shared || !Number.isFinite(Date.parse(current.enforceAfter)) || !Number.isFinite(Date.parse(session.created))
+        || Date.parse(session.created) < Date.parse(current.enforceAfter)
         || sessionCreatorIdentity(session) !== actor.identityId) return false;
     return true;
   }
