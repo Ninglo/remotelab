@@ -24,6 +24,8 @@ try {
   for(const id of ['hr1','hr2','boss'])assert.equal(authorizeHr(policy,actor(id),'users.add'),false);
   assert.equal(authorizeHr(policy,actor('owner'),'users.add'),true);
   assert.equal(authorizeHr(policy,actor('boss'),'candidate.write'),false);
+  actor('hr2').deniedActions=['candidate.read'];assert.deepEqual(hrScopes(policy,actor('hr2'),'candidate.write'),[]);delete actor('hr2').deniedActions;
+  actor('hr2').scopeOverrides={'candidate.read':'owned','candidate.write':'none'};assert.deepEqual(hrScopes(policy,actor('hr2'),'candidate.write'),[]);delete actor('hr2').scopeOverrides;
   const scope={assignmentVerified:true,interviewerOpenIds:['ou_boss'],participated:true};
   assert.equal(authorizeHr(policy,actor('boss'),'feedback.write',scope),true);
   assert.equal(authorizeHr(policy,actor('boss'),'feedback.write',{...scope,participated:false}),false);
