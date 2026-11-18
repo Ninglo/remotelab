@@ -39,9 +39,9 @@ export async function handleHrAccessRoutes({req, res, pathname, authSession, wri
       writeJson(res,403,{error:'只有一级权限可以管理角色和资料范围'}); return true;
     }
     if (!input.change) { writeJson(res,200,{policy:current.policy}); return true; }
-    const action = {add:'users.add',remove:'users.remove',roles:'policy.roles',scope:'policy.scope'}[input.change.action];
+    const action = {add:'users.add',remove:'users.remove',bind:'users.add',roles:'policy.roles',scope:'policy.scope'}[input.change.action];
     if (!action || !authorizeHr(current.policy,actor,action)) {
-      writeJson(res,403,{error:'新增或移除使用者仅限当麻所有者'}); return true;
+      writeJson(res,403,{error:'新增、移除使用者或补充身份绑定仅限当麻所有者'}); return true;
     }
     // Attribution always comes from a server-held accepted request or the
     // authenticated personal browser. An arbitrary actor in JSON is rejected.

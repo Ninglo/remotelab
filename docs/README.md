@@ -235,4 +235,4 @@ occurrence status, use [request access guard](request-access-guard.md) and
 [task center](task-center-v1.md). Scheduler-owned identity metadata is distinct
 from general human access and must not be inferred from a Session owner.
 
-HR business permissions use a separate [versioned policy and management workflow](platform-skills/hr-access.md), independent of platform administrator membership.
+HR business permissions use a separate [versioned policy and management workflow](platform-skills/hr-access.md), independent of platform administrator membership. The owner can complete an existing user's verified Touma identity with `hr-access change` (`action:bind`) and reopen a registered interviewer without replacing their role or identity history.
