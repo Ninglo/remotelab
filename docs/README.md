@@ -211,6 +211,7 @@ The information-routing group card can show an explicitly enabled public pilot r
 Employee SSH Codex memory: [authenticated account and file evidence](monitoring.md#employee-ssh-codex-memory-evidence) documents the opt-in helper, private inline previews, access metadata, `.codex-sg` installations and native attribution limits. The preview separates recent Skill document loads from completed execution.
 
 - [会话元数据目录](session-catalog.md)：按记录访问、离线切换和保留最新数据的回退。
+- [会话访问与列表缓存](session-access.md)：保留本人登录身份；Cookie、Bearer 与缓存列表按当前 HR 策略执行，权限变化后立即重算。
 
 [Employee site login](employee-site-login.md) shares Feishu login across managed static pages, previews and research pages on the same instance domain. New sites record their creator and reserve administrators without introducing role management.
 

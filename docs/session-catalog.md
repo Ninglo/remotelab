@@ -19,3 +19,5 @@
 ## 验证
 
 `tests/test-session-catalog.mjs` 覆盖完整迁移、独立记录读取、多进程累加无丢失、写入进程终止后锁释放、不可变读取快照、批量删除更新、旧格式导出和垃圾回收。`tests/test-work-awareness.mjs --indexed` 验证真实工作目录业务的并发更新及快照共享；普通模式继续覆盖未迁移实例。测试使用隔离临时目录，不向真实群投递。
+
+目录快照不代表访问授权。HTTP 列表缓存保留已认证 Person 与 identity，并按当前权限版本区分视图；冷记录复用也不能丢失身份或沿用撤销前的列表。列表为空时先比较原始记录与 [会话访问规则](session-access.md)，不能据此判断聊天已删除。相关 HTTP 回归为 `tests/test-hr-session-list.mjs`。

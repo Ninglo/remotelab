@@ -1,6 +1,6 @@
 import { refreshRuntimeHrPolicy, runtimeHrPolicy } from '../lib/hr-policy.mjs';
 import { randomBytes } from 'crypto';
-import { isAuthenticated } from '../lib/auth.mjs';
+import { isAuthenticated, authenticateBearerToken } from '../lib/auth.mjs';
 import { FILE_ASSET_ALLOWED_ORIGINS } from '../lib/config.mjs';
 import { getConnectorSurface, isConnectorSurfacePublicPath } from '../lib/connector-surface-registry.mjs';
 
@@ -95,7 +95,7 @@ async function allowsUnauthenticatedConnectorSurfaceRequest(pathname = '') {
  * If not, writes a 401 JSON response for API routes or a 302 redirect for pages.
  */
 export async function requireAuth(req, res) {
-  if (isAuthenticated(req)) {
+  if (isAuthenticated(req) || await authenticateBearerToken(req)) {
     try { await refreshRuntimeHrPolicy(); }
     catch { if (runtimeHrPolicy()?.restrictedRuntime) { res.writeHead(503, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'HR policy temporarily unavailable'})); return false; } }
     return true;
@@ -124,8 +124,6 @@ export async function requireAuth(req, res) {
       return true;
     }
   }
-  const { authenticateBearerToken } = await import('../lib/auth.mjs');
-  if (await authenticateBearerToken(req)) return true;
   // This API-shaped URL is a browser entry shared in chat. Preserve its
   // destination through the normal password login instead of showing JSON.
   if (req.method === 'GET' && (requestUrl.pathname === '/page/feishu-web-settings/connect'

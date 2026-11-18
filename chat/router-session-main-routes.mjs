@@ -1,5 +1,6 @@
 import { registerEventAttachments } from './session-attachment-access.mjs';
 import { canReadSession, isSessionAdministrator, sessionAccessFilter } from './session-access.mjs';
+import { runtimeHrPolicy } from '../lib/hr-policy.mjs';
 import { observeIntervention } from './usage-controls.mjs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
@@ -80,8 +81,8 @@ async function getSessionListItemForClient(id, options = {}) {
 }
 
 function listActor(key) {
-  const [kind, personId] = key.split(':');
-  return { personId, ...(kind === 'service' ? { authKind: 'service' } : {}) };
+  const [kind, personId, identityId] = JSON.parse(key);
+  return { personId, identityId, ...(kind === 'service' ? { authKind: 'service' } : {}) };
 }
 const sessionListCache = createSessionListCache({
   loadVersions: loadSessionMetaVersionIndex,
@@ -193,8 +194,15 @@ export async function handleSessionMainRoutes({
     const view = typeof parsedUrl.query.view === 'string'
       ? String(parsedUrl.query.view || '').trim().toLowerCase()
       : '';
+    const hr = runtimeHrPolicy();
     const prepared = await sessionListCache.read({
-      personId: `${authSession?.authKind === 'service' ? 'service' : isSessionAdministrator(authSession) ? 'admin' : 'member'}:${authSession?.personId || ''}`,
+      // Preserve authenticated identity for the ACL and rebuild cached results
+      // when current authorization changes, including revocation/restoration.
+      personId: JSON.stringify([
+        authSession?.authKind === 'service' ? 'service' : isSessionAdministrator(authSession) ? 'admin' : 'member',
+        authSession?.personId || '', authSession?.identityId || '', hr?.policy?.version || '',
+        hr?.restrictedRuntime === true, hr?.instance || '', hr?.enforceAfter || '',
+      ]),
       sourceId: normalizeSessionSourceId(parsedUrl.query.sourceId),
       folder: typeof parsedUrl.query.folder === 'string' ? parsedUrl.query.folder : '',
       archived: sessionGetRoute.kind === 'archived-list', refs: view === 'refs',
