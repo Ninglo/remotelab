@@ -68,6 +68,11 @@ Verification should cover replay after lost admission acknowledgement, edits, ow
 
 The Feishu event follows recipient notification semantics; explicit local binding does not grant notifications for every accessible document. The bound Bot must receive comment notifications for that document. This deployment has previously received non-mention comments for the report documents. Comment edits have no confirmed dedicated event; they are discovered on later comment-event reads or an explicitly requested review. A successful socket connection is not end-to-end validation of a new comment.
 
+For direct @-mentions outside a document binding, the connector reads the exact
+comment ID through [batch query](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/file-comment/batch_query)
+and paginates its replies. This covers inline comments anchored to a selection
+and whole-document comments. Feishu's single-comment GET only reads whole-document comments.
+
 When a Connector uses `accessPolicy.mode: "roles"`, document binding reconciliation
 admits only provider subjects in that policy's exact HR or optional non-HR
 collaborator list. Collaborator admission preserves existing document work without

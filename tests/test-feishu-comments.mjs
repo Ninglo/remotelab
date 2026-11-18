@@ -93,7 +93,7 @@ assert.equal(renderFeishuCommentContent({
 }, { botUserIds: ['ou_comment_bot_1'] }), '@机器人 请检查这一段https://example.com/context');
 
 const reactionPayloads = [];
-const commentGetPayloads = [];
+const commentQueryPayloads = [];
 const commentListPayloads = [];
 const commentCreatePayloads = [];
 const runtime = {
@@ -107,25 +107,29 @@ const runtime = {
       v2: { commentReaction: { updateReaction: async payload => { reactionPayloads.push(payload); return { code: 0 }; } } },
       v1: {
         fileComment: {
-          get: async (payload) => {
-            commentGetPayloads.push(payload);
+          batchQuery: async (payload) => {
+            commentQueryPayloads.push(payload);
             return {
               code: 0,
               data: {
-                quote: '这段方案需要补充验证。',
-                reply_list: {
-                  replies: [{
-                    reply_id: 'reply_root_1',
-                    user_id: 'ou_comment_author_1',
-                    create_time: 1786010000000,
-                    content: {
-                      elements: [{
-                        type: 'text_run',
-                        text_run: { text: '先看看这里的结论。' },
-                      }],
-                    },
-                  }],
-                },
+                items: payload.data.comment_ids.includes('comment_1') ? [{
+                  comment_id: 'comment_1',
+                  is_whole: false,
+                  quote: '这段方案需要补充验证。',
+                  reply_list: {
+                    replies: [{
+                      reply_id: 'reply_root_1',
+                      user_id: 'ou_comment_author_1',
+                      create_time: 1786010000000,
+                      content: {
+                        elements: [{
+                          type: 'text_run',
+                          text_run: { text: '先看看这里的结论。' },
+                        }],
+                      },
+                    }],
+                  },
+                }] : [],
               },
             };
           },
@@ -189,18 +193,25 @@ assert.equal(buildRemoteLabMessage(hydrated), hydrated.messageText);
 assert.equal(buildMessageSourceContext(hydrated).commentQuote, hydrated.commentQuote);
 assert.deepEqual(buildMessageSourceContext(hydrated).commentThread, hydrated.commentThread.map(({ text, isCurrent }) => ({ text, isCurrent })));
 assert.doesNotMatch(buildRemoteLabMessage(hydrated), /ou_comment_author_1|ou_comment_bot_1/);
-assert.deepEqual(commentGetPayloads[0], {
+assert.deepEqual(commentQueryPayloads[0], {
   params: {
     file_type: 'docx',
     user_id_type: 'open_id',
-    need_reaction: false,
   },
   path: {
     file_token: 'docx_comment_1',
-    comment_id: 'comment_1',
+  },
+  data: {
+    comment_ids: ['comment_1'],
+    need_reaction: false,
   },
 });
 assert.equal(commentListPayloads[0].params.page_size, 100);
+await assert.rejects(
+  hydrateFeishuDocumentCommentSummary(runtime, { ...summary, commentId: 'missing_comment' }),
+  /Feishu document comment missing_comment was not found/,
+);
+assert.equal(commentListPayloads.length, 1, 'missing comments do not start reply pagination');
 
 const directReply = await sendFeishuCommentReply(runtime, hydrated, '建议把验证条件写具体。');
 assert.equal(directReply.message_id, 'reply_bot_1');

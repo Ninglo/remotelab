@@ -164,27 +164,33 @@ export async function hydrateFeishuDocumentCommentSummary(runtime, summary) {
   if (!summary.fileToken || !summary.fileType || !summary.commentId) {
     throw new Error('Feishu document comment event is missing file_token, file_type, or comment_id');
   }
-  const getComment = runtime?.appClient?.drive?.v1?.fileComment?.get;
-  if (typeof getComment !== 'function') {
+  const queryComments = runtime?.appClient?.drive?.v1?.fileComment?.batchQuery;
+  if (typeof queryComments !== 'function') {
     throw new Error('Feishu document comment read API is unavailable');
   }
 
-  const response = await getComment({
+  const response = await queryComments({
     params: {
       file_type: summary.fileType,
       user_id_type: 'open_id',
-      need_reaction: false,
     },
     path: {
       file_token: summary.fileToken,
-      comment_id: summary.commentId,
+    },
+    data: {
+      comment_ids: [summary.commentId],
+      need_reaction: false,
     },
   });
   if (response.code !== undefined && response.code !== 0) {
     throw new Error(response.msg || `Failed to load Feishu document comment (${response.code})`);
   }
+  const comment = response.data?.items?.find(item => item.comment_id === summary.commentId);
+  if (!comment) {
+    throw new Error(`Feishu document comment ${summary.commentId} was not found`);
+  }
 
-  const embeddedReplies = response.data?.reply_list?.replies;
+  const embeddedReplies = comment.reply_list?.replies;
   const listedReplies = await listAllCommentReplies(runtime, summary);
   const replies = mergeCommentReplies(embeddedReplies, listedReplies)
     .map((reply) => normalizeCommentReply(reply, summary));
@@ -202,7 +208,7 @@ export async function hydrateFeishuDocumentCommentSummary(runtime, summary) {
     text: reply.text || '[空评论]',
     isCurrent: index === currentIndex,
   }));
-  const quote = trimString(response.data?.quote);
+  const quote = trimString(comment.quote);
   return {
     ...summary,
     replyId: currentReply.replyId,
