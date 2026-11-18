@@ -502,6 +502,7 @@
             "chat/automation-confirmations.mjs",
             "chat/router-automation-confirmations.mjs",
             "connectors/feishu/automation-cards.mjs",
+            "automation/monitoring/simulation_capacity.py",
             "docs/automation-trial.md",
             "docs/task-center-v1.md",
             "docs/trigger-control-plane-v0.md"
