@@ -1,4 +1,5 @@
-import { canAccessSession, canReadAutomation, isSessionAdministrator } from './session-access.mjs';
+import { refreshRuntimeHrPolicy } from '../lib/hr-policy.mjs';
+import { canAccessSession, canReadAutomation, isSessionAdministrator, hrBrowserRestricted } from './session-access.mjs';
 /**
  * Shared global WebSocket broadcast.
  * Decoupled from ws.mjs to avoid circular imports.
@@ -32,6 +33,7 @@ export function getClientsMatching(predicate = () => true) {
 
 export async function broadcastMatching(msg, predicate = () => true) {
   if (!wss) return;
+  try { await refreshRuntimeHrPolicy(); } catch { return; }
   let task = null;
   if (msg.type === 'automation_tasks_updated' && msg.taskId) {
     try {
@@ -47,7 +49,7 @@ export async function broadcastMatching(msg, predicate = () => true) {
     try {
       if (msg.sessionId) { if (!await canAccessSession(client._authSession, msg.sessionId)) continue; }
       else if (msg.type === 'automation_tasks_updated') { if (!canReadAutomation(client._authSession, task)) continue; }
-      else if (!isSessionAdministrator(client._authSession) && !['sessions_invalidated', 'people_updated', 'instance_settings_updated', 'build_info'].includes(msg.type)) continue;
+      else if ((!isSessionAdministrator(client._authSession) || hrBrowserRestricted(client._authSession)) && !['sessions_invalidated', 'people_updated', 'instance_settings_updated', 'build_info'].includes(msg.type)) continue;
       client.send(data);
     } catch {}
   }

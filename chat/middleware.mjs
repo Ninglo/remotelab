@@ -1,3 +1,4 @@
+import { refreshRuntimeHrPolicy, runtimeHrPolicy } from '../lib/hr-policy.mjs';
 import { randomBytes } from 'crypto';
 import { isAuthenticated } from '../lib/auth.mjs';
 import { FILE_ASSET_ALLOWED_ORIGINS } from '../lib/config.mjs';
@@ -94,7 +95,11 @@ async function allowsUnauthenticatedConnectorSurfaceRequest(pathname = '') {
  * If not, writes a 401 JSON response for API routes or a 302 redirect for pages.
  */
 export async function requireAuth(req, res) {
-  if (isAuthenticated(req)) return true;
+  if (isAuthenticated(req)) {
+    try { await refreshRuntimeHrPolicy(); }
+    catch { if (runtimeHrPolicy()?.restrictedRuntime) { res.writeHead(503, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'HR policy temporarily unavailable'})); return false; } }
+    return true;
+  }
   const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
   if (
     requestUrl.pathname === '/api/connectors/gmail/google/callback'

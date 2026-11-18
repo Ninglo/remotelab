@@ -1,3 +1,4 @@
+import { refreshRuntimeHrPolicy } from '../../lib/hr-policy.mjs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { canonicalJson, createRecordStore } from '../../lib/durable-records.mjs';
@@ -23,7 +24,7 @@ export async function recordRoleDeliveryContext(runtime, summary, { responseId, 
       eventType: summary.eventType, messageType: summary.messageType, messageId: summary.messageId,
       messageText: summary.messageText, chatId: summary.chatId, chatType: summary.chatType,
       ...(summary.hrRecruitingWorkflow ? {hrRecruitingWorkflow:true} : {}),
-      ...(summary.messageType === 'file' ? {resources: getSummaryFeishuResources(summary)} : {}),
+      ...(getSummaryFeishuResources(summary).length ? {resources:getSummaryFeishuResources(summary)} : {}),
     } };
   await storeFor(runtime).mutate(key(responseId), existing => {
     if (existing) {
@@ -36,6 +37,7 @@ export async function recordRoleDeliveryContext(runtime, summary, { responseId, 
 }
 
 export async function authorizeRoleDelivery(runtime, delivery) {
+  if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
   if (!delivery.responseId) return null;
   const context = await storeFor(runtime).get(key(delivery.responseId));
   if (!context || context.responseId !== delivery.responseId || context.sessionId !== delivery.sessionId

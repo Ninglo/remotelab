@@ -1,6 +1,6 @@
 import {handleOrganizationWork} from './router-organization-work.mjs';
 import { handleAdministratorRoutes } from './router-administrator-routes.mjs';
-import { canAccessSession, canReadSession, isSessionAdministrator, memberRouteAllowed } from './session-access.mjs';
+import { canAccessSession, canReadSession, hrBrowserRestricted, isSessionAdministrator, memberRouteAllowed } from './session-access.mjs';
 import { requireAttachmentAccess } from './session-attachment-access.mjs';
 import { handleSiteLogin } from './router-site-login.mjs';
 import { handleSiteUsageRoutes } from './router-site-usage.mjs';
@@ -109,6 +109,7 @@ import { handleMonitoringResolution } from './monitoring-resolution.mjs';
 import { handleMonitoringEvidence } from './router-monitoring-evidence.mjs';
 import { handleFeatureObservation } from './router-feature-observation.mjs';
 import { handleKnowledgePilot } from './router-knowledge-pilot.mjs';
+import { handleHrAccessRoutes } from './router-hr-access.mjs';
 import { handleProtectedSourceRoutes } from './router-protected-sources.mjs';
 import { handleFeishuWebSettings } from './router-feishu-web-settings.mjs';
 import { handleFeishuPersonalWorkspace } from './router-feishu-personal-workspace.mjs';
@@ -1487,9 +1488,10 @@ export async function handleRequest(req, res) {
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
+  if (await handleHrAccessRoutes({req,res,pathname,authSession,writeJson})) return;
   if (await handlePersonalCodexRoutes({ req, res, pathname, authSession, writeJson })) return;
   res.setHeader('Cache-Control', 'private, no-store');
-  if (!isSessionAdministrator(authSession) && !memberRouteAllowed(req.method, pathname, authSession?.personId)) {
+  if ((!isSessionAdministrator(authSession) || hrBrowserRestricted(authSession)) && !memberRouteAllowed(req.method, pathname, authSession?.personId)) {
     writeJson(res, 403, { error: 'Administrator access required' }); return;
   }
   const scopedSessionId = /^\/api\/sessions\/([^/]+)/.exec(pathname)?.[1];

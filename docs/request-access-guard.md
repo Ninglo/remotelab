@@ -131,3 +131,7 @@ and `node scripts/run-with-clean-instance-env.mjs node --test tests/test-automat
 ### Restricted recruiting intern queries
 
 The authenticated Feishu connector marks its independently configured `recruiting_intern` route with `restrictedRecruiting`. This only prevents the legacy limited-interviewer handler from consuming the query; protected-content and permission-change checks still run. It grants no confidential-HR membership and never admits a request into the general executor. The signed TalentPulse backend performs candidate-responsibility and active-membership checks before selecting materials, and the connector repeats that query at delivery. Do not set this option for general chat or use it as an authorization result.
+
+### Authoritative HR policy
+
+When `hrPolicyRegistry` is configured, the guard resolves the authenticated person against the current business policy. Shared HR browser requests use the fixed job projection; unknown HR users never enter the general executor. HR1 administration is enforced by the structured management endpoint. Legacy exact automation grants and denial receipts remain. See [HR access](platform-skills/hr-access.md) for configuration, failure behavior and migration.

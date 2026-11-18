@@ -1,3 +1,5 @@
+import { runtimeHrPolicy, resolveHrActor, authorizeHr, hrScopes } from '../../lib/hr-policy.mjs';
+import { hrCollaborationReply, isHrCollaborationQuery } from '../../chat/hr-collaboration.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash, createHmac } from 'node:crypto';
 import { join } from 'node:path';
@@ -27,7 +29,7 @@ export function normalizeRoleAccess(value) {
     throw new Error('Invalid fixed recruiting workflow command');
   if (value.hrRecruitingWorkflow !== undefined && typeof value.hrRecruitingWorkflow !== 'boolean')
     throw new Error('Invalid HR recruiting workflow flag');
-  return { hrRecruitingWorkflow: value.hrRecruitingWorkflow === true, ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
+  return { hrPolicy: value.hrPolicy === true, hrRecruitingWorkflow: value.hrRecruitingWorkflow === true, ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
     hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
     interviewerOpenIds: [...value.interviewerOpenIds], recruitingInternOpenIds: [...recruitingInternOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };
@@ -41,6 +43,13 @@ export function feishuAccessRole(policy, summary) {
   const sender = summary?.sender;
   if (!config || summary?.appId !== config.appId || summary?.tenantKey !== config.tenantKey
       || sender?.senderType !== 'user' || sender?.tenantKey !== config.tenantKey) return 'deny';
+  if (config.hrPolicy) {
+    const actor = feishuHrActor(policy, summary), current = runtimeHrPolicy();
+    if (!actor || !current) return 'deny';
+    if (authorizeHr(current.policy, actor, 'hr.read')) return 'hr';
+    if (hrScopes(current.policy, actor, 'jobs.read').length) return 'recruiting_intern';
+    return actor.roles.includes('interviewer') ? 'interviewer' : 'deny';
+  }
   if (config.hrOpenIds.includes(sender.openId)) return 'hr';
   if (config.collaboratorOpenIds?.includes(sender.openId)) return 'collaborator';
   if (config.recruitingInternOpenIds?.includes(sender.openId)) return 'recruiting_intern';
@@ -74,6 +83,14 @@ export function summarizeFeishuCardAction(config, raw, summary) {
       || raw?.header?.app_id && raw.header.app_id !== appId) return null;
   return { ...summary, appId, tenantKey: tenants[0],
     sender: { ...sender, tenantKey: tenants[0] } };
+}
+
+export function feishuHrActor(policy, summary) {
+  const current = runtimeHrPolicy();
+  if (!policy?.roles?.hrPolicy || !current) return null;
+  return resolveHrActor(current.policy, {feishuConnectorAuthenticated:true,
+    sourceContext:{connector:'feishu', sourceRouteId:'muka-hr', appId:summary.appId,
+      tenantKey:summary.tenantKey, chatType:summary.chatType, sender:summary.sender}}, current.instance);
 }
 
 export function requireFullFeishuAccess(policy, summary) {
@@ -129,9 +146,10 @@ function resolvedQuery(result, original) {
 // Full-HR attachment intake is optional; unrelated work stays with the agent.
 export async function queryHrRecruiting(policy, summary, {sourceRouteId, readOnly = false,
   workflowImpl = executeRecruitingWorkflow} = {}) {
+  if (policy.roles.hrPolicy && !authorizeHr(runtimeHrPolicy().policy, feishuHrActor(policy, summary), 'candidate.write')) return null;
   if (feishuAccessRole(policy, summary) !== 'hr' || !policy.roles.hrRecruitingWorkflow
       || !policy.roles.recruitingWorkflowCommand || !['p2p','private'].includes(summary.chatType)
-      || summary.eventType !== 'im.message.receive_v1' || !['text','post','file'].includes(summary.messageType)
+      || summary.eventType !== 'im.message.receive_v1' || !['text','post','file','image'].includes(summary.messageType)
       || (summary.messageText?.length || 0) > 4000) return null;
   const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
   const denied = await evaluateRequestAccess({sessionId: 'recruiting:' + summary.chatId,
@@ -153,7 +171,7 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
   // Normalized rich text and plain text share the restricted backend; arbitrary
   // wording never enters the general executor or grants object access.
   if (!['text', 'post'].includes(summary.messageType)
-      && !(role === 'recruiting_intern' && summary.messageType === 'file' && policy.roles.recruitingWorkflowCommand)) return null;
+      && !(role === 'recruiting_intern' && ['file','image'].includes(summary.messageType) && policy.roles.recruitingWorkflowCommand)) return null;
   const { evaluateRequestAccess } = await import('../../chat/request-access-guard.mjs');
   const denied = await evaluateRequestAccess({ sessionId: 'interviewer:' + summary.chatId,
     text: summary.messageText, options: { requestId: 'feishu:' + summary.messageId,
@@ -161,7 +179,16 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
       sourceContext: { connector: 'feishu', sourceRouteId,
         tenantKey: summary.tenantKey, messageId: summary.messageId, chatType: summary.chatType, sender: summary.sender } } });
   if (denied?.blocked) return denied.reply;
-  if (role === 'recruiting_intern' && policy.roles.recruitingWorkflowCommand) {
+  const actor = feishuHrActor(policy, summary);
+  if (policy.roles.hrPolicy && role === 'recruiting_intern' && ((!actor?.userId && !actor?.roles.includes('interviewer'))
+      || isHrCollaborationQuery(summary.messageText))) {
+    return hrCollaborationReply({endpoint:policy.roles.endpoint, credentialsPath:policy.roles.credentialsPath,
+      appId:policy.roles.appId, tenant:policy.roles.tenantKey}, actor,
+      {text:summary.messageText, options:{requestId:'feishu:'+summary.messageId}}, {fetchImpl, now:now()});
+  }
+  const interviewRead = actor?.roles.includes('interviewer') && ['text','post'].includes(summary.messageType)
+    && !/录入|入库|新建|上传|安排|排期|改期|取消|提交|写入|追加|补充|修改|更改|删除|继续办理/u.test(summary.messageText || '');
+  if (role === 'recruiting_intern' && policy.roles.recruitingWorkflowCommand && !interviewRead) {
     const result = await workflowImpl(policy.roles.recruitingWorkflowCommand, summary, {readOnly});
     if (result.handled) return result.text;
   }

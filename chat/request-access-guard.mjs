@@ -1,3 +1,5 @@
+import { loadConfiguredHrPolicy, resolveHrActor, authorizeHr, hrScopes } from '../lib/hr-policy.mjs';
+import { hrCollaborationReply, isHrCollaborationQuery } from './hr-collaboration.mjs';
 // Optional admission guard. This is a text/identity boundary, not a filesystem sandbox.
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -70,10 +72,12 @@ async function contentOperationDecision(input, config, compiled, stateRoot, now)
     && source.sender?.senderType === 'user' && (config.interview?.actors || []).some(entry =>
       entry.route === source.sourceRouteId && entry.tenant === source.tenantKey && entry.openId === source.sender.openId);
   const business = Boolean(config.interview && isLimitedInterviewQuestion(String(input.text || ''))
-    && (!allowed || businessActor) && !options.restrictedRecruiting && !options.internalOperation && !options.deliveryOnly);
+    && (!allowed || businessActor && !config.hrPolicy) && !options.restrictedRecruiting && !options.internalOperation && !options.deliveryOnly);
   const automation = matchingAutomationGrant(config, input, now);
   const matched = intents.find(intent => !(intent.category === 'bypass'
-    ? operationGranted(config, input, 'bypass') : (allowed && privateChannel) || Boolean(automation)));
+    ? operationGranted(config, input, 'bypass') || (config.hrPolicy && privateChannel
+      && authorizeHr(config.hrPolicy, resolveHrActor(config.hrPolicy, options, config.hrInstance), 'policy.roles'))
+    : (allowed && privateChannel) || Boolean(automation)));
   const denied = Boolean(matched);
   // Every unrelated turn clears the prior target. No conversation-history
   // substring search and no same-person 24-hour taint inheritance.
@@ -116,12 +120,26 @@ export async function evaluateRequestAccess(input, {
   stateRoot = join(CONFIG_DIR, 'request-access-guard'), now = Date.now(),
 } = {}) {
   if (!configPath) return null;
-  let interviewConfig;
+  let interviewConfig, collaborationActor;
+  let config, compiled;
+  try { config = JSON.parse(await readFile(configPath, 'utf8')); compiled = rules(config);
+    try { config.hrPolicy = await loadConfiguredHrPolicy(config); }
+    catch (error) { if (config.hrRestrictedRuntime) throw error; config.hrPolicyUnavailable = true; } }
+  catch { return persistDenial(input, {blocked:true,category:'protected',policyId:'guard-unavailable',reason:'policy_unavailable',
+    reply:'资料访问检查暂时不可用，本条请求未交给模型。请稍后重试。'}, stateRoot, now); }
   const decision = await queue(async () => {
-    let config, compiled;
-    try { config = JSON.parse(await readFile(configPath, 'utf8')); compiled = rules(config); }
-    catch { return persistDenial(input, { blocked: true, category: 'protected', policyId: 'guard-unavailable', reason: 'policy_unavailable',
-      reply: '资料访问检查暂时不可用，本条请求未交给模型。请稍后重试。' }, stateRoot, now); }
+    if (config.hrPolicy && !input.options?.internalOperation && !input.options?.deliveryOnly
+        && !matchingAutomationGrant(config, input, now)) {
+      const actor = resolveHrActor(config.hrPolicy, input.options, config.hrInstance);
+      const isJobs = isHrCollaborationQuery(input.text);
+      if ((actor?.shared || isJobs && !authorizeHr(config.hrPolicy, actor, 'hr.read'))
+          && hrScopes(config.hrPolicy, actor, 'jobs.read').length) {
+        collaborationActor = actor;
+        return {blocked:true,business:true,policyId:config.hrPolicy.version,collaboration:true};
+      }
+      if (config.hrRestrictedRuntime && !actor) return persistDenial(input, {blocked:true, category:'protected',
+        policyId:config.hrPolicy.version, reason:'unregistered_subject', reply:'当前身份尚未开通当麻使用权限。'}, stateRoot, now);
+    }
     if (config.version === 2) {
       if (String(input.text || '').length > 65536) return persistDenial(input, { blocked: true,
         category: 'protected', policyId: config.policyId, reason: 'inspection_limit', reply: '消息过长，请拆分后重新发送。' }, stateRoot, now);
@@ -190,6 +208,12 @@ export async function evaluateRequestAccess(input, {
       reason: privateOnly ? 'private_channel_required' : 'restricted_request',
       reply: privateOnly ? '这类内部资料不能发到当前渠道，请在已核验的私聊中查询。' : ACCESS_REFUSAL }, stateRoot, now);
   });
+  if (decision?.collaboration) {
+    let reply;
+    try { reply = await hrCollaborationReply(config.collaboration, collaborationActor, input, {now}); }
+    catch { reply = '岗位查询暂时不可用，请稍后重试；无需重新授权。'; }
+    return {...decision, reply};
+  }
   if (!decision?.business) return decision;
   // Network work must not hold the short local decision-commit queue.
   let reply;

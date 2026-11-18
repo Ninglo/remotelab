@@ -1429,3 +1429,5 @@ fall through to a second model execution on the same input.
 ### Pool B reset-card approvals
 
 Pool B `reset-credit` requests use the group connector as the human approval boundary. The connector accepts `批准 Reset <request-id>` or `拒绝 Reset <request-id>` only from the requesting person in the same chat and topic, then records the idempotent execution receipt. See [Pool B 重置卡审批](pool-b-reset-approval.md).
+
+For a configured HR service, `accessPolicy.roles.hrPolicy` replaces the connector role lists with the current authoritative business policy. Existing app/tenant validation remains. This does not alter Feishu app availability or OAuth; verify those separately when onboarding a person. See [HR access](platform-skills/hr-access.md).

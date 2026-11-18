@@ -1,3 +1,4 @@
+import { runtimeHrPolicy, resolveHrActor, authorizeHr } from '../lib/hr-policy.mjs';
 import { findIdentity, getAuthReadSnapshot, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
 
@@ -15,8 +16,24 @@ export function sessionCreatorIdentity(session) {
   return session.initiatedByIdentityId || '';
 }
 
+export function hrBrowserRestricted(actor) {
+  const current = runtimeHrPolicy();
+  if (!current?.restrictedRuntime || actor?.authKind === 'service') return false;
+  const subject = resolveHrActor(current.policy, {viewPersonId:actor?.personId, initiatedByIdentityId:actor?.identityId}, current.instance);
+  return !authorizeHr(current.policy, subject, 'hr.read');
+}
+
 export function canReadSession(actor, session, document = getAuthReadSnapshot()) {
   if (!actor || !session) return false;
+  if (hrBrowserRestricted(actor)) {
+    const current = runtimeHrPolicy();
+    const subject = resolveHrActor(current.policy, {viewPersonId:actor.personId, initiatedByIdentityId:actor.identityId}, current.instance);
+    // Pre-cutover shared sessions may already contain protected history.
+    if (!subject?.shared || !Number.isFinite(Date.parse(current.enforceAfter)) || !Number.isFinite(Date.parse(session.createdAt))
+        || Date.parse(session.createdAt) < Date.parse(current.enforceAfter)
+        || sessionCreatorIdentity(session) !== actor.identityId) return false;
+    return true;
+  }
   if (isSessionAdministrator(actor, document)) return true;
   const identityId = sessionCreatorIdentity(session);
   return Boolean(identityId && identityId !== SYSTEM_IDENTITY_ID && actor.personId
@@ -29,7 +46,7 @@ export function sessionAccessFilter(actor, document = getAuthReadSnapshot()) {
 
 export async function canAccessSession(actor, id) {
   if (!actor || !id) return false;
-  return isSessionAdministrator(actor) || canReadSession(actor, await findSessionMeta(id));
+  return (!hrBrowserRestricted(actor) && isSessionAdministrator(actor)) || canReadSession(actor, await findSessionMeta(id));
 }
 
 export function canReadAutomation(actor, task, document = getAuthReadSnapshot()) {

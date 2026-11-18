@@ -1,3 +1,4 @@
+import { refreshRuntimeHrPolicy, runtimeHrPolicy, resolveHrActor, hrActorNotice } from '../lib/hr-policy.mjs';
 import { evaluateRequestAccess } from './request-access-guard.mjs';
 import { captureCodexAccountPolicy, usesCodexAccountPool } from './codex-account-context.mjs';
 import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
@@ -1587,6 +1588,11 @@ async function buildPromptPackage(sessionId, session, text, previousTool, effect
       turnSections.push(`${hasResume ? 'Current user message' : 'User message'}:\n${text}`);
     }
 
+    const hrRuntime = await refreshRuntimeHrPolicy().catch(() => runtimeHrPolicy());
+    if (hrRuntime && !options.internalOperation && !options.deliveryOnly && !options.automationAttribution) {
+      const hrActor = resolveHrActor(hrRuntime.policy, options, hrRuntime.instance);
+      turnSections.push('<private>\n' + hrActorNotice(hrRuntime.policy, hrActor) + '\n</private>');
+    }
     actualText = turnSections.join('\n\n---\n\n');
 
     if (!hasResume) {

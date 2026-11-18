@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { refreshRuntimeHrPolicy } from '../lib/hr-policy.mjs';
 import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview, queryHrRecruiting,
   restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
 import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
@@ -1940,6 +1941,7 @@ async function handleFeishuReactionFeedback(runtime, summary, helpers = {}) {
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
+  if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
   if (role === 'deny') return { blocked: true };
   if (['interviewer', 'recruiting_intern'].includes(role)) {

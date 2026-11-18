@@ -63,6 +63,7 @@ Usage:
   remotelab agenda                  Manage the instance calendar feed
   remotelab memory                  Inspect and maintain scoped people profiles and the Agent handbook
   remotelab work                    Register work, find related results and prepare reference suggestions
+  remotelab hr-access               Read or manage the current HR policy with verified personal attribution
   remotelab source-read             Read an explicitly granted snapshot with durable local audit
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring automated tasks
@@ -77,6 +78,12 @@ Usage:
 }
 
 switch (command) {
+  case 'hr-access': {
+    const { runHrAccessCommand } = await import(scriptPath('lib/hr-access-command.mjs'));
+    try { process.exitCode = await runHrAccessCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
+    break;
+  }
   case 'response-time': {
     const { runResponseTimeCommand } = await import(scriptPath('lib/response-time-command.mjs'));
     try { process.exitCode = await runResponseTimeCommand(args); }

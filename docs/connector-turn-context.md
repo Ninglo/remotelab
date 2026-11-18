@@ -480,3 +480,5 @@ directory remains available. Neither a hit nor recency authorizes transfer;
 the Harness still checks originals and existing consent. No classifier, task,
 message or background reader is added. Project and Person memory bodies remain
 on-demand reads behind their own pointers.
+
+HR-enabled connectors refresh the canonical business policy at admission and delivery. Each original human turn receives its resolved capability snapshot; automation attribution retains its separately scoped grant. Role delivery contexts preserve image/file resources as well as text. WebSocket pushes apply current session visibility. See [HR access](platform-skills/hr-access.md).

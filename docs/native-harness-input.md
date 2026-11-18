@@ -441,3 +441,5 @@ Pi receives RemoteLab developer instructions through its native appended system
 prompt, including the Quick prompt for Auto Sessions assigned to Pi.
 
 New Pi requests using the OpenAI Codex provider use the existing [Codex account pool](codex-session-routing.md#pi-with-openai).
+
+`remotelab hr-access` uses the current active accepted Run for HR policy management and personal interview feedback. The HTTP service retrieves the original sender from its request store, ignoring caller-supplied actor claims. See [HR access](platform-skills/hr-access.md) for the payload contract.
