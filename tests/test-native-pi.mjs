@@ -21,11 +21,13 @@ function harness(options = {}) {
 }
 
 test('Pi sends native steering before current tools finish and waits for provider drain', async () => {
-  const h = harness({ model: 'openai-codex/gpt-6.1-sol', effort: 'high', piSessionId: 'native-session' });
+  const h = harness({ model: 'openai-codex/gpt-6.1-sol', effort: 'high', piSessionId: 'native-session',
+    developerInstructions: 'Prefer a brief reply for this Quick Session.' });
   assert.deepEqual(h.driver.args.slice(0, 5), ['--mode', 'rpc', '--provider', 'openai-codex', '--approve']);
   assert.ok(h.driver.args.includes('--session-id'));
   assert.equal(h.driver.args[h.driver.args.indexOf('--model') + 1], 'gpt-6.1-sol');
   assert.equal(h.driver.args[h.driver.args.indexOf('--thinking') + 1], 'high');
+  assert.match(h.driver.args[h.driver.args.indexOf('--append-system-prompt') + 1], /Prefer a brief reply/);
   const start = h.driver.start('first');
   h.respond(h.sent[0]);
   h.driver.handle({ type: 'agent_start' });

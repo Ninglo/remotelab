@@ -11,6 +11,7 @@ import {
   resolveRuntimeProfile,
 } from '../lib/runtime-profile.mjs';
 import { JEV_AUTO_MODEL_ID, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
+import { applyRuntimeExperiment } from './runtime-experiments.mjs';
 import { clampReasoningEffort } from '../lib/reasoning-effort-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -61,11 +62,11 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {},
   }
   if (profile.tool === 'codex' && profile.model === JEV_AUTO_MODEL_ID) {
     const route = await resolveJevAutoRoute(options.autoRoutingText);
-    return {
+    return applyRuntimeExperiment({
       ...route,
       model: normalizeRuntimeModelForTool(route.tool, route.model),
       effort: clampReasoningEffort(route.effort),
-    };
+    }, session, options);
   }
   return {
     ...profile,

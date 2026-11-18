@@ -327,10 +327,13 @@
           "name": "Auto 路由与 Quick 会话",
           "purpose": "由已配置的路由为新会话选择执行档位，或用固定的 Quick 模式回答简短问题。",
           "entry": "新会话选择 Auto 或 Quick；设置 → 会话 → Auto 路由；飞书 /quick。",
-          "condition": "Quick 在创建时固定运行方式。Auto 的档位和默认值按实例配置核对，不能把某个实例的设置推广到所有人。",
+          "condition": "Quick 在创建时固定运行方式。Auto 可在分档后按实例配置，仅对指定创建人进行 Session 级运行实验。",
           "example": "新建一个 Quick 会话，解释这段报错。",
           "sources": [
             "lib/jev-auto-router.mjs",
+            "chat/runtime-experiments.mjs",
+            "chat/session-runtime-selection.mjs",
+            "docs/setup.md",
             "docs/quick-sessions.md",
             "static/chat/auto-routing-settings.js"
           ],

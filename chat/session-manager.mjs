@@ -3673,9 +3673,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   // routing or switch models just because the reply is a short number.
   options = await captureMessageRoutingOptions(session, options,
     priorRequest || routingOrigin || (options.nativeQuestionId ? activeRequest : null));
-  const runtimeSelection = options.nativeQuestionId && (priorRequest || activeRequest)?.runtimeSelection
-    ? { ...(priorRequest || activeRequest).runtimeSelection }
-    : await resolveSessionRuntimeSelection(session, {
+  const runtimeSelection = priorRequest?.runtimeSelection
+    || (options.nativeQuestionId ? activeRequest?.runtimeSelection : null)
+    || await resolveSessionRuntimeSelection(session, {
       ...options,
       autoRoutingText: savedImages.length
         ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
@@ -3936,7 +3936,8 @@ async function prepareRequestRunOnce(record) {
     session = await enrichSessionMeta(touchedSession);
   }
 
-  if (effectiveTool !== session.tool) {
+  const experimentRoute = options.autoRoutingReceipt?.experiment;
+  if (effectiveTool !== session.tool && !experimentRoute) {
     const updatedToolSession = await updateSessionTool(sessionId, effectiveTool);
     if (updatedToolSession) {
       session = updatedToolSession;
@@ -4114,7 +4115,8 @@ async function prepareRequestRunOnce(record) {
 
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
-    if (!options.internalOperation && options.recordUserMessage !== false) {
+    if (!options.internalOperation && (options.recordUserMessage !== false || experimentRoute)) {
+      if (experimentRoute) draft.tool = effectiveTool;
       if (!options.autoRoutingReceipt && draft.autoRouting
         && (draft.tool !== options.tool || draft.model !== options.model || draft.effort !== options.effort)) {
         delete draft.autoRouting;
@@ -4125,9 +4127,8 @@ async function prepareRequestRunOnce(record) {
       draft.thinking = options.thinking === true;
       if (options.autoRoutingReceipt) {
         draft.autoRouting = options.autoRoutingReceipt;
-        if (options.autoRoutingReceipt.status === 'routed' && options.autoRoutingReceipt.decision?.tier) {
-          draft.runtimeTier = options.autoRoutingReceipt.decision.tier;
-        }
+        const tier = options.autoRoutingReceipt.decision?.tier || experimentRoute?.tier;
+        if (tier) draft.runtimeTier = tier;
       }
     }
     draft.updatedAt = nowIso();

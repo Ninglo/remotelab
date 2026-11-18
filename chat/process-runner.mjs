@@ -78,6 +78,7 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       provider: route.provider,
       model: route.model,
       thinking: options.effort,
+      developerInstructions: options.developerInstructions,
     });
     return {
       adapter,

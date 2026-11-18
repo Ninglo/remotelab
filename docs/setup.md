@@ -149,6 +149,45 @@ fields keep their tier defaults. The persisted routing receipt contains the
 chosen tier, concrete route, confidence summary, latency, and fallback reason;
 it never contains the API key or user prompt.
 
+### Runtime experiments after Auto routing
+
+An operator can put `runtime-experiments.json` in the instance configuration
+directory. RemoteLab reads it on eligible new Auto Session admissions. Use the
+verified Person ID, not a display name. The first enabled rule matching the
+person and the resulting tier applies. Omit `tiers` to cover all five tiers,
+including `quality` when Auto falls back. Set `enabled` to `false` to stop new
+assignments without changing existing Sessions.
+
+```json
+{
+ "experiments": [
+   {
+     "id": "pi-harness-v1",
+     "enabled": true,
+     "personIds": ["person_example"],
+     "probability": 0.5,
+     "override": { "tool": "pi" }
+   }
+ ]
+}
+```
+
+The Session ID determines its arm. `override` accepts any combination of
+`tool`, `model`, and `effort`; omitted fields keep their tier values. On Pi,
+an unqualified GPT model resolves through `openai-codex`. The first accepted
+request freezes the assignment, and subsequent turns follow the Session's
+saved runtime. Existing Sessions, explicitly selected runtimes, fixed
+`/quick` Sessions, shared group mainlines, and automated inputs bypass the
+experiment. A person must both own the Session and send its first input.
+
+The request and first Run retain `autoRoutingReceipt.experiment` with the
+experiment ID, tier, arm, probability, baseline and outcome. The receipt's
+`route` is the runtime actually selected. Unavailable combinations keep the
+baseline and record the reason. Pi with OpenAI requires an instance login in
+**Settings → Connections → Pi · OpenAI login**, separate from Codex account
+routing. To compare completed runs, exclude assignments whose status is
+`unavailable` and verify the actual Harness and model in the Run.
+
 ## [HUMAN] checkpoints
 
 1. Cloudflare authentication via browser if `cloudflared tunnel login` requires it (Cloudflare mode only).

@@ -231,6 +231,8 @@ export function buildPiArgs(prompt, options = {}) {
   if (model) args.push('--model', model);
   const thinking = clampReasoningEffort(options.thinking);
   if (thinking) args.push('--thinking', thinking);
+  const instructions = typeof options.developerInstructions === 'string' ? options.developerInstructions.trim() : '';
+  if (instructions) args.push('--append-system-prompt', `RemoteLab developer instructions:\n${instructions}`);
   args.push(String(prompt || '').replaceAll('\0', ''));
   return args;
 }
