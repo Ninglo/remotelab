@@ -59,6 +59,8 @@ try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
   const result = await getModelsForTool('codex');
   const hardcodedModelIds = [
+    'gpt-6.2-sol',
+    'gpt-6.2-astra',
     'gpt-6.1-sol',
     'gpt-6-sol',
     'gpt-6-luna',
@@ -76,7 +78,7 @@ try {
   );
   assert.deepEqual(
     result.models.slice(0, 6).map((model) => model.id),
-    ['auto', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol'],
+    ['auto', 'gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-sol'],
     'Codex should expose Jev auto first followed by the current model catalog',
   );
   assert.deepEqual(result.models[0].reasoning, { kind: 'none', label: 'Thinking' });

@@ -20,13 +20,17 @@ const ids = CODEX_MODEL_CATALOG.map((model) => `openai-codex/${model.id}`);
 
 try {
   const baselineCosts = Object.fromEntries(getPiBaselineModels().map((model) => [model.id, model.cost]));
-  assert.deepEqual(baselineCosts['gpt-6.1-sol'], {
+  assert.deepEqual(baselineCosts['gpt-6.2-sol'], {
     input: 2,
     output: 10,
     cacheRead: 0.1,
     cacheWrite: 2.5,
     tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
-  }, 'GPT-6.1 Sol should expose published Standard and long-context rates');
+  }, 'GPT-6.2 Sol should expose published Standard and long-context rates');
+  assert.deepEqual(baselineCosts['gpt-6.2-astra'], {
+    input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10,
+    tiers: [{ inputTokensAbove: 272000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 }],
+  }, 'GPT-6.2 Astra uses its own published prices, not the fallback model');
   assert.deepEqual(
     [baselineCosts['gpt-6-sol'], baselineCosts['gpt-6-luna']],
     [
@@ -157,7 +161,7 @@ if (process.argv.includes('--list-models')) {
   assert(found.models.some((model) => model.id === 'deepseek/deepseek-chat'));
   assert(!found.models.some((model) => model.provider === 'openai'));
   assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol', 'an explicit current Pi route should remain selected');
-  assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
+  assert.equal(found.models[0].id, 'openai-codex/gpt-6.2-sol');
   assert.equal(found.models[0].providerDefault, true);
   assert.equal(found.models[0].reasoning.default, 'low');
   assert.equal(found.models.find((model) => model.id === 'openai-codex/gpt-6-sol').providerDefault, undefined);

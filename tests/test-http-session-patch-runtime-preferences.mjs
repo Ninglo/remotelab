@@ -71,6 +71,7 @@ function setupTempHome() {
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
       'test-session': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner' },
+      'test-service': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner', authKind: 'service' },
     }, null, 2),
     'utf8',
   );
@@ -137,7 +138,7 @@ try {
     assert.equal(quickCreate.status, 201, 'Quick Session creation should succeed for owners');
     assert.equal(quickCreate.json.session?.executionProfile, 'quick');
     assert.equal(quickCreate.json.session?.tool, 'codex', 'Quick Session should pin its single Harness');
-    assert.equal(quickCreate.json.session?.model, 'gpt-6.1-sol', 'Quick Session should pin its single model');
+    assert.equal(quickCreate.json.session?.model, 'gpt-6.2-sol', 'Quick Session should pin its single model');
     assert.equal(quickCreate.json.session?.effort, 'low', 'Quick Session should pin its single effort');
     assert.equal(quickCreate.json.session?.thinking, false, 'Quick Session should disable the legacy thinking flag');
     assert.equal(quickCreate.json.session?.systemPrompt, undefined, 'Quick Session should not apply a custom system prompt');
@@ -223,7 +224,7 @@ try {
     );
     const autoSettings = await request(port, 'GET', '/api/auto-routing');
     assert.equal(autoSettings.status, 200);
-    assert.equal(autoSettings.json.settings?.tiers?.quick?.model, 'gpt-6.1-sol');
+    assert.equal(autoSettings.json.settings?.tiers?.quick?.model, 'gpt-6.2-sol');
     const savedAutoSettings = await request(port, 'PATCH', '/api/auto-routing', {
       tiers: { quick: { model: 'gpt-6-sol', effort: 'low' } },
       quickPrompt: 'Answer briefly. Use tools when needed.',
@@ -239,7 +240,7 @@ try {
     const sotaPreset = await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'sota' });
     assert.equal(sotaPreset.status, 200);
     assert.equal(sotaPreset.json.session?.runtimeTier, 'sota');
-    assert.equal(sotaPreset.json.session?.model, 'gpt-6-astra');
+    assert.equal(sotaPreset.json.session?.model, 'gpt-6.2-astra');
     assert.equal(sotaPreset.json.session?.effort, 'xhigh');
     assert.equal(
       (await request(port, 'POST', '/api/runtime-selection', {
@@ -334,7 +335,7 @@ try {
     assert.equal(staleModelPatch.status, 200, 'PATCH should accept stale Codex models by upgrading them');
     assert.equal(
       staleModelPatch.json.session?.model,
-      'gpt-6-astra',
+      'gpt-6.2-sol',
       'stale Codex session preferences should upgrade to the product default model',
     );
     assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');
@@ -346,7 +347,7 @@ try {
       effort: 'xhigh',
       name: 'Creation snapshot',
       externalTriggerId: 'runtime-snapshot-test',
-    });
+    }, { Cookie: 'session_token=test-service' });
     assert.equal(createdWithRuntime.status, 201);
     assert.equal(createdWithRuntime.json.session?.model, 'gpt-5.6-sol', 'new Session creation should persist its runtime snapshot');
     assert.equal(createdWithRuntime.json.session?.effort, 'xhigh');
@@ -357,7 +358,7 @@ try {
       effort: 'low',
       name: 'Creation snapshot retry',
       externalTriggerId: 'runtime-snapshot-test',
-    });
+    }, { Cookie: 'session_token=test-service' });
     assert.equal(reusedWithDifferentRuntime.status, 201);
     assert.equal(reusedWithDifferentRuntime.json.session?.id, createdWithRuntime.json.session?.id);
     assert.equal(reusedWithDifferentRuntime.json.session?.model, 'gpt-5.6-sol', 'reusing a Session must not silently replace its runtime snapshot');
@@ -387,7 +388,7 @@ try {
       folder: repoRoot, tool: 'codex', name: 'Feishu progress policy',
       conversation: { connector: 'feishu', sourceRouteId: 'policy-bot',
         target: { chatId: 'policy-chat', chatType: 'p2p', conversationKind: 'main' } },
-    })).json.session;
+    }, { Cookie: 'session_token=test-service' })).json.session;
     const policyPath = `/api/sessions/${progressSession.id}/progress-policy`;
     const setPolicy = (mode, expectedRevision, changeId) => request(port, 'POST', policyPath, { mode, expectedRevision, changeId });
     assert.equal((await setPolicy('card', 0, 'no-card')).status, 400, 'do not hide progress when no card is enabled');

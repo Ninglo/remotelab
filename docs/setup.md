@@ -77,20 +77,20 @@ dropdowns showing the concrete model and effort. Later messages keep that
 selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
-- `quick`: GPT-6.1 Sol with `low` reasoning and a short-answer developer prompt
+- `quick`: GPT-6.2 Sol with `low` reasoning and a short-answer developer prompt
   for focused, low-risk requests that clearly prioritize fast turnaround.
   Straightforward reads or lookups can use tools; urgency does not justify
   less reasoning for complex or consequential work.
-- `balanced`: GPT-6 Astra with `medium` reasoning, retained for an explicit
+- `balanced`: GPT-6.2 Sol with `medium` reasoning, retained for an explicit
   medium-reasoning preference. Routine work does not automatically use it.
-- `quality`: GPT-6 Astra with `xhigh` reasoning is the default for the vast
+- `quality`: GPT-6.2 Sol with `xhigh` reasoning is the default for the vast
   majority of requests, including routine tasks, research, ordinary development,
   debugging, and tool use. A task seeming easy is not a reason to downgrade.
-- `sota`: GPT-6 Astra with `xhigh` reasoning for large engineering projects
+- `sota`: GPT-6.2 Astra with `xhigh` reasoning for large engineering projects
   requiring serious architecture design or implementation, coupled components,
   and difficult system tradeoffs. Jev can choose it from the task itself without
   an explicit upgrade request. Explicit strongest/SOTA requests also qualify;
-  quality and sota currently share the same Astra/xhigh profile.
+  quality uses Sol/xhigh and sota uses Astra/xhigh.
 - `economy`: GPT-6 Luna with `low` reasoning is exceptional, used only for an
   explicit Luna or absolute-lowest-cost preference on a trivial, low-risk task.
   Asking for speed selects Quick when appropriate.
@@ -103,8 +103,15 @@ An Auto-selected Quick Session can still use tools when a later request needs
 them. Legacy Quick Sessions and Feishu `/quick` remain compatible, but the Web
 new-session switch no longer exposes Quick as a separate mode.
 
-GPT-6 Astra and GPT-6 Luna availability can differ by ChatGPT workspace and Codex CLI
-version. Before enabling these mappings on an existing instance, update Codex,
+Both 6.2 models are included in the Codex and Pi baseline catalogs before a
+native catalog refresh. Default context limits match Codex: Sol 500K, Astra 272K.
+Standard API prices are token estimates, not subscription bills.
+Sources: [Codex models](https://developers.openai.com/codex/models),
+[API pricing](https://developers.openai.com/api/docs/pricing).
+
+GPT-6.2 Sol and GPT-6.2 Astra availability can differ by ChatGPT workspace and Codex CLI
+version. Codex CLI 0.169.1 has been verified with both models; 0.159.2 rejected
+them as unavailable on the same account. Before enabling these mappings, update Codex,
 refresh the native model catalog, and run one real low-effort canary for each
 model. Do not switch the tier file when either canary is rejected.
 
@@ -127,10 +134,10 @@ JSON file. The file can also be edited directly:
 
 ```json
 {
-  "quick": { "model": "gpt-6.1-sol", "effort": "low" },
-  "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "quality": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "balanced": { "model": "gpt-6-astra", "effort": "medium" },
+  "quick": { "model": "gpt-6.2-sol", "effort": "low" },
+  "sota": { "model": "gpt-6.2-astra", "effort": "xhigh" },
+  "quality": { "model": "gpt-6.2-sol", "effort": "xhigh" },
+  "balanced": { "model": "gpt-6.2-sol", "effort": "medium" },
   "economy": { "model": "gpt-6-luna", "effort": "low" },
   "quickPrompt": "Answer directly and concisely in the user's language..."
 }

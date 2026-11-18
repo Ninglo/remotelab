@@ -130,9 +130,9 @@ assert.deepEqual(
       provider: 'openai-codex',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       control: '',
-      default: 'low',
-      defaultEffort: 'low',
-      providerDefault: true,
+      default: 'medium',
+      defaultEffort: 'medium',
+      providerDefault: false,
       kind: 'enum',
     },
     {
