@@ -44,6 +44,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   let settlementRevision = 0;
   let fatalError = null;
   let submissions = 0;
+  let externalInputSubmitted = false;
   let closeTimer;
   let killTimer;
   let phase = preflight ? 'preflight' : 'main';
@@ -201,6 +202,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
           const previousQuestions = input.supersedeQuestions && !input.referenceOnly ? await questions.snapshot() : [];
           if (input.continuationOnly && nativeResult) throw Object.assign(
             new Error('Original execution ended; continuation cannot start another turn'), { code: 'NATIVE_REJECTED' });
+          externalInputSubmitted = true;
           const receipt = await driver.submit(input);
           await observeReceipt(input, receipt);
           if (receipt?.accepted === true && previousQuestions.length) await questions.supersede(previousQuestions, input.id);
@@ -234,6 +236,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     const failed = fatalError || writeError || (nativeResult?.status === 'failed' ? new Error(nativeResult.error?.message || nativeResult.error || 'Native Harness turn failed') : null);
     return { code: failed ? 1 : nativeResult ? 0 : (exit.code ?? 1), signal: nativeResult ? null : exit.signal,
       error: failed || (!nativeResult ? new Error('Native Harness exited before reporting completion') : null), stderrText: stderrLines.join('\n'),
+      externalInputSubmitted,
       ...(preflightResult ? { preflight: preflightResult } : {}) };
   } finally {
     clearTimeout(closeTimer); clearTimeout(killTimer);

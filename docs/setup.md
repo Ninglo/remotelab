@@ -183,9 +183,10 @@ experiment. A person must both own the Session and send its first input.
 The request and first Run retain `autoRoutingReceipt.experiment` with the
 experiment ID, tier, arm, probability, baseline and outcome. The receipt's
 `route` is the runtime actually selected. Unavailable combinations keep the
-baseline and record the reason. Pi with OpenAI requires an instance login in
-**Settings → Connections → Pi · OpenAI login**, separate from Codex account
-routing. To compare completed runs, exclude assignments whose status is
+baseline and record the reason. Pi with OpenAI uses the same account pool
+as Codex for new requests. The verified caller's personal account takes
+precedence, with shared fallback on confirmed exhaustion. Pi requires no
+separate login. See [account allocation](codex-session-routing.md#pi-with-openai). To compare completed runs, exclude assignments whose status is
 `unavailable` and verify the actual Harness and model in the Run.
 
 ## [HUMAN] checkpoints

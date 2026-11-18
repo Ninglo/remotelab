@@ -63,6 +63,23 @@ it does not ask for approval. Future policy work should decide whether users can
 disable fallback, whether shared consumption needs a budget, and who receives
 that usage attribution. No budget or future permission gate is implied today.
 
+## Pi with OpenAI
+
+New requests using the Pi Harness and the `openai-codex` provider take a lease
+from the same Codex account pool as the Codex Harness. Account ownership,
+personal quota fallback, shared priority and concurrency are governed by the
+same policy. Other Pi providers keep their own credentials.
+
+The detached runner gives Pi only the selected account's current access token
+in a private runtime directory. Codex refreshes its own stored login when
+needed. Pi uses the native conversation directory across runs and the built-in
+OpenAI provider configuration, with extension discovery and project provider
+overrides disabled for pooled credentials. The runner removes its temporary
+credential on exit. A quota failure updates the pool. Pi can switch accounts
+within a run before it has emitted an answer, used tools, or received a
+follow-up. When work may have happened, the next request can continue the saved
+Pi conversation using a new lease.
+
 ## Codex tool bridge
 
 Every native Codex App Server run receives a session-scoped stdio MCP server named `remotelab`. The server starts from the trusted RemoteLab checkout and inherits the runner's `REMOTELAB_SESSION_ID`, service authentication and local-helper base URL; the model never receives a service token or a second session identifier.

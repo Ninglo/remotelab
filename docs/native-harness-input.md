@@ -439,3 +439,5 @@ been produced. Pool exhaustion ends the attempt with an explicit failure.
 
 Pi receives RemoteLab developer instructions through its native appended system
 prompt, including the Quick prompt for Auto Sessions assigned to Pi.
+
+New Pi requests using the OpenAI Codex provider use the existing [Codex account pool](codex-session-routing.md#pi-with-openai).

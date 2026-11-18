@@ -13,6 +13,7 @@ export function createPiDriver({ send, onEvent = () => {}, onSettled = () => {},
     model: route.model,
     thinking: options.effort,
     developerInstructions: options.developerInstructions,
+    pooledCodex: options.pooledCodex,
   }).slice(0, -1);
   args[1] = 'rpc';
   const pending = new Map();

@@ -1,5 +1,5 @@
 import { evaluateRequestAccess } from './request-access-guard.mjs';
-import { captureCodexAccountPolicy } from './codex-account-context.mjs';
+import { captureCodexAccountPolicy, usesCodexAccountPool } from './codex-account-context.mjs';
 import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
 import { applyRecordingIntakePolicy } from '../lib/recording/intake-policy.mjs';
@@ -3681,7 +3681,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
         : text?.trim(),
     }, activeNative ? activeRequest.runtimeSelection : null);
-  if (!priorRequest && (await getToolDefinitionAsync(runtimeSelection.tool))?.runtimeFamily !== 'codex-json') {
+  if (!priorRequest && !usesCodexAccountPool(
+    (await getToolDefinitionAsync(runtimeSelection.tool))?.runtimeFamily, runtimeSelection.model,
+  )) {
     options.codexAccountPolicy = null;
   }
   const workboardPeople = await loadWorkboardOptIns();

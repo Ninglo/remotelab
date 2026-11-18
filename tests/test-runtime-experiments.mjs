@@ -16,7 +16,7 @@ const route = { ...baseline, thinking: false,
   autoRoutingReceipt: { status: 'routed', decision: { tier: 'sota' }, route: baseline } };
 const rule = { id: 'test-v1', enabled: true, personIds: [personId], probability: 0.5, override: { tool: 'pi' } };
 const tools = {
-  read: async () => [rule], getDocument: () => document, hasPiLogin: async () => true,
+  read: async () => [rule], getDocument: () => document,
   loadTool: async () => ({ available: true }),
   loadModels: async () => ({ models: [{ id: 'openai-codex/gpt-6.2-astra', reasoning: { levels: ['low', 'xhigh'] } }] }),
 };
@@ -70,10 +70,10 @@ test('tier filters can change model and effort, including the quality fallback',
   assert.throws(() => validateRuntimeExperiments({ experiments: [{ ...rule, personIds: [] }] }));
 });
 
-test('unavailable OpenAI login or unsupported effort retains the baseline and labels the receipt', async () => {
+test('an unavailable tool or unsupported effort retains the baseline and labels the receipt', async () => {
   const read = async () => [{ ...rule, probability: 1 }];
   const scenarios = [
-    [{ hasPiLogin: async () => false }, 'pi_openai_login_required'],
+    [{ loadTool: async () => ({ available: false }) }, 'tool_unavailable'],
     [{ loadModels: async () => ({ models: [{ id: 'openai-codex/gpt-6.2-astra', reasoning: { levels: ['low'] } }] }) }, 'effort_unavailable'],
   ];
   for (const [changes, reason] of scenarios) {

@@ -26,6 +26,9 @@ import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
 import { codexAccounts, classifyCodexAccountFailure } from '../lib/codex-accounts.mjs';
+import { usesCodexAccountPool } from './codex-account-context.mjs';
+import { resolvePiModelRoute } from './pi-models.mjs';
+import { preparePooledPiRuntime } from './pi-pooled-runtime.mjs';
 import { isCodexMissingRolloutFailure } from './provider-runtime-errors.mjs';
 import {
   acquireProviderRuntimeLease,
@@ -352,8 +355,14 @@ async function main() {
     executionProfile: manifest.options?.executionProfile,
     codexConfigOverrides: manifest.options?.codexConfigOverrides,
   };
+  const declaredRuntime = manifest.runtimeFamily || (manifest.tool === 'pi' ? 'pi-json' : '');
+  const pooledPi = declaredRuntime === 'pi-json' && Boolean(manifest.codexAccountPolicy)
+    && usesCodexAccountPool(declaredRuntime, invocationOptions.model);
+  const accountModel = pooledPi ? resolvePiModelRoute(invocationOptions.model).model : invocationOptions.model || '';
+  invocationOptions.pooledCodex = pooledPi;
   const initialInvocation = await createToolInvocation(manifest.tool, prompt, invocationOptions);
   const spawnEnv = await cleanEnv(manifest.tool, manifest, initialInvocation);
+  const piAgentDir = spawnEnv.PI_CODING_AGENT_DIR;
   const sessionStartPreflightPolicy = manifest.inputMode === 'native' && manifest.options?.skipSessionStartPreflight !== true
     ? await readSessionStartPreflightPolicy({
       tool: manifest.tool,
@@ -512,7 +521,9 @@ async function main() {
   const fileChangeCapture = createCodexFileChangeCapture({ startedAt: captureRun.startedAt || captureRun.createdAt });
   let lastCodexFailure = '';
   let codexProducedWork = false;
+  let piProducedWork = false;
   let codexAccount = null;
+  let piRuntime = null;
   const recordStdoutLine = async (line) => {
     lastOutputAt = Date.now();
     let parsed = null;
@@ -520,6 +531,12 @@ async function main() {
       parsed = JSON.parse(line);
     } catch {}
     if (initialInvocation.isCodexFamily && ['item.started', 'item.completed'].includes(parsed?.type)) codexProducedWork = true;
+    if (pooledPi && (parsed?.type === 'tool_execution_start'
+      || (parsed?.type === 'message_update' && parsed.assistantMessageEvent?.type === 'text_delta')
+      || (parsed?.type === 'message_end' && parsed.message?.role === 'assistant'
+        && parsed.message.content?.some(item => item.type === 'toolCall' || (item.type === 'text' && item.text))))) {
+      piProducedWork = true;
+    }
     if (initialInvocation.isCodexFamily && parsed?.type === 'turn.failed') lastCodexFailure = parsed.error?.message || '';
     if (initialInvocation.isCodexFamily && parsed?.item?.type === 'file_change') {
       const current = await getRun(runId);
@@ -563,9 +580,9 @@ async function main() {
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: { ...invocationOptions, ...(options.invocationOptions || {}), requestId: manifest.requestId,
         projectMainlineSessionId: manifest.sessionId,
-        observeCodexUsage: Boolean(codexAccount),
+        observeCodexUsage: initialInvocation.isCodexFamily && Boolean(codexAccount),
         ...(manifest.ruleContextDelivery?.recovery === 'codex-session-start' ? { ruleRecoverySessionId: manifest.sessionId } : {}),
-        ...(codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [
+        ...(initialInvocation.isCodexFamily && codexAccount && codexAccount.id !== 'default' ? { codexConfigOverrides: [
           ...(invocationOptions.codexConfigOverrides || []), 'cli_auth_credentials_store="file"'] } : {}) },
       prompt: options.prompt ?? prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
       ...(useSessionStartPreflight
@@ -655,7 +672,7 @@ async function main() {
         await updateRun(runId, current => ({ ...current, toolProcessId: proc.pid, toolProcessIdentity }));
       },
     });
-    const args = codexAccount && codexAccount.id !== 'default'
+    const args = invocation.isCodexFamily && codexAccount && codexAccount.id !== 'default'
       ? ['-c', 'cli_auth_credentials_store="file"', ...invocation.args] : invocation.args;
     const proc = spawn(resolvedCommand, args, {
       cwd: resolvedFolder.cwd,
@@ -816,18 +833,34 @@ async function main() {
     }
   };
 
+  const isCancelled = async () => (await getRun(runId))?.cancelRequested === true;
+  const prepareAccountEnvironment = async account => {
+    if (pooledPi) {
+      await piRuntime?.close();
+      piRuntime = await preparePooledPiRuntime(account, {
+        env: { ...spawnEnv, PI_CODING_AGENT_DIR: piAgentDir },
+        resolveCodexCommand: () => resolveCommand('codex'), isCancelled, runId,
+      });
+      spawnEnv.PI_CODING_AGENT_DIR = piRuntime.dir;
+      delete spawnEnv.CODEX_HOME;
+      delete spawnEnv.CODEX_SQLITE_HOME;
+    } else {
+      spawnEnv.CODEX_HOME = account.home;
+      spawnEnv.CODEX_SQLITE_HOME = account.sqliteHome;
+    }
+  };
+
   try {
     await acquireProviderLease();
 
-    if (initialInvocation.isCodexFamily) {
+    if (initialInvocation.isCodexFamily || pooledPi) {
       codexAccount = await codexAccounts.acquireForRun({ runId, sessionId: manifest.sessionId,
         ...accountWaitOptions,
         accountPolicy: manifest.codexAccountPolicy || null,
         scheduleId: manifest.scheduleId || '',
         resumeThreadId: manifest.options?.codexThreadId || '',
-        model: invocationOptions.model || '', isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
-      spawnEnv.CODEX_HOME = codexAccount.home;
-      spawnEnv.CODEX_SQLITE_HOME = codexAccount.sqliteHome;
+        model: accountModel, isCancelled });
+      await prepareAccountEnvironment(codexAccount);
       await updateRun(runId, draft => ({ ...draft,
         ...(codexAccount.personalFallback ? { personalCodexFallback: codexAccount.personalFallback } : {}),
         codexAccount: { id: codexAccount.id, scope: codexAccount.scope, ownerPersonId: codexAccount.ownerPersonId,
@@ -998,18 +1031,18 @@ async function main() {
       if (!kind) break;
       const exhausted = kind === 'quota_exhausted';
       const accountFailure = { kind, accountId: codexAccount.id, accountLabel: codexAccount.label,
-        model: invocationOptions.model || '', at: nowIso() };
+        model: accountModel, at: nowIso() };
       await updateRun(runId, draft => ({ ...draft, codexAccountFailure: accountFailure }));
       const explanation = `Codex ${kind} · ${codexAccount.label} [${codexAccount.id}]`;
       attempt = { ...attempt, error: new Error(explanation) };
       await recordStdoutLine(JSON.stringify({
         type: exhausted ? 'remotelab.codex_quota_exhausted' : 'remotelab.codex_rate_limited',
         kind, accountId: codexAccount.id,
-        model: invocationOptions.model || '',
+        model: accountModel,
       }));
       if (!codexAccount.autoSwitch || !manifest.sessionId) break;
-      const threadId = current.codexThreadId || manifest.options?.codexThreadId;
-      if (!threadId && codexProducedWork) break;
+      const threadId = pooledPi ? null : current.codexThreadId || manifest.options?.codexThreadId;
+      if (pooledPi ? piProducedWork || attempt.externalInputSubmitted : !threadId && codexProducedWork) break;
       exhaustedAccounts.push(codexAccount.id);
       if (exhausted) confirmedExhaustedAccounts.push(codexAccount.id);
       const previousId = codexAccount.id;
@@ -1020,7 +1053,7 @@ async function main() {
           ...accountWaitOptions,
           accountPolicy: manifest.codexAccountPolicy || null,
           scheduleId: manifest.scheduleId || '',
-          model: invocationOptions.model || '', resumeThreadId: threadId || '',
+          model: accountModel, resumeThreadId: threadId || '',
           excludedAccountIds: exhaustedAccounts,
           confirmedExhaustedAccountIds: confirmedExhaustedAccounts,
           isCancelled: async () => (await getRun(runId))?.cancelRequested === true });
@@ -1033,8 +1066,7 @@ async function main() {
         break;
       }
       codexAccount = next;
-      spawnEnv.CODEX_HOME = next.home;
-      spawnEnv.CODEX_SQLITE_HOME = next.sqliteHome;
+      await prepareAccountEnvironment(next);
       await updateRun(runId, draft => ({ ...draft,
         ...(next.personalFallback ? { personalCodexFallback: next.personalFallback } : {}),
         codexAccount: { id: next.id, scope: next.scope, ownerPersonId: next.ownerPersonId, label: next.label, switched: true,
@@ -1055,6 +1087,7 @@ async function main() {
       current = await getRun(runId) || current;
     }
   } finally {
+    await piRuntime?.close().catch(error => logSidecarDiagnostic(runId, 'Pi runtime cleanup failed', { code: error.code }));
     await codexAccount?.lease.release();
     await releaseProviderLease();
   }

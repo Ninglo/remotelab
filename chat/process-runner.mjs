@@ -79,6 +79,7 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       model: route.model,
       thinking: options.effort,
       developerInstructions: options.developerInstructions,
+      pooledCodex: options.pooledCodex,
     });
     return {
       adapter,

@@ -109,7 +109,7 @@ export function createRunProjectionService({
       if (Number.isInteger(stableTimestamp)) {
         lastRecordTimestamp = stableTimestamp;
       }
-      if (runtimeInvocation.isCodexFamily && run.codexAccount?.id
+      if (run.codexAccount?.id
         && ['remotelab.codex_usage', 'remotelab.codex_quota_exhausted', 'remotelab.codex_rate_limited'].includes(record.json?.type)) {
         const event = record.json;
         // Queue only; model events and completion never wait on the account

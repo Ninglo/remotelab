@@ -7,7 +7,6 @@ import { DEFAULT_JEV_TIER_PROFILES, JEV_AUTO_MODEL_ID } from '../lib/jev-auto-ro
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { getModelsForTool } from './models.mjs';
 import { buildPiModelRouteId, resolvePiModelRoute } from './pi-models.mjs';
-import { piAuthManager } from './pi-auth.mjs';
 
 const CONFIG_FILE = join(CONFIG_DIR, 'runtime-experiments.json');
 const OVERRIDE_FIELDS = new Set(['tool', 'model', 'effort']);
@@ -57,13 +56,12 @@ function experimentBucket(id, personId, sessionId) {
   return createHash('sha256').update(JSON.stringify([id, personId, sessionId])).digest().readUInt32BE(0) / 2 ** 32;
 }
 
-async function resolveVariant(baseline, override, { loadTool, loadModels, hasPiLogin }) {
+async function resolveVariant(baseline, override, { loadTool, loadModels }) {
   const variant = { ...baseline, ...override };
   if (!(await loadTool(variant.tool))?.available) return { reason: 'tool_unavailable' };
   if (variant.tool === 'pi') {
     const { provider, model } = resolvePiModelRoute(variant.model);
     variant.model = buildPiModelRouteId(provider, model);
-    if (provider === 'openai-codex' && !await hasPiLogin()) return { reason: 'pi_openai_login_required' };
   }
   const catalog = await loadModels(variant.tool);
   const model = catalog.models?.find(record => record.id === variant.model && record.id !== JEV_AUTO_MODEL_ID);
@@ -79,7 +77,6 @@ export async function applyRuntimeExperiment(route, session, options, {
   getDocument = getAuthReadSnapshot,
   loadTool = getToolDefinitionAsync,
   loadModels = getModelsForTool,
-  hasPiLogin = async () => (await piAuthManager.getStatus()).loggedIn,
 } = {}) {
   const receipt = route.autoRoutingReceipt;
   if (!receipt) return route;
@@ -97,7 +94,7 @@ export async function applyRuntimeExperiment(route, session, options, {
   let reason;
   if (arm === 'variant') {
     try {
-      const resolved = await resolveVariant(baseline, experiment.override, { loadTool, loadModels, hasPiLogin });
+      const resolved = await resolveVariant(baseline, experiment.override, { loadTool, loadModels });
       variant = resolved.variant || baseline;
       reason = resolved.reason;
     } catch (error) {
