@@ -12,6 +12,7 @@ import {
 } from '../lib/runtime-profile.mjs';
 import { JEV_AUTO_MODEL_ID, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
 import { applyRuntimeExperiment } from './runtime-experiments.mjs';
+import { buildPiModelRouteId } from './pi-models.mjs';
 import { clampReasoningEffort } from '../lib/reasoning-effort-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
@@ -27,7 +28,8 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {},
   // Session, but must not silently replace an existing Session snapshot on
   // later messages. Connector commands update the Session explicitly before
   // the next message arrives.
-  const connectorRequest = options.sourceContext?.connector || options.sourceDelivery?.connector;
+  const scheduledExecution = options.internalOperation === 'trigger_delivery';
+  const connectorRequest = !scheduledExecution && (options.sourceContext?.connector || options.sourceDelivery?.connector);
   // Connector workers mark ordinary messages as carrying the Auto snapshot.
   // An unmarked connector request remains an explicit API override
   // when it is partial (for example, a tool-only switch). Complete unmarked
@@ -60,8 +62,22 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {},
   if (!profile.model || !profile.effort) {
     profile = completeRuntimeProfile(profile, await getModelsForTool(profile.tool));
   }
-  if (profile.tool === 'codex' && profile.model === JEV_AUTO_MODEL_ID) {
+  // A Session created by a scheduled Pi Auto task can also be continued
+  // manually; its saved Auto sentinel is never sent to the provider.
+  const piAuto = profile.tool === 'pi' && (scheduledExecution || savedProfile.model === JEV_AUTO_MODEL_ID);
+  if (profile.model === JEV_AUTO_MODEL_ID && (profile.tool === 'codex' || piAuto)) {
     const route = await resolveJevAutoRoute(options.autoRoutingText);
+    if (piAuto) {
+      const model = buildPiModelRouteId('openai-codex', normalizeRuntimeModelForTool('codex', route.model));
+      const effort = route.effort === 'ultra' ? 'max' : clampReasoningEffort(route.effort);
+      const catalog = await getModelsForTool('pi');
+      const selected = catalog.models?.find(entry => entry.id === model);
+      if (!selected || (effort && !selected.reasoning?.levels?.includes(effort))) {
+        throw new Error(`Auto route is unavailable in Pi: ${model} / ${effort || 'default'}`);
+      }
+      const selectedRoute = { tool: 'pi', model, effort };
+      return { ...route, ...selectedRoute, autoRoutingReceipt: { ...route.autoRoutingReceipt, route: selectedRoute } };
+    }
     return applyRuntimeExperiment({
       ...route,
       model: normalizeRuntimeModelForTool(route.tool, route.model),

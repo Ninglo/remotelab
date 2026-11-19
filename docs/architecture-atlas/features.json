@@ -538,6 +538,7 @@
             "static/chat/task-center.js",
             "static/chat/automation-overview.js",
             "chat/automation-flows.mjs",
+            "chat/session-runtime-selection.mjs",
             "docs/task-center-v1.md",
             "chat/automation-tasks.mjs",
             "lib/session-collection.mjs",

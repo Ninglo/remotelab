@@ -95,6 +95,15 @@ try {
     assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex', model: 'auto' },
       { autoRoutingText: 'An ordinary follow-up during execution.' }, active), active);
     assert.equal(routingCalls, 1, 'active follow-ups never invoke Auto again');
+    const scheduledPi = await resolveSessionRuntimeSelection({ ...defaults, feishuRuntimeSelection: defaults }, {
+      tool: 'pi', model: 'auto', effort: '', internalOperation: 'trigger_delivery',
+      sourceDelivery: { connector: 'feishu' }, autoRoutingText: 'Run the scheduled check.',
+    });
+    assert.deepEqual(scheduledPi.autoRoutingReceipt.route, {
+      tool: 'pi', model: 'openai-codex/gpt-6-luna', effort: 'low',
+    }, 'scheduled Pi Auto preserves model routing, with a receipt for the actual Harness');
+    assert.equal(scheduledPi.tool, 'pi');
+    assert.equal(routingCalls, 2, 'Pi uses the same Auto selector');
   } finally {
     globalThis.fetch = previousFetch;
     delete process.env.TYPESAFE_API_KEY;
@@ -116,6 +125,10 @@ try {
     'the Session snapshot applies to every connector surface');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, defaults), defaults,
     'Web UI requests can still make their own explicit selection');
+  const scheduledProfile = { tool: 'pi', model: 'openai-codex/gpt-6.1-sol', effort: 'medium', thinking: false };
+  assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...scheduledProfile,
+    internalOperation: 'trigger_delivery', sourceDelivery: { connector: 'feishu' },
+  }, active), scheduledProfile, 'fixed-session scheduling uses the task runtime, not the Feishu delivery source snapshot');
   assert.equal((await resolveSessionRuntimeSelection({ ...session, feishuRuntimeSelection: null }, inherited)).tool, 'codex',
     'clearing the legacy field does not change the generic Session snapshot');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...inherited, sourceContext: undefined, sourceDelivery: { connector: 'feishu' } }), pinned);
