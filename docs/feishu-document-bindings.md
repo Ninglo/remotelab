@@ -72,6 +72,11 @@ For direct @-mentions outside a document binding, the connector reads the exact
 comment ID through [batch query](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/file-comment/batch_query)
 and paginates its replies. This covers inline comments anchored to a selection
 and whole-document comments. Feishu's single-comment GET only reads whole-document comments.
+After accepting the request, the Bot immediately adds the Feishu `Get` (收到)
+reaction to the exact comment or reply that mentioned it. It does not wait for
+model output. The answer still returns in the original comment thread; a failed
+reaction neither blocks nor replays the request. Bound-document intake retains
+its existing processing reaction.
 
 When a Connector uses `accessPolicy.mode: "roles"`, document binding reconciliation
 admits only provider subjects in that policy's exact HR or optional non-HR

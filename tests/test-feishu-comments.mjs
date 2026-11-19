@@ -249,12 +249,44 @@ const handoff = await handleMessage(runtime, summary, 'drive.notice.comment_add_
   hydrateSummary: hydrateFeishuDocumentCommentSummary,
   submitRemoteLabRequest: async (_runtime, fullSummary) => {
     generatedPrompt = buildRemoteLabMessage(fullSummary);
+    assert.equal(reactionPayloads.length, 1, 'do not acknowledge before the request is admitted');
     return { sessionId: 'session_comment_1', requestId: 'comment-request' };
   },
 });
 assert.match(generatedPrompt, /能结合全文给一个修改建议吗/);
 assert.equal(handoff.sessionId, 'session_comment_1');
+assert.deepEqual(reactionPayloads[1], {
+  ...reactionPayloads[0],
+  data: { action: 'add', reply_id: 'reply_current_1', reaction_type: 'Get' },
+}, 'acknowledge the exact reply that mentioned the Bot');
 assert.equal(commentCreatePayloads.length, 1, 'admission must not publish the answer itself');
+
+const submit = async () => ({ sessionId: 'session_comment_1', requestId: 'root-request', queued: true });
+const root = { ...summary, replyId: '' };
+await handleMessage(runtime, root, rawEvent.event_type, { submitRemoteLabRequest: submit });
+assert.equal(reactionPayloads.at(-1).data.reply_id, 'reply_root_1', 'acknowledge a root comment after resolving its reply ID');
+
+let prematureReactions = 0;
+const countReaction = () => { prematureReactions += 1; };
+await handleMessage(runtime, summary, rawEvent.event_type, {
+  submitRemoteLabRequest: async () => ({ ignored: true }), addProcessingReaction: countReaction,
+});
+await assert.rejects(handleMessage(runtime, summary, rawEvent.event_type, {
+  submitRemoteLabRequest: async () => { throw new Error('admission lost'); }, addProcessingReaction: countReaction,
+}), /admission lost/);
+assert.equal(prematureReactions, 0, 'ignored and failed admissions do not get a receipt');
+
+let started = false;
+let failReaction;
+const pendingReaction = new Promise((_resolve, reject) => { failReaction = reject; });
+const completedAdmission = await handleMessage(runtime, root, rawEvent.event_type, {
+  submitRemoteLabRequest: submit,
+  addProcessingReaction: async () => { started = true; return pendingReaction; },
+});
+assert.equal(started, true);
+assert.equal(completedAdmission.requestId, 'root-request', 'a pending reaction does not block admission');
+failReaction(new Error('test: reaction temporarily unavailable'));
+await new Promise(resolve => setImmediate(resolve));
 await sendFeishuText(runtime, hydrated, '建议补充预期结果和失败回滚条件。');
 assert.equal(commentCreatePayloads.length, 2);
 assert.equal(commentCreatePayloads[1].data.content.elements[0].text_run.text, '建议补充预期结果和失败回滚条件。');
@@ -286,5 +318,6 @@ await handleMessage(runtime, unmentioned, 'drive.notice.comment_add_v1', {
   },
 });
 assert.equal(unmentionedGenerated, false, 'document comments without a bot mention should stay silent');
+assert.equal(reactionPayloads.length, 3, 'unmentioned or unadmitted comments have no receipt');
 
 console.log('ok - Feishu document comment mentions hydrate, reuse a thread session, and reply in place');

@@ -264,19 +264,18 @@ export async function sendFeishuCommentReply(runtime, summary, text) {
   };
 }
 
-// Admission acknowledgement, matching the chat THINKING reaction. This does
-// not mark the comment resolved or claim the requested work is complete.
-export async function addFeishuCommentProcessingReaction(runtime, summary) {
+// A receipt on the exact reply, not resolution of the comment or task.
+export async function addFeishuCommentProcessingReaction(runtime, summary, emojiType = 'THINKING') {
   const api = runtime?.appClient?.drive?.v2?.commentReaction;
   if (!summary?.fileToken || !summary?.fileType || !summary?.replyId) return null;
   if (typeof api?.updateReaction !== 'function') throw new Error('Feishu comment reaction API unavailable');
   const response = await api.updateReaction({
     path: { file_token: summary.fileToken },
     params: { file_type: summary.fileType },
-    data: { action: 'add', reply_id: summary.replyId, reaction_type: 'THINKING' },
+    data: { action: 'add', reply_id: summary.replyId, reaction_type: emojiType },
   });
   if (response.code !== undefined && response.code !== 0) {
     throw new Error(response.msg || `Feishu comment reaction failed (${response.code})`);
   }
-  return { replyId: summary.replyId, emojiType: 'THINKING' };
+  return { replyId: summary.replyId, emojiType };
 }

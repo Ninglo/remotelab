@@ -1330,7 +1330,7 @@ function startJevReaction(runtime, summary, receipt, helpers, controller) {
 
 async function addProcessingReaction(runtime, summary, emojiType = 'THINKING', { track = true } = {}) {
   if (isFeishuDocumentCommentSummary(summary)) {
-    return withTimeout(() => addFeishuCommentProcessingReaction(runtime, summary),
+    return withTimeout(() => addFeishuCommentProcessingReaction(runtime, summary, emojiType),
       DEFAULT_PROCESSING_REACTION_TIMEOUT_MS, 'Feishu comment processing reaction');
   }
   const messageId = trimString(summary?.messageId);
@@ -2214,6 +2214,11 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     await runtime.readReactionStore?.remove(summary.messageId,
       (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(runtime, messageId, reactionId));
     return receipt;
+  }
+  if (isFeishuDocumentCommentSummary(summary) && summary.mentionedBot === true && receipt?.requestId) {
+    // Acknowledge admission on the original @ without blocking or replaying the request.
+    void Promise.resolve().then(() => (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, 'Get'))
+      .catch(error => console.warn(`[feishu-connector] failed to acknowledge document mention ${summary.messageId}: ${error?.message || error}`));
   }
   if (groupSettings.jevReactions) startJevReaction(runtime, summary, receipt, helpers, controller);
   if (runtime.personalSettings?.enabled(summary)) {
