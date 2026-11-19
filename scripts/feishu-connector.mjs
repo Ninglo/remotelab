@@ -699,6 +699,7 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 }
 
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
+  if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
   const role = feishuAccessRole(runtime.config.accessPolicy, summary);
   const allowed = ['interviewer', 'recruiting_intern'].includes(role) || await isAllowedByPolicy(runtime.config.accessPolicy, summary);
   // Resolve names for every authenticated human event, including blocked and pre-model intercepted messages.
