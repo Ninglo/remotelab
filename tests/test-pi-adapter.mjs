@@ -78,8 +78,7 @@ const streamedTextEvents = streamingAdapter.parseLine(JSON.stringify({
   type: 'message_update',
   assistantMessageEvent: { type: 'text_end', contentIndex: 1, content: 'I found the issue.' },
 }));
-assert.deepEqual(streamedTextEvents.map((event) => event.type), ['message']);
-assert.equal(streamedTextEvents[0].content, 'I found the issue.');
+assert.deepEqual(streamedTextEvents, [], 'RPC text_end lacks the authoritative phase');
 
 const resumedStreamingAdapter = createPiAdapter();
 resumedStreamingAdapter.restoreProjectionState(streamingAdapter.getProjectionState());
@@ -89,7 +88,7 @@ const streamedMessageEndEvents = resumedStreamingAdapter.parseLine(JSON.stringif
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'checking files' },
-      { type: 'text', text: 'I found the issue.' },
+      { type: 'text', text: 'I found the issue.', textSignature: '{"v":1,"id":"msg_final","phase":"final_answer"}' },
     ],
     usage: { input: 5, output: 3, totalTokens: 8 },
     stopReason: 'stop',
@@ -97,9 +96,26 @@ const streamedMessageEndEvents = resumedStreamingAdapter.parseLine(JSON.stringif
 }));
 assert.deepEqual(
   streamedMessageEndEvents.map((event) => event.type),
-  ['usage'],
-  'authoritative message_end should not duplicate content already emitted at block end',
+  ['message', 'usage'],
+  'authoritative message_end publishes phased text without replaying streamed thinking',
 );
+assert.equal(streamedMessageEndEvents[0].content, 'I found the issue.');
+assert.equal(streamedMessageEndEvents[0].phase, 'final_answer');
+
+const preUpgrade = createPiAdapter();
+preUpgrade.restoreProjectionState({ version: 2, emittedContentKeys: ['thinking:0', 'text:1'] });
+assert.deepEqual(preUpgrade.parseLine(JSON.stringify({
+  type: 'message_end', message: { role: 'assistant', stopReason: 'stop', content: [
+    { type: 'thinking', thinking: 'already shown' },
+    { type: 'text', text: 'already shown', textSignature: '{"v":1,"id":"msg_old","phase":"final_answer"}' },
+  ] },
+})), [], 'a projector upgraded mid-message does not republish legacy blocks');
+for (const textSignature of [undefined, 'opaque', '{malformed', 'null', '{"v":2,"id":"msg","phase":"commentary"}']) {
+  const [event] = adapter.parseLine(JSON.stringify({ type: 'message_end', message: {
+    role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'Legacy text', textSignature }],
+  } }));
+  assert.equal(event.phase, undefined, 'unknown providers retain phase-less publication');
+}
 
 const toolEvents = [
   ...adapter.parseLine(JSON.stringify({

@@ -11,6 +11,14 @@ const tempBin = join(tempHome, 'bin');
 const configDir = join(tempHome, '.config', 'remotelab');
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(configDir, { recursive: true });
+// The fake executable still passes through the normal shared account allocator.
+const fakeCodexHome = join(tempHome, '.codex');
+mkdirSync(fakeCodexHome, { recursive: true });
+mkdirSync(join(configDir, 'codex-accounts'), { recursive: true });
+writeFileSync(join(configDir, 'codex-accounts', 'accounts.json'), JSON.stringify({
+  version: 1, activeId: 'default', autoSwitch: false,
+  accounts: [{ id: 'default', home: fakeCodexHome, account: { type: 'chatgpt' }, usage: null }],
+}));
 
 const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(fakeCodexPath, `#!/usr/bin/env node
@@ -87,6 +95,7 @@ const { buildReplyPublicationPayload } = await import('../chat/reply-publication
 const { appendSessionEntryFooter, buildSessionEntry } = await import('../lib/session-navigation.mjs');
 const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
 const { buildSessionDisplayEvents } = await import('../chat/session-display-events.mjs');
+const { createPiAdapter } = await import('../chat/adapters/pi.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -124,6 +133,38 @@ try {
   assert.deepEqual(openingRecord.deliveries.map(item => item.text.split('\n')[0]), ['【开始处理】', '【最终答复】']);
   assert.equal(openingRecord.deliveries[1].text, '【最终答复】\n\n核查结果。');
   assert.ok(openingRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
+
+  const pi = createPiAdapter();
+  function piText(seq, phase, text, stopReason) {
+    const content = [{ type: 'text', text, textSignature: JSON.stringify({ v: 1, id: `msg_${seq}`, phase }) }];
+    const rpc = (type, fields) => pi.parseLine(JSON.stringify({ type, ...fields }));
+    rpc('message_start', { message: { role: 'assistant' } });
+    assert.deepEqual(rpc('message_update', { assistantMessageEvent: { type: 'text_end', contentIndex: 0, content: text } }), []);
+    const [message] = rpc('message_end', { message: { role: 'assistant', content, stopReason } });
+    return { ...message, seq };
+  }
+  for (const progress of ['messages', 'card']) {
+    const piHistory = [firstHistory[0],
+      piText(2, 'commentary', 'Pi 开场。', 'toolUse'),
+      { seq: 3, type: 'tool_use' },
+      piText(4, 'commentary', '<progress>已核对 Pi 的飞书投递。</progress>', 'toolUse'),
+      piText(5, 'final_answer', 'Pi 交付。', 'stop')];
+    let piRecord = { key: `pi-${progress}`, runId: 'pi-run', responseId: 'first-response',
+      options: { messageReplyPolicy: { version: 3, opening: true, progress } },
+      runtimeSelection: { ...runtimeSelection, tool: 'pi' }, deliveries: [] };
+    const piOptions = { ...openingOptions, session: { ...openingOptions.session, workboardPilot: true }, fullHistory: piHistory,
+      store: { get: async () => piRecord, mutate: async (_key, fn) => { piRecord = fn(piRecord); } } };
+    await publishNativeFinalReplies(piRecord, piHistory, piOptions);
+    assert.deepEqual(piRecord.deliveries.map(item => item.surfaceKind), progress === 'card' ? ['opening'] : ['opening', 'progress']);
+    assert.ok(piRecord.deliveries[0].sessionEntryIncluded);
+    assert.match(piRecord.deliveries[0].text, /执行工具：pi[\s\S]*\?session=first-feishu-session&tab=sessions/);
+    assert.ok(buildSessionDisplayEvents(piHistory).some(event => event.content === '已核对 Pi 的飞书投递。'));
+    await publishNativeFinalReplies(piRecord, piHistory, { ...piOptions, running: false });
+    await publishNativeFinalReplies(piRecord, piHistory, { ...piOptions, running: false });
+    assert.equal(piRecord.deliveries.filter(item => item.surfaceKind === 'final').length, 1);
+    assert.equal(piRecord.deliveries.filter(item => item.sessionEntryIncluded).length, 1);
+    assert.ok(piRecord.deliveries.every(item => item.target.threadId === 'original-thread'));
+  }
 
   // Exercise the live surface projection, which strips private text before
   // terminal payload construction. Control decisions must survive separately.

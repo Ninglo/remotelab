@@ -419,6 +419,7 @@
             "connectors/feishu/progress-policy-actions.mjs",
             "connectors/feishu/workboard-pilot.mjs",
             "docs/assistant-message-visibility.md",
+            "chat/adapters/pi.mjs",
             "connectors/feishu/workboard-checkpoint.mjs",
             "connectors/feishu/workboard-event-reader.mjs",
             "connectors/feishu/workboard-sync.mjs",

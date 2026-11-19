@@ -28,6 +28,17 @@ function serializeToolValue(value) {
   }
 }
 
+function readTextPhase(signature) {
+  // Pi's OpenAI Responses providers retain the phase in their v1 text
+  // signature; other providers may use an opaque signature or none.
+  if (typeof signature !== 'string' || !signature.startsWith('{')) return undefined;
+  try {
+    const { v, id, phase } = JSON.parse(signature);
+    if (v === 1 && typeof id === 'string' && (phase === 'commentary' || phase === 'final_answer')) return phase;
+  } catch { /* leave unknown signatures phase-less */ }
+  return undefined;
+}
+
 function parseAssistantMessage(message, {
   includeFailureStatus = true,
   skipContentKeys = null,
@@ -42,7 +53,8 @@ function parseAssistantMessage(message, {
     if (item?.type === 'thinking' && item.thinking) {
       events.push(reasoningEvent(item.thinking));
     } else if (item?.type === 'text' && item.text) {
-      events.push(messageEvent('assistant', item.text));
+      const phase = readTextPhase(item.textSignature);
+      events.push(messageEvent('assistant', item.text, undefined, phase ? { phase } : {}));
     }
   }
 
@@ -77,25 +89,12 @@ export function createPiAdapter() {
     emittedContentKeys = new Set();
   }
 
-  function getStreamingContentKey(type, contentIndex) {
-    const index = Number.isInteger(contentIndex) && contentIndex >= 0 ? contentIndex : 0;
-    return `${type}:${index}`;
-  }
-
-  function finishStreamingContent(type, update) {
-    const key = getStreamingContentKey(type, update?.contentIndex);
-    const content = typeof update?.content === 'string'
-      ? update.content
-      : type === 'text' && typeof update?.text === 'string'
-        ? update.text
-        : type === 'thinking' && typeof update?.thinking === 'string'
-          ? update.thinking
-          : '';
-    if (!content) return [];
-    emittedContentKeys.add(key);
-    return type === 'text'
-      ? [messageEvent('assistant', content)]
-      : [reasoningEvent(content)];
+  function finishStreamingThinking(update) {
+    const content = typeof update.content === 'string' ? update.content : update.thinking;
+    if (typeof content !== 'string' || !content) return [];
+    const index = Number.isInteger(update.contentIndex) && update.contentIndex >= 0 ? update.contentIndex : 0;
+    emittedContentKeys.add(`thinking:${index}`);
+    return [reasoningEvent(content)];
   }
 
   return {
@@ -125,20 +124,7 @@ export function createPiAdapter() {
           return [];
         case 'message_update': {
           const update = event.assistantMessageEvent;
-          switch (update?.type) {
-            case 'text_start':
-            case 'text_delta':
-              return [];
-            case 'text_end':
-              return finishStreamingContent('text', update);
-            case 'thinking_start':
-            case 'thinking_delta':
-              return [];
-            case 'thinking_end':
-              return finishStreamingContent('thinking', update);
-            default:
-              return [];
-          }
+          return update?.type === 'thinking_end' ? finishStreamingThinking(update) : [];
         }
         case 'message_end': {
           if (event.message?.role === 'assistant') {
@@ -157,9 +143,10 @@ export function createPiAdapter() {
             // automatic retry loop settles. Publishing an error here makes
             // RemoteLab finalize the run while Pi is still retrying.
             includeFailureStatus: false,
-            // text_end/thinking_end are available before the authoritative
-            // message_end line. Keep their earlier live events and only use
-            // message_end for blocks that were not streamed by the provider.
+            // RPC text_end can omit the signature. Use authoritative text
+            // and phase from message_end, before the next tool executes.
+            // Skip streamed thinking and text already emitted by older code
+            // if a Run crossed a control-plane restart.
             skipContentKeys: emittedContentKeys,
           });
           resetStreamingMessage();
