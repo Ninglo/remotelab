@@ -1134,6 +1134,8 @@ main().catch((error) => {
       logLabel: 'Detached runner main() failed before tool completion',
       details: {
         phase: 'main-catch',
+        ...(error.code === 'CODEX_ACCOUNT_OCCUPANCY_UNCONFIRMED'
+          ? { code: error.code, routingReasons: error.routingReasons } : {}),
       },
     });
     process.exit(1);

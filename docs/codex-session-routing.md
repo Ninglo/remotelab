@@ -251,6 +251,19 @@ callers may supply a shorter `waitTimeoutMs`). No metadata lock is held while wa
 This is not an execution timeout. Wait records are removed on acquisition, failure
 or cancellation; expired/dead-owner records are reclaimed on observation.
 
+A missing or unreadable owner file with an existing slot directory still reserves
+one place. Other eligible accounts and capacity that is independently known to
+be free remain available. Failed reads do not shorten the wait budget. If they
+still prevent admission at the normal deadline, the task reports that occupancy
+could not be confirmed, rather than treating the account as full.
+
+Each newly allocated slot has its own directory key; normal release does not
+read the mutable owner file. A keyed detached run with trustworthy launch records
+can be recovered after its process group and any recorded tool process have
+stopped. An unreadable legacy slot, or one without enough evidence to verify exit,
+is kept until release or operator verification. Directory age alone does not
+reclaim a slot. The owner file retains its existing write pattern and format.
+
 If no temporary candidate remains, `CODEX_NO_AVAILABLE_ACCOUNT` reports counts
 of disabled / credential-error, signed-out, exhausted and already-attempted entries.
 Permanently unavailable pools fail clearly rather than waiting for a login or refill.
@@ -273,6 +286,8 @@ accounts. Historical failure information remains visible after recovery.
 `test-codex-allocation-limits.mjs` covers concurrent limits, priority overflow,
 unlimited fallback, duplicate identities, helper occupancy, wait/release,
 configuration wakeup, cancellation, deadlines, shrinking, restart and crash recovery.
+`test-codex-run-slots.mjs` covers partial/corrupt owner reads, unaffected capacity,
+release with a corrupt file, the distinct wait deadline, and child-process recovery.
 `test-codex-session-routing.mjs` covers concurrent equal allocation, aliases,
 personal isolation, disabled bindings with retry off, all-disabled diagnostics,
 quota recovery, helper allocation, cancellation and restart. The scheduled test

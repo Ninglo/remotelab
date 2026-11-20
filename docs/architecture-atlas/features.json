@@ -353,6 +353,7 @@
             "chat/codex-account-list-auth.mjs",
             "chat/pi-pooled-runtime.mjs",
             "lib/codex-accounts.mjs",
+            "lib/codex-run-slots.mjs",
             "lib/codex-session-routing.mjs",
             "chat/runner-sidecar.mjs",
             "chat/run-projection.mjs",
@@ -378,6 +379,7 @@
             "tests/test-http-personal-codex.mjs",
             "lib/codex-allocation-wait.mjs",
             "tests/test-codex-allocation-limits.mjs",
+            "tests/test-codex-run-slots.mjs",
             "tests/test-codex-routing-controls.mjs",
             "static/chat/chat-sidebar.css"
           ],

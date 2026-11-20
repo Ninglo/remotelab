@@ -84,6 +84,9 @@ export async function acquireProviderRuntimeLease({
   isProcessAlive = processIsAlive,
   onWait = null,
   wait = true,
+  // For fresh, never-reused directory keys only; fixed-name queues still
+  // verify their on-disk owner before updating or releasing.
+  uniqueKey = false,
 } = {}) {
   const normalizedKey = sanitizePathPart(queueKey);
   if (!normalizedKey) return null;
@@ -103,22 +106,26 @@ export async function acquireProviderRuntimeLease({
   };
   let waitNotified = false;
 
-  await mkdir(queueDir, { recursive: true, mode: 0o700 });
+  const checkCancellation = async () => {
+    if (await isCancelled()) throw Object.assign(new Error(`Provider runtime queue wait cancelled for ${queueKey}`),
+      { code: 'PROVIDER_RUNTIME_QUEUE_CANCELLED' });
+  };
+  if (uniqueKey) {
+    await checkCancellation();
+    await mkdir(rootDir, { recursive: true, mode: 0o700 });
+    await mkdir(queueDir, { mode: 0o700 }); // Do not adopt a pre-existing path.
+  } else await mkdir(queueDir, { recursive: true, mode: 0o700 });
 
   while (true) {
-    if (await isCancelled()) {
-      const error = new Error(`Provider runtime queue wait cancelled for ${queueKey}`);
-      error.code = 'PROVIDER_RUNTIME_QUEUE_CANCELLED';
-      throw error;
-    }
-
+    if (!uniqueKey) await checkCancellation();
     try {
       await mkdir(lockDir, { mode: 0o700 });
       owner.acquiredAt = new Date().toISOString();
       await writeFile(ownerPath, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
       break;
     } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
+      if (uniqueKey) await rm(queueDir, { recursive: true, force: true });
+      if (error?.code !== 'EEXIST' || uniqueKey) throw error;
       if (await lockIsStale(lockDir, ownerPath, { isProcessAlive, ownerWriteGraceMs })) {
         await rm(lockDir, { recursive: true, force: true });
         continue;
@@ -132,23 +139,38 @@ export async function acquireProviderRuntimeLease({
     }
   }
 
-  const ownsLease = async () => (await readOwner(ownerPath))?.leaseId === leaseId;
+  let released = false;
+  let pending = Promise.resolve();
+  // Helpers may publish a PID without awaiting it. Serialize their publication
+  // and release so a delayed update cannot write after the slot is released.
+  const ownOperation = operation => {
+    if (!uniqueKey) return operation();
+    const result = pending.then(operation);
+    pending = result.catch(() => {});
+    return result;
+  };
+  const ownsLease = async () => uniqueKey ? !released : (await readOwner(ownerPath))?.leaseId === leaseId;
   return {
     queueKey: trimString(queueKey),
     acquiredAt: owner.acquiredAt,
     waited: waitNotified,
-    async setToolProcessId(toolProcessId) {
-      if (!await ownsLease()) return false;
-      owner.toolProcessId = Number.isInteger(toolProcessId) && toolProcessId > 0
-        ? toolProcessId
-        : null;
-      await writeFile(ownerPath, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
-      return true;
+    setToolProcessId(toolProcessId) {
+      return ownOperation(async () => {
+        if (!await ownsLease()) return false;
+        owner.toolProcessId = Number.isInteger(toolProcessId) && toolProcessId > 0
+          ? toolProcessId
+          : null;
+        await writeFile(ownerPath, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+        return true;
+      });
     },
-    async release() {
-      if (!await ownsLease()) return false;
-      await rm(lockDir, { recursive: true, force: true });
-      return true;
+    release() {
+      return ownOperation(async () => {
+        if (!await ownsLease()) return false;
+        await rm(uniqueKey ? queueDir : lockDir, { recursive: true, force: true });
+        released = true;
+        return true;
+      });
     },
   };
 }
