@@ -76,6 +76,14 @@ created. Retries retain that result, and restart recovery cannot execute it.
 The restricted interview query path runs the same check before loading API
 credentials or querying its backend, and checks again before publication.
 
+With a remote policy registry on a non-restricted runtime, authenticated
+service submissions to `POST /api/sessions/:id/messages` fetch the current
+policy at message admission, not also at generic HTTP authentication. The
+service principal does not use the browser's Session-read policy; admission
+still checks the verified source and content against the current policy. No
+policy or decision is reused across requests. Browser routes and restricted
+runtimes retain their existing authentication-time refresh and error behavior.
+
 An optional `interview` setting routes limited candidate questions into a signed
 business API instead of a general model. `actors` binds authenticated source
 route/tenant/open ID to the verified target-app open ID; the backend must still

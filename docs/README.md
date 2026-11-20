@@ -226,7 +226,7 @@ service/automation gate in `chat/monitoring-triage.mjs`: existing observations a
 receipts resolve known cases before a new Agent request, with durable one-shot
 action intent and independent business-health verification.
 
-[Request admission guard](request-access-guard.md) documents optional deployment policies, pre-model refusal, scoped business responses and metadata-only denial delivery. Explicitly mapped interview actors query in private chats and use the safe field protocol even when their other workflows have broader access. A sender's confidential-data permission does not authorize disclosing matched protected content to a group.
+[Request admission guard](request-access-guard.md) documents optional deployment policies, pre-model refusal, scoped business responses and metadata-only denial delivery. Ordinary service-authenticated message writes resolve the remote policy at admission rather than also during generic authentication. Explicitly mapped interview actors query in private chats and use the safe field protocol even when their other workflows have broader access. A sender's confidential-data permission does not authorize disclosing matched protected content to a group.
 
 Recruiting intern access is a separate restricted business role: see the role and delivery boundary in [Feishu operations](platform-skills/feishu-cli.md#recruiting-intern-role) and the [request access guard](request-access-guard.md#restricted-recruiting-intern-queries). It does not grant general HR or system access.
 ## Scheduled task identity and access checks

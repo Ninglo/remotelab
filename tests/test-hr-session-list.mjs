@@ -72,6 +72,50 @@ try {
   assert.deepEqual(ids(await call('owner', '/api/sessions')), ['1'.repeat(32)], 'restored identity must not reuse cached denial');
   assert.deepEqual(ids(await call('owner', '/api/sessions', {}, true)), ['1'.repeat(32)]);
   console.log('PASS: HR personal/shared/service lists, archive, direct links, cached refs, revocation and restoration');
+
+  const credentialsPath = join(home, 'registry-credentials.json');
+  await writeFile(credentialsPath, JSON.stringify({ apiKey: 'fixture', signingKey: 'fixture' }));
+  const endpoint = 'https://fixture.invalid/policy';
+  const remoteGuard = { version: 1, policyId: 'fixture-guard', hrInstance: 'hr', hrRestrictedRuntime: false,
+    hrPolicyRegistry: { endpoint, credentialsPath }, allowPairs: [], rules: [{ category: 'protected', all: ['Vault', 'private'] }] };
+  await writeFile(guard, JSON.stringify(remoteGuard));
+  const fetchOriginal = globalThis.fetch;
+  let reads = 0, unavailable = false;
+  globalThis.fetch = (url, options) => {
+    if (url !== endpoint) return fetchOriginal(url, options);
+    assert.equal(JSON.parse(options.body).query.action, 'policy_read');
+    reads++;
+    return Promise.resolve(unavailable ? new Response(null, { status: 503 })
+      : Response.json({ policyVersion: 1, policy }));
+  };
+  async function submit(id, token = 'f'.repeat(64)) {
+    const res = await fetch(base + '/api/sessions/' + '1'.repeat(32) + '/messages', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Vault private', requestId: id }),
+    });
+    return { status: res.status, body: await res.json() };
+  }
+  try {
+    const { getRun } = await import('../chat/runs.mjs');
+    for (const id of ['connector-admission-1', 'connector-admission-2']) {
+      const before = reads;
+      const result = await submit(id);
+      assert.equal(result.status, 202);
+      assert.equal(result.body.response.state, 'ready');
+      assert.equal(await getRun(result.body.run.id), null, 'guard still refuses before creating a model Run');
+      assert.equal(reads - before, 1, 'each service message loads current policy once, with no cross-request reuse');
+    }
+    const beforeUnauthenticated = reads;
+    assert.equal((await submit('invalid', 'x'.repeat(64))).status, 401);
+    assert.equal(reads, beforeUnauthenticated, 'an invalid credential cannot reach policy admission');
+    assert.equal((await call('owner', '/api/sessions')).status, 200);
+    assert.equal(reads - beforeUnauthenticated, 1, 'browser history/list refresh is unchanged');
+    await writeFile(guard, JSON.stringify({ ...remoteGuard, hrRestrictedRuntime: true }));
+    unavailable = true;
+    assert.equal((await submit('restricted-registry-down')).status, 503);
+    assert.equal(reads - beforeUnauthenticated, 2, 'restricted runtime still rejects at the authentication boundary');
+  } finally { globalThis.fetch = fetchOriginal; }
+  console.log('PASS: once per service message, no model on refusal, browser refresh, and restricted runtime failure gate');
 } finally {
   server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   await rm(home, { recursive: true, force: true });

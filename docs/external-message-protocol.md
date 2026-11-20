@@ -427,7 +427,9 @@ ordinary browser input remains recorded. Recovery of an old prepared packet
 without the flag also recognizes the exact persisted source-message/Request
 event in this Session. Optional feedback projections never count as such an input.
 
-New active inputs submit directly to `/messages`. Optional feedback calls
+New active inputs submit directly to `/messages`. On ordinary runtimes, service
+message writes using a remote policy registry read it at the [admission guard](request-access-guard.md),
+not also during HTTP authentication. Optional feedback calls
 `POST /api/sessions/:id/observations` with `{acceptedRequestId}` and reads the
 immutable accepted Feishu group Request. This projection never appends a human
 message or revalidates a later conversation binding. Queued and archived Requests

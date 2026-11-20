@@ -1486,7 +1486,7 @@ export async function handleRequest(req, res) {
   if (await handleFeishuWebTopics({ req, res, pathname, writeJson, nonce })) return;
   if (await handleFeishuWebSettings({ req, res, pathname, parsedUrl, writeJson, nonce, runtime: feishuWebRuntime })) return;
   if (await handleBrowserDesktopRequest(req, res)) return;
-  if (!await requireAuth(req, res)) return;
+  if (!await requireAuth(req, res, pathname)) return;
   const authSession = getAuthSession(req);
   if (await handleHrAccessRoutes({req,res,pathname,authSession,writeJson})) return;
   if (await handlePersonalCodexRoutes({ req, res, pathname, authSession, writeJson })) return;

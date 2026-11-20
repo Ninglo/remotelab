@@ -1,6 +1,7 @@
 import { refreshRuntimeHrPolicy, runtimeHrPolicy } from '../lib/hr-policy.mjs';
 import { randomBytes } from 'crypto';
-import { isAuthenticated, authenticateBearerToken } from '../lib/auth.mjs';
+import { readFile } from 'node:fs/promises';
+import { isAuthenticated, authenticateBearerToken, getAuthSession } from '../lib/auth.mjs';
 import { FILE_ASSET_ALLOWED_ORIGINS } from '../lib/config.mjs';
 import { getConnectorSurface, isConnectorSurfacePublicPath } from '../lib/connector-surface-registry.mjs';
 
@@ -90,12 +91,27 @@ async function allowsUnauthenticatedConnectorSurfaceRequest(pathname = '') {
 
 // ---- Auth middleware ----
 
+async function canDeferPolicyToMessageAdmission(req, pathname) {
+  if (req.method !== 'POST' || !/^\/api\/sessions\/[a-f0-9]{32}\/messages$/.test(pathname || '')
+      || getAuthSession(req)?.authKind !== 'service') return false;
+  const path = process.env.REMOTELAB_REQUEST_ACCESS_GUARD;
+  if (!path) return false;
+  try {
+    const config = JSON.parse(await readFile(path, 'utf8'));
+    return Boolean(config.hrPolicyRegistry) && config.hrRestrictedRuntime !== true;
+  } catch { return false; }
+}
+
 /**
  * Returns true if the request is authenticated.
  * If not, writes a 401 JSON response for API routes or a 302 redirect for pages.
  */
-export async function requireAuth(req, res) {
+export async function requireAuth(req, res, pathname) {
   if (isAuthenticated(req) || await authenticateBearerToken(req)) {
+    // This service-only write does not consume the browser policy. Admission
+    // still reads the current policy and checks the verified source and text.
+    // The restricted runtime keeps its availability gate at the HTTP boundary.
+    if (await canDeferPolicyToMessageAdmission(req, pathname)) return true;
     try { await refreshRuntimeHrPolicy(); }
     catch { if (runtimeHrPolicy()?.restrictedRuntime) { res.writeHead(503, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'HR policy temporarily unavailable'})); return false; } }
     return true;
