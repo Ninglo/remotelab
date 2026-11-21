@@ -62,7 +62,7 @@ Agent 创建时使用已接好的入口，不手工拼装一条提前启用的 S
 
 间隔任务用 `everySeconds` 替换 cron/timezone；一次性任务用 `kind: "one_time"` 和未来的 ISO `scheduledAt`。用 `remotelab api POST /api/automation-confirmations --body-file <JSON路径>` 提交，`GET /api/automation-confirmations/:key` 回读 `phase`、原生任务、执行 Session 和真实入口。请求键会与原输入绑定；改动未确认的定义须取消旧任务并发新卡。`/action` 与 `/receipt` 仅供已核连接器回调，不得由 Agent 伪造人的点击。该确认是交办人要求的一次启用动作，不在每轮自动化前追加确认。
 
-创建入口接受 `runtimePolicy`、`tool`、`model`、`effort`、`thinking`，同时用于独立执行 Session 和原生任务；显式 `auto` 使用自动模型选择。兼容旧调用时，未提供运行配置仍继承原会话，因此按本引导创建的新任务应显式填写选定配置。循环任务还接受原生 `gate`（`mode: "script"`、`runtime`、`source`，以及可选 `timeoutSeconds`、`cooldownSeconds`）：脚本输出 `yes`／`no` 或含布尔 `trigger` 的 JSON，按需提供 `reason`、`dedupeKey`。脚本由原生调度器先执行，条件满足才创建模型执行；一次性任务不接受 gate，等待条件的一次性接续沿原生条件 Schedule 处理。模型配置与 gate 都纳入已确认定义，不能在确认后偷换；修改沿原有任务修改流程。
+创建入口接受 `runtimePolicy`、`tool`、`model`、`effort`、`thinking`，同时用于独立执行 Session 和原生任务；显式 `auto` 使用自动模型选择。未提供运行配置时，优先采用[本实例的自动化默认配置](task-center-v1.md#model-policy)；实例未配置时仍继承原会话。创建时将选定默认值保存到待确认记录，旧卡和重试不随默认值变动。循环任务还接受原生 `gate`（`mode: "script"`、`runtime`、`source`，以及可选 `timeoutSeconds`、`cooldownSeconds`）：脚本输出 `yes`／`no` 或含布尔 `trigger` 的 JSON，按需提供 `reason`、`dedupeKey`。脚本由原生调度器先执行，条件满足才创建模型执行；一次性任务不接受 gate，等待条件的一次性接续沿原生条件 Schedule 处理。模型配置与 gate 都纳入已确认定义，不能在确认后偷换；修改沿原有任务修改流程。
 
 代码：`chat/automation-confirmations.mjs`、`connectors/feishu/automation-cards.mjs`。回执分别保存在实例 `automation-confirmations/` 和连接器 `automation-cards/`；发送结果不明时保留发送栅栏并沿现有投递问题流程核查，不盲目重发。底层 `/api/schedules`、`/api/triggers` 的显式用法仍保留；本流程不设置 `automationHome: true`。
 

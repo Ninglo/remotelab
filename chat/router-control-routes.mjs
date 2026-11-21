@@ -15,6 +15,7 @@ import { handleMessageReplySettings } from './router-message-reply-settings.mjs'
 import { handlePersonalMemorySettings } from './router-personal-memory-settings.mjs';
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
+import { readAutomationRuntimeDefault, withAutomationRuntimeDefault } from '../lib/automation-runtime-default.mjs';
 import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
 import { readFile, readdir } from 'fs/promises';
 import { observeUsage, artifactKind } from './usage-events.mjs';
@@ -234,7 +235,7 @@ async function prepareScheduledTask(payload, { authSession = null } = {}) {
   if (!await canAccessSession(authSession, sourceSessionId)) throw Object.assign(new Error('Source session access denied'), { statusCode: 403 });
   if (authSession?.authKind !== 'service' && (payload.conversation || payload.sourceDelivery || payload.sessionTemplate?.conversation)) throw new Error('External delivery requires service authentication');
   if (sourceSession.archived) throw new Error('Source session is archived');
-  let input = await applyScheduledRuntimeProfile(payload, sourceSession, getAutoRuntimeSelection());
+  let input = await applyScheduledRuntimeProfile(await withAutomationRuntimeDefault(payload), sourceSession, getAutoRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
       && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
       && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
@@ -638,6 +639,12 @@ export async function handleControlRoutes({
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to save settings' });
     }
+    return true;
+  }
+
+  if (pathname === '/api/automation-runtime-default' && req.method === 'GET') {
+    try { writeJson(res, 200, { runtime: await readAutomationRuntimeDefault() }); }
+    catch (error) { writeJson(res, 500, { error: error.message }); }
     return true;
   }
 

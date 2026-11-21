@@ -15,6 +15,7 @@ import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { appendEvent } from './history.mjs';
 import { normalizeGate } from '../lib/automation-script.mjs';
 import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
+import { hasAutomationRuntimeSelection, readAutomationRuntimeDefault } from '../lib/automation-runtime-default.mjs';
 import { resolveRuntimeProfile } from '../lib/runtime-profile.mjs';
 
 // Confirmation is a receipt for an existing native task, not a second scheduler.
@@ -58,7 +59,7 @@ async function publish(record, surface) {
 }
 
 function taskDefinition(input) {
-  const hasRuntime = ['runtimePolicy', 'tool', 'model', 'effort', 'thinking'].some(field => Object.hasOwn(input, field));
+  const hasRuntime = hasAutomationRuntimeSelection(input);
   if (Object.hasOwn(input, 'thinking') && typeof input.thinking !== 'boolean') throw Error('thinking must be a boolean');
   if (input.kind !== 'recurring' && Object.hasOwn(input, 'gate')) throw Error('gate requires a recurring task');
   const definition = {
@@ -96,23 +97,24 @@ export async function proposeAutomationConfirmation(input) {
     || owner.identity.realm !== plan.sourceRouteId) throw Error('需要原交办人的已核飞书输入和消息目标。');
   const session = await getSession(sourceSessionId);
   if (!session || session.archived) throw Error('原交办会话不可用。');
-  // Explicit task choices are independent of the discussion model. Preserve
-  // legacy callers that did not supply a runtime selection.
-  const runtime = definition.runtimePolicy === 'auto'
-    ? { tool: session.tool, model: 'auto', effort: '', thinking: false }
-    : { ...resolveRuntimeProfile(session, definition),
-      thinking: definition.runtimePolicy ? definition.thinking : session.thinking };
   const key = hash([sourceSessionId, sourceRequestId, input.key]);
   return queue(key, async () => {
     let record = await readRecord(pathFor(key));
     if (record && canonicalJson(record.definition) !== canonicalJson(definition)) throw Error('这张确认卡的定义已固定；修改后请用新 key 发新卡，并取消旧任务。');
     if (!record) {
       if (definition.kind === 'one_time' && Date.parse(definition.scheduledAt) <= Date.now()) throw Error('执行时间必须在未来。');
-      record = { key, revision: 1, phase: 'pending', definition, sourceSessionId, sourceRequestId,
+      const runtimeDefault = definition.runtimePolicy ? null : await readAutomationRuntimeDefault();
+      record = { key, revision: 1, phase: 'pending', definition, ...(runtimeDefault ? { runtimeDefault } : {}), sourceSessionId, sourceRequestId,
         sourcePlan: plan, identityId, personId: owner.person.id, ownerOpenId: owner.identity.subjectId,
         createdAt: now(), cards: [], taskId: `${definition.kind === 'recurring' ? 'sch' : 'trg'}_${key}` };
       await save(record);
     }
+    // A retry uses the selection saved with the proposal, not today's default.
+    const selection = record.runtimeDefault || definition;
+    const runtime = selection.runtimePolicy === 'auto'
+      ? { tool: session.tool, model: 'auto', effort: '', thinking: false }
+      : { ...resolveRuntimeProfile(session, selection),
+        thinking: selection.runtimePolicy ? selection.thinking : session.thinking };
     if (!record.executionSessionId) {
       const externalTriggerId = `automation-fixed:${key}`;
       const existing = await findSessionByExternalTriggerId(externalTriggerId);
@@ -130,7 +132,7 @@ export async function proposeAutomationConfirmation(input) {
       const template = { folder: session.folder, tool: runtime.tool, reuse: 'fixed_session',
         sessionId: record.executionSessionId, sessionCollection: 'automations' };
       const create = definition.kind === 'recurring' ? createRecurringSchedule : createTrigger;
-      const task = await create({ ...definition, sourceSessionId, createdByIdentityId: record.identityId,
+      const task = await create({ ...definition, ...record.runtimeDefault, sourceSessionId, createdByIdentityId: record.identityId,
         sessionTemplate: template, ...runtime },
       { id: record.taskId, paused: true });
       record.definitionHash = definitionHash(task);

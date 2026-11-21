@@ -219,7 +219,9 @@
     const source = activeSessions().find(entry => entry.id === sessionSelect?.value);
     runtimeHelp.textContent = runtimePolicySelect?.value === "fixed"
       ? [source?.tool, source?.model, source?.effort].filter(Boolean).join(" · ")
-      : translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.");
+      : runtimePolicySelect?.value === "auto"
+        ? translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.")
+        : translate("tasks.runtime.instanceDefaultHelp", "Use the instance's configured automation profile, or Auto if none is configured.");
   }
 
   function renderSessionOptions() {
@@ -1317,7 +1319,7 @@
     }
     const body = {
       kind,
-      runtimePolicy: runtimePolicySelect?.value === "fixed" ? "fixed" : "auto",
+      ...(["fixed", "auto"].includes(runtimePolicySelect?.value) ? { runtimePolicy: runtimePolicySelect.value } : {}),
       ...(runtimePolicySelect?.value === "fixed" ? (() => {
         const source = activeSessions().find(entry => entry.id === sessionSelect.value);
         return { tool: source?.tool, model: source?.model, effort: source?.effort, thinking: source?.thinking === true };

@@ -164,8 +164,10 @@ Task ownership is a UI attribution label, not a separate runtime user or an acce
 
 Task Center, one-time triggers, recurring schedules, and their CLI commands share `runtimePolicy`:
 
-- `auto` (the default when creating a task without runtime overrides): every new execution Session starts from Auto. A reused fixed or calendar-day Session retains its own profile. The legacy value `follow_default` is accepted and normalized to `auto`.
+- `auto`: every new execution Session starts from Auto. A reused fixed or calendar-day Session retains its own profile. The legacy value `follow_default` is accepted and normalized to `auto`.
 - `fixed`: persist a complete profile. Explicit `tool`, `model`, `effort`, or enabled `thinking` implies this policy unless `runtimePolicy` is specified. Task Center can pin the selected template Session's profile; the API/CLI can specify any supported runtime. Use `tool: "pi", model: "auto"` to pin only the Harness while retaining automatic GPT model and effort selection for scheduled executions. An explicit task profile applies even when the task delivers into a bound Feishu conversation.
+
+New tasks without a runtime selection use the instance default if configured. An operator can set `CONFIG_DIR/automation-runtime-default.json` (e.g. `{"version":1,"tool":"codex","model":"gpt-6.1-sol","effort":"medium"}`). Authenticated `GET /api/automation-runtime-default` reports the configured profile or `null`. Removing the file restores the prior fallback for future tasks: Auto for Task Center and the low-level scheduling API, or source inheritance for Feishu confirmation. The profile is pinned at task/proposal creation; existing schedules, proposals, explicit choices and in-flight runs are unchanged.
 
 The task card shows the policy and the last execution's resolved profile. `PATCH /api/automation-tasks/:id` accepts runtime settings; switching to `auto` clears saved overrides. The same fields work on the trigger and schedule APIs. CLI creation accepts `--runtime-policy auto|fixed`.
 

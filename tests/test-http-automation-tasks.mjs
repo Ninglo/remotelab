@@ -156,6 +156,34 @@ async function main() {
     assert.equal(overview.status, 403, overview.text);
 
     const fixedSession = await createSession(port, 'Fixed automation home');
+    const profilePath = join(fixture.configDir, 'automation-runtime-default.json');
+    const profile = { version: 1, tool: 'task-center-tool', model: 'fixture-default', effort: 'low' };
+    assert.equal((await request(port, 'GET', '/api/automation-runtime-default', null, '')).status, 401);
+    assert.equal((await request(port, 'GET', '/api/automation-runtime-default')).json.runtime, null);
+    writeFileSync(profilePath, JSON.stringify(profile));
+    assert.equal((await request(port, 'GET', '/api/automation-runtime-default')).json.runtime.model, profile.model);
+    const future = new Date(Date.now() + 86400000).toISOString();
+    for (const [route, body, key] of [
+      ['/api/automation-tasks', { kind: 'one_time', title: 'Web default', prompt: 'Fixture', scheduledAt: future, target: { mode: 'new_session', sessionId: fixedSession.id } }, 'task'],
+      ['/api/triggers', { sessionId: fixedSession.id, text: 'Fixture', scheduledAt: future }, 'trigger'],
+      ['/api/schedules', { sessionId: fixedSession.id, text: 'Fixture', everySeconds: 86400 }, 'schedule'],
+    ]) {
+      const pinned = await request(port, 'POST', route, body);
+      assert.equal(pinned.status, 201, pinned.text);
+      const runtime = pinned.json[key].runtime || pinned.json[key];
+      assert.equal(runtime.runtimePolicy, 'fixed');
+      assert.equal(runtime.model, profile.model);
+      assert.equal(runtime.effort, profile.effort);
+      const auto = await request(port, 'POST', route, { ...body, runtimePolicy: 'auto' });
+      assert.equal(auto.status, 201, auto.text);
+      assert.equal((auto.json[key].runtime || auto.json[key]).runtimePolicy, 'auto');
+    }
+    rmSync(profilePath);
+    if (process.argv.includes('--runtime-default-only')) {
+      outputPassed = true;
+      console.log('Automation runtime default: Web task, trigger, schedule and explicit Auto passed.');
+      return;
+    }
     const templateResponse = await request(port, 'POST', '/api/sessions', { folder: repoRoot, tool: 'task-center-tool', name: 'Independent execution template' }, secondPersonCookie);
     assert.equal(templateResponse.status, 201, templateResponse.text);
     const templateSession = templateResponse.json.session;
