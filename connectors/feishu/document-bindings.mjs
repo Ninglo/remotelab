@@ -2,16 +2,18 @@ import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
 import { feishuReadRetryPolicy } from '../../lib/feishu-retry-policy.mjs';
 import { createFeishuReadPacer } from '../../lib/feishu-read-pacer.mjs';
 import { createHash } from 'node:crypto';
-import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
 import { submitConnectorMessage } from '../../lib/connector-turn-flow.mjs';
-import { renderFeishuCommentContent, addFeishuCommentProcessingReaction } from './comment-flow.mjs';
-import { ensureCreatedDocumentBinding } from './created-document-bindings.mjs';
+import { addFeishuCommentProcessingReaction, hydrateFeishuDocumentCommentSummary, renderFeishuCommentContent } from './comment-flow.mjs';
+import { buildMessageSourceContext, buildRequestId } from './index.mjs';
+import { ensureDocumentBinding } from './created-document-bindings.mjs';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const bindingKey = token => hash(token).slice(0, 32);
 export const bindingsDirectory = storageDir => join(storageDir, 'document-bindings');
+export const documentBindingPath = (storageDir, token) => join(bindingsDirectory(storageDir), `${bindingKey(token)}.binding.json`);
 export async function readBindingJson(path, fallback = null) {
   try { return JSON.parse(await readFile(path, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT') return fallback; throw error; }
@@ -21,18 +23,6 @@ export async function writeBindingJson(path, value) {
   const temporary = `${path}.${process.pid}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   await rename(temporary, path);
-}
-export async function listDocumentBindings(storageDir) {
-  const directory = bindingsDirectory(storageDir);
-  let files;
-  try { files = await readdir(directory); }
-  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
-  const bindings = [];
-  for (const file of files.filter(file => file.endsWith('.binding.json')).sort()) {
-    const binding = await readBindingJson(join(directory, file));
-    if (binding?.enabled) bindings.push(binding);
-  }
-  return bindings;
 }
 
 const readPacers = new WeakMap();
@@ -213,13 +203,14 @@ export async function reconcileDocumentBinding(runtime, binding) {
     if (!(binding.createdDocument && !current && !binding.conversation)
       && (!current || !(sameConversation(current, refineConversation(binding.conversation, current))
       || JSON.stringify(binding.conversation) === JSON.stringify(current)))) {
-      throw Object.assign(new Error('Bound Session missing or conversation changed; rebind explicitly'), { retryable: false });
+      throw Object.assign(new Error('Bound Session conversation changed; restore the original target'), { retryable: false });
     }
+    if (result.json?.session?.archived) throw Object.assign(new Error('Bound Session is archived'), { retryable: false });
     // Persist the exact submission before admission. Lost acknowledgements replay
     // the same request and body, never a newly hydrated version of its context.
     const drain = async () => {
       while (state.pending.length) {
-        const liveBinding = await readBindingJson(join(bindingsDirectory(runtime.config.storageDir), `${bindingKey(binding.fileToken)}.binding.json`));
+        const liveBinding = await readBindingJson(documentBindingPath(runtime.config.storageDir, binding.fileToken));
         if (!liveBinding?.enabled || liveBinding.generation !== binding.generation) throw new Error('Document binding disabled or changed before admission');
         const item = state.pending[0];
         const policy = runtime.config.accessPolicy;
@@ -269,22 +260,53 @@ export async function reconcileDocumentBinding(runtime, binding) {
   }
 }
 
+async function submitDocumentMention(runtime, binding, entry, save) {
+  if (!entry.summary?.mentionedBot) return { ignored: 'mention_required' };
+  let payload = entry.mentionPayload;
+  if (!payload) {
+    const current = await hydrateFeishuDocumentCommentSummary(runtime, entry.summary);
+    const sourceContext = {
+      ...buildMessageSourceContext({ ...current, sourceRouteId: binding.sourceRouteId }),
+      appId: current.appId, tenantKey: current.tenantKey, sender: current.sender,
+      documentBinding: true, documentReplyMode: 'comment', documentUrl: binding.documentUrl,
+    };
+    payload = { requestId: buildRequestId(current), sourceContext,
+      text: [current.messageText, `文档：${binding.documentUrl}`,
+        '最终答复会自动发回原评论串，请勿手动再回一次。'].join('\n\n'),
+      sourceDelivery: { connector: 'feishu', sourceRouteId: binding.sourceRouteId, target: {
+        conversationKind: 'document_comment', fileToken: current.fileToken, fileType: current.fileType,
+        commentId: current.commentId, replyId: current.replyId,
+      } },
+    };
+    // Freeze the exact input and delivery address before submitting. An edit
+    // between admission and a lost-ACK retry must not change this request.
+    await save({ mentionPayload: payload });
+  }
+  const receipt = await submitConnectorMessage(runtime.requestRemoteLab, binding.sessionId, payload);
+  void addFeishuCommentProcessingReaction(runtime, payload.sourceContext, 'Get')
+    .catch(error => console.warn(`[feishu-comment-reaction] ${error.message}`));
+  return { sessionId: binding.sessionId, requestId: receipt.requestId };
+}
+
 export async function startDocumentBindingEvents(runtime) {
   const directory = bindingsDirectory(runtime.config.storageDir);
   await mkdir(directory, { recursive: true });
   const inbox = createConnectorInbox(join(directory, 'events'), {
-    maxConcurrency: 2, retryPolicy: feishuReadRetryPolicy,
+    maxConcurrency: 2, retryPolicy: feishuReadRetryPolicy, archiveRetentionDays: 90,
     conversationKey: entry => entry.fileToken,
-    process: async entry => {
+    process: async (entry, save) => {
       if (!entry.id.startsWith('comment:')) return { ignored: 'automatic_scan_disabled' };
-      const binding = entry.summary
-        ? await ensureCreatedDocumentBinding(runtime, entry.summary)
-        : (await listDocumentBindings(runtime.config.storageDir))
-          .find(item => item.fileToken === entry.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
-      if (!binding?.enabled) {
-        if (!binding && entry.summary?.mentionedBot) return runtime.handleDocumentMention?.(entry.summary);
+      const path = documentBindingPath(runtime.config.storageDir, entry.fileToken);
+      let binding = await readBindingJson(path);
+      if (entry.summary?.mentionedBot && (!binding || binding.mentionOnly)
+          && runtime.allowDocumentMention && !await runtime.allowDocumentMention(entry.summary)) {
+        return { ignored: 'sender_not_allowed' };
+      }
+      if (entry.summary && (!binding || binding.createdDocument)) binding = await ensureDocumentBinding(runtime, entry.summary);
+      if (!binding?.enabled || binding.sourceRouteId !== runtime.config.sourceRouteId) {
         return { ignored: 'not_owned_or_disabled' };
       }
+      if (binding.mentionOnly) return submitDocumentMention(runtime, binding, entry, save);
       await reconcileDocumentBinding(runtime, binding);
       return { reconciled: true };
     },
@@ -304,12 +326,13 @@ export async function startDocumentBindingEvents(runtime) {
     async accept(summary) {
       const ownIds = new Set(Object.values(runtime.botIdentity || {}).filter(Boolean));
       if (Object.values(summary.sender || {}).some(id => ownIds.has(id))) return true;
-      const binding = await readBindingJson(join(directory, `${bindingKey(summary.fileToken)}.binding.json`));
+      const binding = await readBindingJson(documentBindingPath(runtime.config.storageDir, summary.fileToken));
       if (binding) {
         // Never fall through to mention intake when explicitly disabled or
         // bound to another Bot; that would create a second competing Session.
         if (binding.enabled && binding.sourceRouteId === runtime.config.sourceRouteId) {
-          if (binding.createdDocument) await inbox.accept(`comment:${summary.eventId || summary.messageId}`,
+          if (binding.mentionOnly && !summary.mentionedBot) return true;
+          if (binding.mentionOnly || binding.createdDocument) await inbox.accept(`comment:${summary.eventId || summary.messageId}`,
             { fileToken: summary.fileToken, summary });
           else await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
         }

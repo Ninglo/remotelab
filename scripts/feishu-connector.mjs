@@ -2507,7 +2507,10 @@ async function main() {
   let closed = false;
   let cardRecovery = null;
   runtime.resolveDocumentRuntime = () => resolveFeishuRuntimeSelection(runtime);
-  runtime.handleDocumentMention = summary => handleMessage(runtime, summary, 'drive.notice.comment_add_v1');
+  runtime.allowDocumentMention = async summary => {
+    if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
+    return isAllowedByPolicy(runtime.config.accessPolicy, summary);
+  };
   const documentEvents = await startDocumentBindingEvents(runtime);
   let cardsStopped = null;
   const closeConnection = (reason) => {

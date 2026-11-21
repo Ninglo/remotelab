@@ -1,14 +1,13 @@
 # Feishu document comment replies
 
 
+A docx has at most one fixed Session per Feishu connector. The binding is created by the first eligible comment or by an explicit bind. Once bound, the Session cannot be replaced; pausing intake retains the target. A missing or archived target is an error, not a reason to create another Session.
+
 Bot-owned docx documents receive automatic comment replies. Newly created documents default to the Session that creates them. The instance's
 `lark-cli` launcher records the creating Bot application, document token and
 `REMOTELAB_SESSION_ID` from successful Bot creation responses. This durable
 creation record is the default routing binding; the connector materializes its
-comment cursor on the first received comment. A document with no creating Session
-gets one document Session on its first comment, then reuses it across comment
-threads and restarts. Answers return to the original comment, including when the
-creator Session is a Web Session or uses a different Bot for chat.
+comment cursor on the first received comment. A Bot-owned document with no creating Session gets one on its first comment. For an unbound document the Bot does not own, only a comment that explicitly @-mentions the Bot from an allowed sender can create the binding. Such a binding remains mention-only; unmentioned comments do not trigger work. Both modes reuse the same Session across comment threads and restarts. Each answer returns to the comment thread that triggered it, including when the creator Session is a Web Session or uses a different Bot for chat.
 
 Explicit existing bindings, disabled bindings and explicit creation targets win.
 For an explicitly requested alternate target, set `REMOTELAB_DOCUMENT_SESSION_ID`
@@ -33,8 +32,8 @@ its own Bot identity on each received comment event. Read/edit access alone does
 not qualify. Bot-owned historical documents need no creation record: their first
 comment creates a document Session and starts its cursor at that comment, without
 replaying old history. Changing ownership away from the Bot stops automatic
-intake. Existing explicit bindings and the separate @-mention entry keep their
-prior behavior. Ownership/read failures are retained in the durable event inbox;
+intake without replacing its binding. Existing explicit bindings retain their target.
+Ownership/read failures are retained in the durable event inbox;
 they do not create a replacement Session or claim a reply was delivered.
 
 ## Explicit review-topic binding
@@ -56,7 +55,7 @@ node scripts/feishu-document-bindings.mjs bind \
 
 Existing bindings without a reply mode retain the previous behavior. To migrate one, repeat the original `bind` command with `--reply-mode comment`. This changes only the policy for future inputs; it preserves the generation, intake start time, and seen/pending cursor, and does not replay historical comments or change already admitted requests. `--reply-mode conversation` keeps manual comment replies plus ordinary Session chat delivery for workflows that already depend on that behavior.
 
-`unbind` disables future intake (an already admitted request remains in its Session). Repeating `bind` otherwise preserves the binding; changing its Session requires an explicit migration rather than quietly duplicating input.
+`unbind` pauses future intake (an already admitted request remains in its Session). Repeating `bind` with the same target resumes intake without resetting its cursor; specifying a different Session is refused. Use `--intake mention` to establish a mention-only binding, including when adopting an existing comment Session for that same document. Old unbound per-comment Sessions are not merged or replayed.
 
 Intake starts at binding time; historical comments are context, not automatically replayed requests. Subsequent edits are separate revisions. Each input includes author ID, document URL, quote, available anchor relation, and full comment-thread context. Missing/deleted anchor relations are not evidence of a current precise location. Images are not downloaded by this first version. The Agent can read the document using the provided token to resolve additional context.
 
@@ -68,7 +67,7 @@ Verification should cover replay after lost admission acknowledgement, edits, ow
 
 The Feishu event follows recipient notification semantics; explicit local binding does not grant notifications for every accessible document. The bound Bot must receive comment notifications for that document. This deployment has previously received non-mention comments for the report documents. Comment edits have no confirmed dedicated event; they are discovered on later comment-event reads or an explicitly requested review. A successful socket connection is not end-to-end validation of a new comment.
 
-For direct @-mentions outside a document binding, the connector reads the exact
+For a mention-only binding, the connector reads the exact
 comment ID through [batch query](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/drive-v1/file-comment/batch_query)
 and paginates its replies. This covers inline comments anchored to a selection
 and whole-document comments. Feishu's single-comment GET only reads whole-document comments.

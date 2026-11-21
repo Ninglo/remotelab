@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createdDocumentFromResult, recordCreatedDocument, readCreatedDocument } from '../lib/feishu-document-creation.mjs';
 import { startDocumentBindingEvents, readBindingJson, writeBindingJson, bindingsDirectory, bindingKey } from '../connectors/feishu/document-bindings.mjs';
-import { ensureCreatedDocumentBinding } from '../connectors/feishu/created-document-bindings.mjs';
+import { ensureDocumentBinding } from '../connectors/feishu/created-document-bindings.mjs';
 import { resolveSessionDeliveryPlan } from '../chat/session-conversations.mjs';
 
 const result = { ok: true, identity: 'bot', data: { document: { document_id: 'doc', url: 'https://example.feishu.cn/docx/doc' } } };
@@ -24,11 +24,17 @@ const foreign = new Set(['unknown']);
 let controller, lostAck = false;
 const runtime = {
   config, botIdentity: { openId: 'bot-id' },
+  allowDocumentMention: async summary => summary.sender.openId !== 'blocked',
   appClient: { drive: { v1: {
     meta: { batchQuery: async ({ data }) => ({ data: { metas: data.request_docs.map(doc => ({
       doc_token: doc.doc_token, owner_id: foreign.has(doc.doc_token) ? 'somebody-else' : 'bot-id', title: 'Document',
     })) } }) },
-    fileComment: { list: async ({ path }) => ({ data: { items: [{ comment_id: 'c', replies: [] }] } }) },
+    fileComment: {
+      list: async () => ({ data: { items: [{ comment_id: 'c', replies: [] }] } }),
+      batchQuery: async ({ data }) => ({ data: { items: data.comment_ids.map(comment_id => ({
+        comment_id, reply_list: { replies: [reply('r')] },
+      })) } }),
+    },
     fileCommentReply: { list: async ({ path }) => ({ data: { items: replies.get(path.file_token) || [] } }) },
   }, v2: { commentReaction: { updateReaction: async () => ({ code: 0 }) } } } },
   requestRemoteLab: async (path, options) => {
@@ -39,8 +45,10 @@ const runtime = {
       if (lostAck) { lostAck = false; throw new Error('Lost creation acknowledgement'); }
       return { response: { ok: true }, json: { session } };
     }
+    assert.ok(path.startsWith('/api/sessions/'));
     const id = path.split('/')[3];
     if (options) {
+      if (!sessions.has(id) || sessions.get(id).archived) return { response: { status: 404 } };
       const delivery = resolveSessionDeliveryPlan(sessions.get(id), options.body);
       submissions.push({ id, payload: options.body, delivery });
       return { response: { status: 202 }, json: { queued: true } };
@@ -103,12 +111,12 @@ try {
   assert.equal(submissions.length, 3, 'unbind does not fall through to another intake');
   await register('explicit', 'missing-creator');
   await writeBindingJson(bindingPath('explicit'), { ...bound, fileToken: 'explicit' });
-  assert.equal((await ensureCreatedDocumentBinding(runtime, event('explicit'))).sessionId, 'creator');
+  assert.equal((await ensureDocumentBinding(runtime, event('explicit'))).sessionId, 'creator');
 
   await register('lost');
   lostAck = true;
-  await assert.rejects(ensureCreatedDocumentBinding(runtime, event('lost', 'first', 'first-comment')), /Lost creation/);
-  const recovered = await ensureCreatedDocumentBinding(runtime, event('lost', 'later', 'another-comment'));
+  await assert.rejects(ensureDocumentBinding(runtime, event('lost', 'first', 'first-comment')), /Lost creation/);
+  const recovered = await ensureDocumentBinding(runtime, event('lost', 'later', 'another-comment'));
   assert.deepEqual(sessionPayloads.at(-1), sessionPayloads.at(-2), 'retry retains the exact creation intent');
   assert.equal(recovered.conversation.target.commentId, 'first-comment');
   assert.equal([...sessions.values()].filter(s => s.externalTriggerId?.endsWith(':lost')).length, 1);
@@ -127,8 +135,40 @@ try {
     'automatic intake stops when the Bot no longer owns the document');
 
   await register('missing', 'missing-creator');
-  await assert.rejects(ensureCreatedDocumentBinding(runtime, event('missing')), /creator Session unavailable/);
+  await assert.rejects(ensureDocumentBinding(runtime, event('missing')), /creator Session unavailable/);
   assert.equal(await readBindingJson(bindingPath('missing')), null, 'missing explicit target is not replaced');
+
+  foreign.add('denied');
+  const createsBeforeMentions = sessionPayloads.length;
+  await controller.accept({ ...event('denied'), mentionedBot: true, sender: { openId: 'blocked' } });
+  await controller.idle();
+  assert.equal(await readBindingJson(bindingPath('denied')), null);
+  const mentionsBefore = submissions.length;
+  const mention = (thread, mentionedBot = true) => ({ ...event('unknown', thread, thread),
+    sourceKind: 'document_comment', mentionedBot });
+  await controller.accept(mention('first'));
+  await controller.idle();
+  await controller.stop();
+  controller = await startDocumentBindingEvents(runtime);
+  await controller.accept(mention('silent', false));
+  await controller.accept(mention('second'));
+  await controller.accept(mention('second'));
+  await controller.idle();
+  assert.equal(sessionPayloads.length, createsBeforeMentions + 1, 'one Session across both comment threads and restart');
+  const fixed = await readBindingJson(bindingPath('unknown'));
+  assert.equal(fixed.mentionOnly, true);
+  assert.deepEqual(submissions.slice(mentionsBefore).map(s => [s.id, s.delivery.target.commentId]),
+    [[fixed.sessionId, 'first'], [fixed.sessionId, 'second']]);
+  assert.ok(submissions.at(-1).payload.sourceContext.documentBinding);
+  sessions.delete(fixed.sessionId);
+  await controller.accept(mention('missing-target'));
+  await controller.idle();
+  assert.equal(sessionPayloads.length, createsBeforeMentions + 1, 'missing target never creates a substitute');
+  assert.equal((await readBindingJson(bindingPath('unknown'))).sessionId, fixed.sessionId);
+  await writeBindingJson(bindingPath('unknown'), { ...fixed, enabled: false });
+  await controller.accept(mention('disabled-target'));
+  await controller.idle();
+  assert.equal(sessionPayloads.length, createsBeforeMentions + 1, 'disabling an existing binding never reassigns it');
   console.log('Created documents: provenance, creator routing, unbound creation/reuse, restart, duplicate, Bot isolation, explicit binding and lost ACK passed');
 } finally {
   await controller?.stop();
