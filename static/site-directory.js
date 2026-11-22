@@ -55,7 +55,11 @@ function render() {
     tr.append(type);
     const status = element('td');status.append(element('span',states[entry.status] || '待整理','tag'));
     if(entry.gaps.length)status.append(element('span','缺：'+entry.gaps.join('、'),'gap'));tr.append(status);
-    const controls=element('td'),button=element('button','登记','edit');button.addEventListener('click',()=>edit(entry));controls.append(button);tr.append(controls);$('rows').append(tr);
+    const controls=element('td'),button=element('button','登记','edit');button.addEventListener('click',()=>edit(entry));controls.append(button);
+    if (/^\/preview\/[a-z][a-z0-9-]{0,62}\/_invite\/manage$/.test(entry.guestManagementPath || '')) {
+      const guestLink = element('a', '访客邀请', 'sub'); guestLink.href = entry.guestManagementPath; controls.append(guestLink);
+    }
+    tr.append(controls);$('rows').append(tr);
   }
   $('message').textContent = data.errors.length ? data.errors.join('；') : entries.length ? '' : '没有匹配记录，可调整筛选或登记外部网站。';
   $('count').textContent = `显示 ${entries.length ? (page-1)*pageSize+1 : 0}–${Math.min(page*pageSize,entries.length)} / ${entries.length} 项`;

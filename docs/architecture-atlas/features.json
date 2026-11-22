@@ -835,13 +835,19 @@
         {
           "id": "previews",
           "name": "本地服务预览与端口暴露",
-          "purpose": "让已有的本地动态页面通过稳定入口访问，保留认证与视频跳转，并按明确登记的路径开放提交。",
-          "entry": "让 Agent 检查本地服务后使用 preview，或受控 guest 入口。",
-          "condition": "已配置员工登录时新预览由入口统一认证，服务只监听 loopback；已有 Basic Auth 预览保持原方式。",
+          "purpose": "让动态页面复用站点认证与稳定入口，按登记路径开放提交；经审核的员工预览可由负责人发出一次性访客邀请。",
+          "entry": "用 preview 发布本地服务；站点明确启用后，负责人可从项目总站进入访客邀请管理。",
+          "condition": "员工预览由入口统一认证，服务只监听 loopback；已有 Basic Auth 保持不变。受邀身份只限选中的站点，可即时撤销。",
           "example": "把这个已经运行的本地预览接到当前实例的认证入口。",
           "sources": [
             "chat/preview-proxy.mjs",
+            "chat/preview-guests.mjs",
             "lib/preview-command.mjs",
+            "lib/preview-guest-store.mjs",
+            "lib/sqlite-state-worker.mjs",
+            "static/preview-guests.js",
+            "static/preview-guests.css",
+            "tests/test-preview-guests.mjs",
             "docs/platform-skills/guest-port-expose.md",
             "docs/employee-site-login.md"
           ],

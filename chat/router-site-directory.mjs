@@ -5,6 +5,7 @@ import { readBody } from '../lib/utils.mjs';
 import { requireEmployeeSite, sameSiteOrigin } from './employee-site-auth.mjs';
 import { injectSiteUsageHtml } from './site-usage-html.mjs';
 import { injectSiteIdentityHtml } from './site-identity-html.mjs';
+import { loadPreviewGuestPolicies, previewGuestPolicy } from './preview-guests.mjs';
 
 export const siteDirectory = createSiteDirectory({ people: async () => (getCachedAuthDocument() || await loadAuthDocument()).people });
 export function createSiteDirectoryHandler({ directory = siteDirectory, authorize = requireEmployeeSite } = {}) {
@@ -24,7 +25,15 @@ export function createSiteDirectoryHandler({ directory = siteDirectory, authoriz
       if (!['GET', 'HEAD'].includes(req.method)) { send(405, { error: 'Method not allowed' }); return true; }
       if (pathname === '/api/sites' || pathname === '/api/sites/export') {
         if (pathname.endsWith('/export')) res.setHeader('Content-Disposition', 'attachment; filename="project-sites.json"');
-        send(200, { ...await directory.listing(), viewer: { name: person.name } }); return true;
+        const listing = await directory.listing();
+        if (pathname === '/api/sites') {
+          const policies = await loadPreviewGuestPolicies();
+          for (const entry of listing.entries) if (entry.kind === 'preview' && entry.ownerPersonId === person.id) {
+            const policy = previewGuestPolicy(policies, entry.slug, { ...entry, port: entry.deployment?.loopbackPort }, req);
+            if (policy) entry.guestManagementPath = `${policy.base}/_invite/manage`;
+          }
+        }
+        send(200, { ...listing, viewer: { name: person.name } }); return true;
       }
       const assets = { '/sites': ['../templates/site-directory.html', 'text/html'], '/sites/': ['../templates/site-directory.html', 'text/html'],
         '/sites/app.js': ['../static/site-directory.js', 'text/javascript'], '/sites/style.css': ['../static/site-directory.css', 'text/css'] };

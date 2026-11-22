@@ -1,4 +1,5 @@
 import { requireEmployeeSite, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
+import { handlePreviewInvites, hasPreviewGuestCookie, isPreviewInvitePath, loadPreviewGuestPolicies, previewGuestPerson, previewGuestPolicy } from './preview-guests.mjs';
 import { legacySiteLogin, previewIdentityPolicy } from '../lib/legacy-site-login.mjs';
 import { siteUsageHtmlTransform, siteUsageCsp, siteUsageOrigin } from './site-usage-html.mjs';
 import { siteIdentityCsp, siteIdentityHtmlTransform } from './site-identity-html.mjs';
@@ -37,6 +38,7 @@ async function routeFor(slug) {
     return {
       port: route.port,
       access: route.access || 'basic',
+      ownerPersonId: route.ownerPersonId,
       reuseIdentity: route.reuseIdentity === true || identity.reuseIdentity === true,
       recognizeIdentity: route.recognizeIdentity === true || identity.recognizeIdentity === true,
       employeeLogin: identity.employeeLogin === true,
@@ -61,6 +63,12 @@ export async function handlePreviewProxy(req, res, pathname) {
     return true;
   }
   const suffix = match[2] || '/';
+  const invitePath = isPreviewInvitePath(suffix), guestCookie = route.access === 'employee' && hasPreviewGuestCookie(req);
+  const guestPolicy = invitePath || guestCookie ? previewGuestPolicy(await loadPreviewGuestPolicies(), match[1], route, req) : null;
+  if (invitePath && guestPolicy) {
+    await handlePreviewInvites(req, res, suffix, guestPolicy);
+    return true;
+  }
   const machineRoute = route.machinePaths.find(p => p.path === suffix && p.method === req.method);
   let machine = false;
   if (machineRoute && (req.method === 'POST' || req.headers.authorization)) {
@@ -73,12 +81,17 @@ export async function handlePreviewProxy(req, res, pathname) {
       res.writeHead(401, { 'Cache-Control': 'private, no-store' }); res.end('Device credential required'); return true;
     }
   }
-  let person;
+  let person, guest;
   const mappedLogin = route.employeeLogin && !req.headers.authorization;
   if (!machine && (route.access === 'employee' || mappedLogin)) {
-    person = await requireEmployeeSite(req, res);
-    if (!person) return true;
-    if (!['GET', 'HEAD'].includes(req.method) && !sameSiteOrigin(req)) {
+    if (guestCookie && guestPolicy && !mappedLogin) {
+      person = await employeeSitePerson(req, res);
+      if (!person) guest = await previewGuestPerson(req, res, guestPolicy, suffix);
+      if (res.writableEnded) return true;
+    }
+    if (!person && !guest) person = await requireEmployeeSite(req, res);
+    if (!person && !guest) return true;
+    if (!['GET', 'HEAD'].includes(req.method) && !(guest ? req.headers.origin === guestPolicy.origin : sameSiteOrigin(req))) {
       res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end('Cross-origin write denied'); return true;
     }
   } else if (route.reuseIdentity || route.recognizeIdentity) {
@@ -101,7 +114,7 @@ export async function handlePreviewProxy(req, res, pathname) {
     if (route.access === 'employee' && name === 'authorization' && !machine) continue;
     if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];
   }
-  if (person) headers['x-remotelab-person-id'] = person.id;
+  if (person || guest) headers['x-remotelab-person-id'] = (person || guest).id;
   let replayedAuthorization = false;
   if (mappedLogin) {
     try { headers.authorization = await legacySiteLogin.lookup(match[1], person.id, route.port); } catch {}

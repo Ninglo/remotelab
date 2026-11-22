@@ -57,6 +57,21 @@ Both commands store a private identity policy pinned to the original upstream po
 for the private credential store, scope and rollback.
 
 Both modes use `<instance-domain>/preview/<name>/` and the existing domain/tunnel.
+
+### One-use invitations for selected employee previews
+
+Ask the agent: “Enable guest invitations for this one managed preview. Confirm the live URL, existing owner, and the ordinary in-app operations that guests will inherit. Leave employees, other sites and business roles unchanged. Do not create or send invitations; the site owner will do that.” Give the exact preview URL and the access scope. Use this only for an upstream where the same ordinary operations and shared data are approved for guests. Existing per-person ownership checks still apply; even upload, device pairing or automatic queues may be part of the ordinary workflow.
+
+For this instance add the selected slug in private `preview-guest-invites.json` (mode 0600), preserving other entries:
+
+```json
+{"my-preview":{"port":18746,"ownerPersonId":"person_example","origin":"https://example.test","title":"Example site"}}
+```
+
+The entry works only on the exact HTTPS origin and while the original employee preview matches the slug, port and owner. It does not change the route or the employee login. The verified preview owner finds **访客邀请** in `/sites` on that origin, or opens `/preview/<slug>/_invite/manage`. The owner issues a distinct link per recipient and sends it privately; anyone who receives the unredeemed link can claim it. Only an explicit click spends it, within 24 hours; normal link previews do not. The invitation code appears only in the URL fragment and in the redemption body, not in the access URL or list. Do not log redemption bodies. After confirmation the grant does not expire automatically, and a scoped cookie keeps that browser signed in on future visits; clearing cookies, browser retention limits, or switching browsers can require a new invitation. A guest gets a distinct preview-only actor, not a workbench, directory, or employee identity. Revoke either a pending link or the resulting grant from the same screen. Revocation blocks new website requests; it does not undo completed actions or cancel jobs already queued by the upstream.
+
+Verify with `node scripts/run-with-clean-instance-env.mjs node tests/test-preview-guests.mjs` (optionally set `SITE_TEST_PLAYWRIGHT` and `SITE_TEST_CHROME` for browser coverage). Production verification should check owner login redirection, the explicit accept page, and rejection of ordinary anonymous requests. Use isolated data for issuance, expiry, competing redemption, guest writes, route isolation and revocation tests; do not test by initiating production device work. The instance-local `preview-guest-grants.json.sqlite` stores hashed credentials and grant history. Inactive rows are pruned on issuance after 90 days. To disable the feature immediately without changing employee access, remove only the slug's opt-in record; restoring an unchanged record restores unrevoked guests. Keep the SQLite state in private backups rather than deleting it or exporting links.
+
 Keep the service under a restart-safe supervisor. Remove it with
 `remotelab preview unexpose --slug <name>`.
 
