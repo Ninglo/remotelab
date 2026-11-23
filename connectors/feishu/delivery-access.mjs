@@ -5,6 +5,7 @@ import { canonicalJson, createRecordStore } from '../../lib/durable-records.mjs'
 import { normalizeConversationTarget, sameConversationScope } from '../../lib/conversation-target.mjs';
 import { getSummaryFeishuResources } from './inbound-envelope.mjs';
 import { feishuAccessRole } from './restricted-access.mjs';
+import { authorizeAutomationDelivery } from './automation-delivery-access.mjs';
 
 const key = id => createHash('sha256').update(id).digest('hex').slice(0, 24);
 const storeFor = runtime => runtime.roleDeliveryContexts ||= createRecordStore(
@@ -37,14 +38,15 @@ export async function recordRoleDeliveryContext(runtime, summary, { responseId, 
 }
 
 export async function authorizeRoleDelivery(runtime, delivery) {
-  if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
   if (!delivery.responseId) return null;
   const context = await storeFor(runtime).get(key(delivery.responseId));
-  if (!context || context.responseId !== delivery.responseId || context.sessionId !== delivery.sessionId
+  if (!context) return authorizeAutomationDelivery(runtime, delivery);
+  if (context.responseId !== delivery.responseId || context.sessionId !== delivery.sessionId
       || context.sourceRouteId !== delivery.sourceRouteId) return null;
   const plan = target => ({ connector: 'feishu', sourceRouteId: context.sourceRouteId, target });
   if (!sameConversationScope(plan(context.target), plan(delivery.target))
       || context.target.tenantKey !== delivery.target?.tenantKey) return null;
+  if (runtime.config.accessPolicy?.roles?.hrPolicy) await refreshRuntimeHrPolicy();
   const role = feishuAccessRole(runtime.config.accessPolicy, context.summary);
   if (runtime.config.appId !== context.summary.appId) return null;
   if (['hr', 'collaborator'].includes(role)) return { role, summary: context.summary };

@@ -3,6 +3,7 @@ import { refreshRuntimeHrPolicy } from '../lib/hr-policy.mjs';
 import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview, queryHrRecruiting,
   restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
 import { recordRoleDeliveryContext, authorizeRoleDelivery } from '../connectors/feishu/delivery-access.mjs';
+import { isScheduledReportDelivery } from '../connectors/feishu/automation-delivery-access.mjs';
 import { sendMemoryReviewCard, handleMemoryReviewCardAction } from '../connectors/feishu/memory-review-cards.mjs';
 import { sendAutomationCard, handleAutomationCardAction } from '../connectors/feishu/automation-cards.mjs';
 import { freezeLargeSourceContext } from '../chat/source-context-pages.mjs';
@@ -1542,10 +1543,29 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const claim = json?.claim;
   if (!claim) return null;
   const delivery = claim.delivery;
+  const recordFailure = async failure => {
+    await failures.record({ deliveryId: delivery.id, leaseId: claim.leaseId, failure });
+    let failed;
+    await failures.flush(async receipt => {
+      const result = await acknowledgeFailure(receipt);
+      if (receipt.deliveryId === delivery.id && receipt.leaseId === claim.leaseId) failed = result;
+    }, replayOptions);
+    return failed;
+  };
   if (runtime.config.accessPolicy?.mode === 'roles') {
     const policy = runtime.config.accessPolicy;
-    const authorization = await authorizeRoleDelivery(runtime, delivery);
+    const scheduledReport = isScheduledReportDelivery(delivery);
+    let authorization;
+    let rejection = 'Role policy rejects unauthorized delivery';
+    try { authorization = await authorizeRoleDelivery(runtime, delivery); }
+    catch (error) {
+      if (!scheduledReport) throw error;
+      rejection = 'Scheduled delivery authorization unavailable';
+    }
     if (!authorization) {
+        if (scheduledReport) {
+          return recordFailure({ error: rejection, definiteFailure: true, safeToRetry: false });
+        }
         // Legacy control planes resolve only unknown/failed deliveries. No
         // provider call occurred, so settle this local rejection before cancelling.
         const rejected = await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST',
@@ -1653,9 +1673,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     } catch (error) {
       // Persist rejection evidence before acknowledging it, just like success
       // receipts. Restart must not turn a known rejection into an unknown send.
-      await failures.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
-        failure: classifyFeishuDeliveryError(error) });
-      await failures.flush(acknowledgeFailure, replayOptions);
+      await recordFailure(classifyFeishuDeliveryError(error));
       throw error;
     }
     if (sent?.superseded) {

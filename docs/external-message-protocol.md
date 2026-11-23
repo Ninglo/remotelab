@@ -602,6 +602,7 @@ The independent sender uses service-authenticated APIs:
 - `POST /api/source-deliveries/claim` with `connector` and `sourceRouteId` returns a delivery and lease, or no available work.
 - `POST /api/source-deliveries/:id/complete` with `leaseId` and `externalId` acknowledges a durable upstream receipt. Repeated acknowledgements of the same receipt are harmless.
 - `POST /api/source-deliveries/:id/fail` records sending failure. Set `safeToRetry` only when the upstream operation can safely repeat; ambiguous sends become `unknown`, not blind retries.
+- A role-gated Feishu scheduled report that fails its delivery authorization uses the durable failure receipt and remains `delivery_failed`. The execution result is tracked separately, and the delivery issue contains the failure reason without the report text.
 - `GET /api/source-deliveries?connector=...&sourceRouteId=...` exposes pending/unresolved deliveries. Optional `includeActivity=true` also returns compact unsettled-request destinations (no prompt bodies), so native typing can be independently reconstructed from durable state.
 - `POST /api/source-deliveries/:id/resolve` with `state` (`pending`, `delivered`, or `cancelled`) and `reason` allows explicit recovery after upstream inspection.
 
