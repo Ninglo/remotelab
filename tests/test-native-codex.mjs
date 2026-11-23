@@ -33,6 +33,19 @@ function harness(options = {}, onQuestion) {
   return { driver, sent, events, settled, errors, reply, notify, start };
 }
 
+for (const [options, method, model] of [
+  [{ model: 'openai-codex/gpt-6.2-sol' }, 'thread/start', 'gpt-6.2-sol'],
+  [{ model: ' openai-codex/gpt-6.2-astra ', codexThreadId: 'thread-1' }, 'thread/resume', 'gpt-6.2-astra'],
+  [{ model: 'gpt-6.2-sol' }, 'thread/start', 'gpt-6.2-sol'],
+  [{}, 'thread/start', undefined],
+]) {
+  const h = harness(options); await h.start();
+  const { params } = h.sent.find(request => request.method === method);
+  assert.equal(params.model, model, `${method} must send the native Codex model ID`);
+  if (model === undefined) assert.equal(Object.hasOwn(params, 'model'), false);
+  h.driver.close();
+}
+
 {
   const h = harness(); await h.start();
   const error = { message: 'This request was blocked by our safety systems.',

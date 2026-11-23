@@ -125,6 +125,11 @@ try {
     'the Session snapshot applies to every connector surface');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, defaults), defaults,
     'Web UI requests can still make their own explicit selection');
+  const qualified = { model: 'openai-codex/gpt-6.2-astra', effort: 'medium', thinking: false };
+  assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex', ...qualified }),
+    { tool: 'codex', ...qualified, model: 'gpt-6.2-astra' }, 'saved mixed profiles preserve the chosen model in native Codex');
+  assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'pi', ...qualified }),
+    { tool: 'pi', ...qualified }, 'Pi must retain its provider route');
   const scheduledProfile = { tool: 'pi', model: 'openai-codex/gpt-6.1-sol', effort: 'medium', thinking: false };
   assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...scheduledProfile,
     internalOperation: 'trigger_delivery', sourceDelivery: { connector: 'feishu' },

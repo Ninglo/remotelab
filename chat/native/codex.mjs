@@ -397,7 +397,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
         // Avoid returning the entire transcript as one large JSONL frame.
         ...(resumeId ? { threadId: resumeId, excludeTurns: true } : {}),
         ...(cwd ? { cwd } : {}),
-        ...(options.model ? { model: options.model } : {}),
+        ...(configuredOptions.model ? { model: configuredOptions.model } : {}),
       });
       threadId = result?.thread?.id;
       if (!threadId) throw new Error('Codex thread initialization did not return a thread id');

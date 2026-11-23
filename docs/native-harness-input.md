@@ -51,7 +51,8 @@ bidirectional implementation of that CLI's protocol.
 Codex resumes use `thread/resume` with `excludeTurns: true`: the server restores
 the full model conversation but omits the unused `thread.turns` response payload.
 This does not compact history or change model, effort, instructions, steering,
-or publication policy. The shared native JSONL reader scans each incoming chunk
+or publication policy. Both `thread/start` and `thread/resume` send the native
+Codex model ID, not Pi's `openai-codex/` route prefix. The shared native JSONL reader scans each incoming chunk
 once and joins incomplete frame fragments only at LF (or stream end), avoiding
 repeated full-frame scans on long transcripts and large tool outputs. UTF-8,
 Unicode separators inside JSON strings, CRLF and final unterminated frames keep

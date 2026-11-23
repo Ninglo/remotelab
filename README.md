@@ -56,7 +56,7 @@ flowchart LR
     R <--> D["Durable state: history, runs, results"]
 ```
 
-RemoteLab owns channel connections, durable Sessions, context projection, run state, scheduled work, and result delivery. The Harness is the agent layer that interprets tasks, plans, chooses tools, and executes, retaining its native capabilities and safety mechanisms. Current native integrations include Codex, Claude Code, Pi, and Antigravity; see [Harness input](docs/native-harness-input.md). Models, accounts, and available tools depend on the operator's configuration.
+RemoteLab owns channel connections, durable Sessions, context projection, run state, scheduled work, and result delivery. The Harness is the agent layer that interprets tasks, plans, chooses tools, and executes, retaining its native capabilities and safety mechanisms. Current native integrations include Codex, Claude Code, Pi, and Antigravity; see [Harness input](docs/native-harness-input.md). Models, accounts, and available tools depend on the operator's configuration. RemoteLab keeps Pi's provider-qualified model routes distinct from the bare model IDs sent to Codex.
 
 A Session is a continuing work thread; a Run is an execution attempt. History and run state are persisted on disk, and execution processes are separate from the control service. Records survive browser disconnects, and the service can recover or reconcile runs after a restart. Persisted state must remain compatible with the code; check the [migration requirements](docs/request-state-upgrade.md) before upgrading.
 

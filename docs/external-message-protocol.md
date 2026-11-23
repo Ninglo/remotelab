@@ -330,8 +330,10 @@ the submitted payload, so retries keep their original identity and queued runs
 retain the accepted configuration across preference changes and restarts.
 RemoteLab's Codex product default is `gpt-6.2-sol` with `low` effort; native CLI
 configuration and recently used models only enrich the model catalog. Explicit
-Harness/model/effort profiles remain supported. Feishu continues to inherit the
-synced WebUI profile unless configured in pinned mode.
+Harness/model/effort profiles remain supported. The `openai-codex/` route prefix
+is retained for Pi but removed from the model ID sent to native Codex, including
+when starting or resuming from a previously saved profile. Feishu continues to
+inherit the synced WebUI profile unless configured in pinned mode.
 
 Feishu includes the Session link and the accepted model/effort/Harness snapshot
 in the first useful Harness opening, or the final reply when no opening exists.
@@ -344,7 +346,8 @@ execution and observer replay do not repeat it. Feishu sends no
 separate fixed creation notice. Other connectors that support an admission
 notice retain their existing snapshot-based notice. Starting an ordinary user
 run saves its complete Harness/model/effort profile on the Session for the
-WebUI; internal operations do not replace user preferences. Later routine Feishu turns omit openings; without an acceptance checklist they
+WebUI; internal operations (including scheduled automation in an existing
+Session) do not replace any field of the saved interactive profile. Later routine Feishu turns omit openings; without an acceptance checklist they
 send the ordinary final reply rather than a progress-only card. Task cards show
 the latest progress outside a callback disclosure, default collapsed. The last
 accepted click controls that shared card across updates and resumption.

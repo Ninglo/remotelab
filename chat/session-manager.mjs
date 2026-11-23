@@ -3945,7 +3945,9 @@ async function prepareRequestRunOnce(record) {
   }
 
   const experimentRoute = options.autoRoutingReceipt?.experiment;
-  if (effectiveTool !== session.tool && !experimentRoute) {
+  // An internal run has its own frozen runtime; do not leave its tool paired
+  // with the interactive Session's saved model and effort.
+  if (effectiveTool !== session.tool && !options.internalOperation && !experimentRoute) {
     const updatedToolSession = await updateSessionTool(sessionId, effectiveTool);
     if (updatedToolSession) {
       session = updatedToolSession;

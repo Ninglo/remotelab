@@ -28,7 +28,16 @@ await writeFile(join(config, 'group-routing-pilot.json'), JSON.stringify({ versi
   groups: [{ sourceRouteId: 'default', chatId: 'pilot-chat', tenantKey: 'tenant', folder: root }] }));
 await copyFile(join(repo, 'tests/fixtures/native-codex-app-server.cjs'), join(bin, 'fake-native'));
 await chmod(join(bin, 'fake-native'), 0o755);
+const codexHome = join(root, '.codex');
+await mkdir(codexHome);
+await mkdir(join(config, 'codex-accounts'));
+// Seed only account metadata; every Codex turn uses the local protocol fixture.
+await writeFile(join(config, 'codex-accounts', 'accounts.json'), JSON.stringify({
+  version: 1, activeId: 'default', autoSwitch: false,
+  accounts: [{ id: 'default', home: codexHome, account: { type: 'chatgpt', email: 'fixture@example.invalid' } }],
+}));
 const env = { PATH: `${bin}:${process.env.PATH}`, HOME: root, SHELL: '/bin/sh',
+  REMOTELAB_MACHINE_CODEX_HOME: codexHome,
   REMOTELAB_CONFIG_DIR: config, REMOTELAB_MEMORY_DIR: join(root, 'memory'), REMOTELAB_WORK_ROOT_DIR: root,
   REMOTELAB_MEMORY_WRITEBACK: 'off', REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1',
   REMOTELAB_FEISHU_GROUP_MESSAGE_BASELINE: '2026-10-07',
@@ -539,30 +548,44 @@ try {
   // the same waiting request as Session detail and queue removal do.
   const internalSession = await rpc('create');
   const internalRoot = await rpc('accept', internalSession.id, 'Run an independent scheduled operation', [], {
-    ...options('internal-root'), internalOperation: 'trigger_delivery',
+    ...options('internal-root'), tool: 'fake-context', model: 'scheduled-model', effort: 'low',
+    internalOperation: 'trigger_delivery',
   });
   await until(async () => (await logs()).some(event => event.runId === internalRoot.run.id && event.kind === 'turn/start'), 'internal native turn started');
-  const blocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  const triggeredManifest = JSON.parse(await readFile(join(config, 'chat-runs', internalRoot.run.id, 'manifest.json'), 'utf8'));
+  assert.equal(triggeredManifest.tool, 'fake-context', 'the trigger uses its own runtime');
+  assert.equal(triggeredManifest.options.model, 'scheduled-model');
+  const duringTrigger = await rpc('session', internalSession.id);
+  assert.deepEqual([duringTrigger.tool, duringTrigger.model, duringTrigger.effort],
+    [internalSession.tool, internalSession.model, internalSession.effort],
+    'a trigger using another Harness must not change the saved interactive profile');
+  const followInternal = () => rpc('accept', internalSession.id, 'Wait for the internal operation', [],
+    { ...options('blocked-followup'), tool: undefined });
+  const blocked = await followInternal();
   assert.equal(blocked.queued, true, 'user input behind an internal native operation must report queued');
   assert.equal(blocked.response.state, 'queued');
   assert.equal(blocked.session.activity.queue.count, 1);
   assert.deepEqual((await rpc('session', internalSession.id)).queuedMessages.map(item => item.requestId), ['blocked-followup']);
-  const duplicateBlocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  const duplicateBlocked = await followInternal();
   assert.equal(duplicateBlocked.duplicate, true);
   assert.equal(duplicateBlocked.queued, true, 'duplicate admission retains the actual waiting state');
   await rpc('shutdown');
   await killController(); await boot();
-  const recoveredBlocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  const recoveredBlocked = await followInternal();
   assert.equal(recoveredBlocked.queued, true, 'controller recovery preserves the internal-operation queue boundary');
   assert.equal(await receipt(internalRoot.run.id, 'blocked-followup'), null, 'queued input never entered native transport');
   const removed = await rpc('remove', internalSession.id, 'blocked-followup');
   assert.equal(removed.session.activity.queue.count, 0);
   assert.equal((await rpc('response', internalSession.id, 'blocked-followup')).state, 'cancelled');
-  const removedReplay = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  const removedReplay = await followInternal();
   assert.equal(removedReplay.queued, false, 'removed input must not be reported as queued or resurrected');
   assert.equal(removedReplay.response.state, 'cancelled');
   await writeFile(join(root, `${internalRoot.run.id}.release`), '');
   await awaitAnswer(internalSession.id, 'internal-root');
+  const afterTrigger = await rpc('session', internalSession.id);
+  assert.deepEqual([afterTrigger.tool, afterTrigger.model, afterTrigger.effort],
+    [internalSession.tool, internalSession.model, internalSession.effort],
+    'controller restart and trigger settlement must leave the interactive profile intact');
   assert.equal((await logs()).filter(event => event.clientId === 'blocked-followup').length, 0);
   await evidence('PASS: internal native work keeps follow-ups queued consistently across admission, detail, duplicate, restart and removal; accepted native input cannot be removed.');
   const sender = await rpc('create');
