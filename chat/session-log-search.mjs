@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CHAT_HISTORY_DIR, CONFIG_DIR } from '../lib/config.mjs';
+import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs';
 import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getLangSmithCaseStatus, readLangSmithCaseConfig } from '../lib/langsmith-case-link.mjs';
@@ -25,10 +26,8 @@ function terms(value, { query = false } = {}) {
   return result.filter(term => !STOP_WORDS.has(term));
 }
 
-function frequencies(text) {
-  const counts = new Map();
-  for (const term of terms(text)) counts.set(term, (counts.get(term) || 0) + 1);
-  return counts;
+function matchingTerms(text, queryTerms) {
+  return new Set(terms(text).filter(term => queryTerms.has(term)));
 }
 
 async function readJson(path) {
@@ -74,7 +73,8 @@ export function createSessionLogSearch({
   sessionHref = id => buildSessionNavigationHref(id, { requireAbsolute: true }),
   caseHref = id => buildLangSmithCaseNavigationHref(id, { requireAbsolute: true }),
 } = {}) {
-  const cache = new Map();
+  const cache = new ByteBudgetCache(cacheBudgetBytes('REMOTELAB_SESSION_SEARCH_CACHE_MIB', 64),
+    entry => entry.estimatedBytes);
   const indexing = new Map();
 
   async function readMessage(id, number) {
@@ -98,9 +98,18 @@ export function createSessionLogSearch({
     const seq = Number.isSafeInteger(meta.latestSeq) ? Math.max(0, meta.latestSeq) : 0;
     const stamp = `${seq}:${meta.lastEventAt || ''}`;
     const path = join(indexDir, `${session.id}.json`);
-    let stored = cache.get(session.id);
-    if (!stored) {
-      try { stored = await readJson(path); } catch { /* Missing/corrupt derived data can be rebuilt. */ }
+    let cached = cache.get(session.id);
+    let stored = cached?.index;
+    let serializedLength = 0;
+    if (!cached) {
+      try {
+        const serialized = await readFile(path, 'utf8');
+        stored = JSON.parse(serialized);
+        serializedLength = serialized.length;
+      } catch (error) {
+        // Missing or invalid derived data can be rebuilt from history.
+        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+      }
     }
     if (stored?.version !== VERSION || !Number.isSafeInteger(stored.seq)
       || stored.seq > seq || (stored.seq === seq && stored.stamp !== stamp)
@@ -126,17 +135,21 @@ export function createSessionLogSearch({
         }
       }
       stored = { version: VERSION, seq, stamp, length, counts: [...counts], postings: [...postings] };
+      const serialized = JSON.stringify(stored);
       const temp = `${path}.${randomUUID()}.tmp`;
-      await writeFile(temp, JSON.stringify(stored), { mode: 0o600 });
+      await writeFile(temp, serialized, { mode: 0o600 });
       await rename(temp, path);
+      serializedLength = serialized.length;
+      cached = null;
     }
-    cache.set(session.id, stored);
-    return { session, body: new Map(stored.counts), postings: new Map(stored.postings), length: stored.length,
-      title: frequencies(session.name || ''),
-      summary: frequencies([session.description || '', JSON.stringify(session.workSummary || '')].join('\n')) };
+    if (!cached) {
+      // Include the overhead of decoded strings, arrays and their numeric slots.
+      cache.set(session.id, { index: stored, estimatedBytes: serializedLength * 6 });
+    }
+    return stored;
   }
 
-  async function refresh(sessions) {
+  async function refresh(sessions, tokens, includePostings) {
     await mkdir(indexDir, { recursive: true, mode: 0o700 });
     let incomplete = false;
     const docs = await mapConcurrent(sessions, 4, async session => {
@@ -144,7 +157,15 @@ export function createSessionLogSearch({
         if (!indexing.has(session.id)) {
           indexing.set(session.id, indexSession(session).finally(() => indexing.delete(session.id)));
         }
-        return await indexing.get(session.id);
+        const stored = await indexing.get(session.id);
+        // Ranking needs document lengths and the query terms only. Holding
+        // every decoded index until ranking finishes otherwise scales with the
+        // entire archive even when the read cache has a byte budget.
+        return { session, length: stored.length,
+          body: new Map(stored.counts.filter(([term]) => tokens.has(term))),
+          postings: includePostings ? new Map(stored.postings.filter(([term]) => tokens.has(term))) : null,
+          title: matchingTerms(session.name || '', tokens),
+          summary: matchingTerms([session.description || '', JSON.stringify(session.workSummary || '')].join('\n'), tokens) };
       } catch (error) {
         incomplete = true;
         console.warn(`[session-log-search] Cannot index ${session.id}: ${error.code || error.name}`);
@@ -178,7 +199,7 @@ export function createSessionLogSearch({
       ? { scope, sourceSessionId: sessionId, searchedSessionCount: selected.length } : {};
     const tokens = [...new Set(terms(text, { query: true }))].slice(0, 128);
     if (!tokens.length) return { sessions: [], incomplete: false, ...coverage };
-    let { docs, incomplete } = await refresh(selected);
+    let { docs, incomplete } = await refresh(selected, new Set(tokens), scope === 'private-chat');
     const averageLength = docs.reduce((sum, doc) => sum + doc.length, 0) / Math.max(1, docs.length) || 1;
     const idf = new Map(tokens.map(token => {
       const count = docs.filter(doc => doc.title.has(token) || doc.summary.has(token) || doc.body.has(token)).length;

@@ -398,7 +398,9 @@ The authenticated `GET /api/sessions/search?q=...` endpoint uses the instance's
 normal shared Session access. Internal helper Sessions, hidden blocks, reasoning
 and tool output are excluded. A disposable index under
 `CONFIG_DIR/cache/session-log-search/` stores term counts, matching event positions and event cursors;
-subsequent searches index only new events. The first search on a large history
+subsequent searches index only new events. `REMOTELAB_SESSION_SEARCH_CACHE_MIB`
+sets the estimated memory budget for decoded indexes (64 MiB by default).
+Ranking retains only the terms needed by the current query. The first search on a large history
 may need a retry while the index builds. Missing/corrupt indexes are rebuilt;
 unreadable histories are reported as incomplete results. Existing LangSmith
 snapshot links retain their normal LangSmith access requirements.
