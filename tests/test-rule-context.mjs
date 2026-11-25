@@ -44,6 +44,8 @@ try {
   // routing rules. Plans and scope changes must still invalidate their slots.
   const { featureObservationPrompt } = await import('../chat/feature-observation.mjs');
   const { knowledgePilotPrompt } = await import('../chat/knowledge-pilot.mjs');
+  const { readPromptAsset } = await import('../chat/prompt-asset-loader.mjs');
+  const executionSlot = { id: 'execution_default', content: await readPromptAsset('system/execution-default.md') };
   const compactRules = [
     { id: 'delivery_self_review', content: featureObservationPrompt(null, null, true, { reviewVersion: 2 }) },
     { id: 'organization_knowledge', content: knowledgePilotPrompt({ personId: 'a' }) },
@@ -51,13 +53,22 @@ try {
     { id: 'group_routing', content: 'ROUTING_DISABLED: keep the current work' },
   ];
   const addressed = requestId => [...compactRules, { id: 'current_input', content: JSON.stringify({ requestId }) }];
-  const addressedFirst = await project(addressed('one'));
+  const beforeExecutionDefault = await project(addressed('old'));
+  const addressedFirst = await project([...addressed('one'), executionSlot], {}, {
+    manifest: async () => ({ ruleContextDelivery: beforeExecutionDefault.receipt }),
+  });
+  assert.deepEqual(addressedFirst.receipt.changedIds, ['execution_default']);
+  assert.match(renderModelContextSlots(addressedFirst.slots), /after the answer, finish without routine sign-offs/);
   const addressedAck = { manifest: async () => ({ ruleContextDelivery: addressedFirst.receipt }) };
-  const addressedNext = await project(addressed('two'), {}, addressedAck);
+  const addressedNext = await project([...addressed('two'), executionSlot], {}, addressedAck);
   assert.equal(addressedNext.receipt.mode, 'reference');
   assert.match(renderModelContextSlots(addressedNext.slots), /"requestId":"two"/);
-  assert.doesNotMatch(renderModelContextSlots(addressedNext.slots), /PLAN_A|ROUTING_DISABLED|feature-observation|knowledge search/);
-  const changedPlan = await project(addressed('two').map(s => s.id === 'parallel_work' ? { ...s, content: 'PLAN_B' } : s), {}, addressedAck);
+  assert.doesNotMatch(renderModelContextSlots(addressedNext.slots), /PLAN_A|ROUTING_DISABLED|feature-observation|knowledge search|routine sign-offs/);
+  const executionTranscript = join(home, 'execution-transcript.jsonl');
+  await writeFile(executionTranscript, JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: renderModelContextSlots(addressedNext.slots) }] } }) + '\n');
+  assert.match(await recoverCodexRules({ transcript_path: executionTranscript }, 'session', CONFIG_DIR), /after the answer, finish without routine sign-offs/);
+  const changedPlan = await project([...addressed('two'), executionSlot].map(s => s.id === 'parallel_work' ? { ...s, content: 'PLAN_B' } : s), {}, addressedAck);
   assert.deepEqual(changedPlan.receipt.changedIds, ['parallel_work']);
   assert.equal((await project(addressed('two'), { personId: 'b' }, addressedAck)).receipt.mode, 'full');
   const next = await project(rules, {}, acknowledged);

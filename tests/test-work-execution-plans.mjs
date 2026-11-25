@@ -99,7 +99,11 @@ try {
   assert.equal(captured.parallelWorkPolicy.trialVersion, 2);
   const outsider = await captureMessageRoutingOptions(await findSessionMeta('source'), { ...base, viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' });
   assert.equal(outsider.messageRoutingPolicy.mechanism, 'none');
-  assert.match(await buildParallelWorkContext(await findSessionMeta('source'), base.sourceContext, captured), /讨论已形成结论/);
+  const parallelPrompt = await buildParallelWorkContext(await findSessionMeta('source'), base.sourceContext, captured);
+  assert.match(parallelPrompt, /默认在原话题直接做完/);
+  assert.match(parallelPrompt, /不因可拆分而要求人选方案/);
+  assert.match(parallelPrompt, /已明确交办各项并要求并行，直接用 work plan start/);
+  assert.doesNotMatch(parallelPrompt, /应主动提出|否则先 propose/);
   const sync = await routeGroupWork(await input('sync', 'A中的结论影响B'), { mode: 'sync', task: '仅复核结论', reason: '同一依据变化', targetSessionId: 'target' }, api);
   await assert.rejects(acceptGroupSync(await input('wrong-human', sync.confirmation, { viewPersonId: 'person_b', initiatedByIdentityId: 'identity_b' }), api));
   await acceptGroupSync(await input('sync-human', sync.confirmation), api);

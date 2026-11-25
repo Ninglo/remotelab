@@ -16,13 +16,13 @@ try {
   const { canForwardNativeRequest } = await import('../chat/native-request-dispatch.mjs');
   const { requests } = await import('../chat/requests.mjs');
   const actor = name => ({ personId: `person_${name}`, identityId: `identity_${name}` });
-  await updateAuthDocument(doc => {
-    doc.people = ['alice', 'bob'].map(name => ({ id: actor(name).personId, name, handle: name,
-      identities: [{ id: actor(name).identityId, kind: 'feishu', realm: 'bot', subjectId: name }] }));
-    doc.primaryPersonId = 'person_alice';
-  });
   const dir = join(home, '.config/remotelab');
   await mkdir(dir, { recursive: true });
+  // Seed isolated fixture state without invoking the runtime's administrator mutation path.
+  await writeFile(join(dir, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_alice',
+    people: ['alice', 'bob'].map(name => ({ id: actor(name).personId, name, handle: name,
+      identities: [{ id: actor(name).identityId, kind: 'feishu', realm: 'bot', subjectId: name }] })),
+  }));
   const conversation = { connector: 'feishu', sourceRouteId: 'bot', target: {
     chatId: 'oc_pilot', tenantKey: 'tenant', chatType: 'group', conversationKind: 'main', messageId: 'om_source' } };
   const session = { id: 'main', folder: home, conversation };

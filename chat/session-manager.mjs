@@ -1391,6 +1391,8 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
 async function buildManagerTurnContextSlots(session, options = {}) {
   if (options.internalOperation === RETRIEVAL_OPERATION) return [];
   const slots = [];
+  slots.push(createModelContextSlot('execution_default', 'Default task execution',
+    await readPromptAsset('system/execution-default.md')));
   slots.push(createModelContextSlot('surface_messages', 'Message visibility on RemoteLab surfaces',
     await readPromptAsset(options.messageReplyPolicy?.scope === 'person'
       ? 'system/surface-messages-configured.md' : !options.messageReplyPolicy && usesOctober7GroupMessaging(session)

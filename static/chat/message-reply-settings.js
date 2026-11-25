@@ -67,7 +67,7 @@ function renderPreview() {
 }
 
 function describeChoices(value) {
-  return copy(`${value.parallelWork ? '主动建议并行' : '不主动建议并行'}；开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；交付前自检${value.selfReview ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
+  return copy(`${value.parallelWork ? '可用独立分工' : '不启用独立分工'}；开工严格检查${value.strictStartCheck ? '开启' : '关闭'}；交付前自检${value.selfReview ? '开启' : '关闭'}；首条文字${value.opening ? '开启' : '关闭'}；清单${value.checklist ? '按需显示' : '不显示'}；${({ none: '不发过程进展', messages: '卡片＋单独文字进展', card_latest: '卡片展示最新进展', card_all: '卡片展示全部进展（默认折叠）', card: '原已保存的卡片进展' })[value.progress]}`,
     `${value.parallelWork ? 'parallel suggestions on' : 'parallel suggestions off'}; strict work-start check ${value.strictStartCheck ? 'on' : 'off'}; delivery self-review ${value.selfReview ? 'on' : 'off'}; first reply ${value.opening ? 'on' : 'off'}; checklist ${value.checklist ? 'when useful' : 'off'}; ${({ none: 'no progress updates', messages: 'card + separate text updates', card_latest: 'latest progress in a card', card_all: 'all progress in a collapsed card', card: 'previously saved card progress' })[value.progress]}`);
 }
 

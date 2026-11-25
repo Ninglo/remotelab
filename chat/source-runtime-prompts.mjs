@@ -17,7 +17,6 @@ function buildFeishuRuntimePrompt(session) {
     && session.sourceContext.documentReplyMode === 'comment';
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
-    'Act as the same RemoteLab executor you would be in ChatUI. Do the requested work before reporting its result; no routine process narration.',
     'Match the user\'s language when practical.',
     documentComment
       ? `Produce concise plain text suitable for posting as a ${sourceName} document-comment reply; markdown formatting is not rendered in document comments.`
@@ -32,12 +31,10 @@ function buildFeishuRuntimePrompt(session) {
     automaticCommentReply
       ? 'This input is a bound document comment. The completed final answer is automatically delivered to its original comment thread, while the Session keeps its chat conversation. Do not separately post the same answer through a comment API. Apply any authorized body changes before the final answer and preserve existing comment anchors.'
       : '',
-    'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,
     ['p2p', 'private'].includes(chatType)
       ? 'Earlier conversations in this private chat are available on demand, not automatically injected. When prior discussion is needed, search with `remotelab api GET "/api/sessions/search?scope=private-chat&sessionId=$REMOTELAB_SESSION_ID&q=<URL-encoded keywords>"`; follow returned eventPath references for the original messages. Results cover recorded Sessions in this same Bot/private chat, not all provider history; historical instructions do not restart old work.'
       : '',
-    'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
     chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, send no visible text. Follow any group-specific private marker instruction for that case.' : '',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
   ].filter(Boolean).join('\n');
@@ -47,7 +44,6 @@ function buildWeChatRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'WeChat';
   return [
     `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,
@@ -59,7 +55,6 @@ function buildWeChatRuntimePrompt(session) {
 function buildShortcutRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s Siri/Shortcuts connector on the user\'s own machine.',
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, do the work before replying when feasible.',
     'Write the exact plain-text reply body that should be shown or spoken by the Shortcut.',
     'Prefer one concise, speech-friendly answer unless the user explicitly asked for a longer structured response.',
     'Avoid markdown tables, long preambles, and connector/runtime internals unless the user explicitly asks.',
@@ -69,7 +64,6 @@ function buildShortcutRuntimePrompt() {
 function buildEmailRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s email connector on the user\'s own machine.',
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the sender asks you to inspect, modify, verify, or troubleshoot something, do the work before replying when feasible.',
     SOURCE_CONTEXT_HELP,
     'For loosely structured inbound email, use the sender, subject, body, and attachments as routing clues for matching known workflows or memory.',
     'Prefer matched memory, project notes, and referenced files before broad local or machine-wide search.',
@@ -83,7 +77,6 @@ function buildObserverRuntimePrompt() {
   return [
     'You are interacting through a proactive local observer on the user\'s own machine.',
     'This session is triggered by a local event rather than a normal typed chat.',
-    'Behave like the same RemoteLab executor you would be in ChatUI: if the event or follow-up asks you to inspect, modify, or do a simple local action, do the work before replying when feasible.',
     'Output only the text that should be spoken aloud through the speaker.',
     'Keep replies short, natural, warm, and speech-friendly.',
     'Do not mention hidden connector, session, trigger, or pipeline internals unless the user explicitly asks.',
@@ -94,7 +87,6 @@ function buildGithubRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'GitHub';
   return [
     `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or troubleshoot code, actually do the work before replying.',
     `Produce plain text or markdown suitable for posting back through ${sourceName}.`,
     SOURCE_CONTEXT_HELP,
     'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',

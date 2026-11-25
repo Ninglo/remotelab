@@ -114,6 +114,7 @@ assert.match(freshPrompt, /Context Pointers/);
 assert.match(freshPrompt, /Project index:/);
 assert.match(freshPrompt, /RemoteLab Core Workflows/);
 assert.match(freshPrompt, /RemoteLab Capability Directory/);
+assert.match(freshPrompt, /Execute clear requests through a usable, verified result/);
 assert.doesNotMatch(freshPrompt, /Memory writeback targets:|Auto user memory:|Model context root:/);
 assert.doesNotMatch(freshPrompt, /standing authorization/);
 assert.doesNotMatch(freshPrompt, /brief self-review/);
@@ -138,6 +139,8 @@ const resumedPrompt = await buildPrompt(
 assert.match(resumedPrompt, /<private>[\s\S]*active working agreements/);
 assert.match(resumedPrompt, /Current user message:/);
 assert.doesNotMatch(resumedPrompt, /RemoteLab Core Workflows/);
+assert.match(resumedPrompt, /after the answer, finish without routine sign-offs/);
+assert.match(resumedPrompt, /Respect the assigned role and existing approvals/);
 assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
 const resumedPromptWithUpdatedInstructions = await buildPrompt(
@@ -197,8 +200,11 @@ const feishuSourcePrompt = await buildPrompt(
 );
 
 assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\)/);
-assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
-assert.match(feishuSourcePrompt, /Do the requested work before reporting its result/);
+assert.equal(feishuSourcePrompt.split('Execute clear requests through a usable, verified result').length, 2);
+assert.match(feishuSourcePrompt, /ask one concise round/);
+assert.match(feishuSourcePrompt, /never add a separate review or permission gate/);
+assert.match(feishuSourcePrompt, /current explicit request supersedes conflicting historical notes/);
+assert.doesNotMatch(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI|使用严格的段落删除测试/);
 assert.match(feishuSourcePrompt, /Follow the user’s requested tone for body emoji/);
 assert.match(feishuSourcePrompt, /remotelab api GET .*source-context/);
 assert.match(feishuSourcePrompt, /--base-url/);

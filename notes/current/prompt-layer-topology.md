@@ -22,8 +22,8 @@ These are projections of product state or capability. Prompt text is not their s
 
 ## What does not belong
 
-- a RemoteLab persona or house reply style
-- generic instructions about when to continue, clarify, plan, split, or self-review
+- a RemoteLab persona or house reply style; retain only the short research-writing guidance for research deliverables
+- separate instructions about when to continue, clarify, plan, split, or self-review. The single task-execution default below replaces such defaults in source integrations.
 - generic secret, credential, filesystem, or content-handling policy for owner sessions
 - copies of provider-native developer instructions or safety rules
 - a shared startup-defaults bundle of cross-user behavior preferences
@@ -37,6 +37,10 @@ When a rule is an actual access invariant, code must enforce or structurally exp
 2. `chat/turn-context-hook.mjs` projects optional local-bridge state, explicit agreements, and source metadata on later turns.
 3. `chat/session-manager.mjs` adds source/runtime instructions, Session instructions, continuation, and explicit operator context when applicable.
 4. Provider adapters invoke the Harness without a RemoteLab-owned developer-instruction default. An explicit operator override remains available.
+
+### 2026-11-25: default to finishing the assigned work
+
+`chat/prompt-assets/system/execution-default.md` holds the one cross-source execution default. Normal new and resumed turns receive it, including Feishu; bare-user routes keep the user's input unchanged. The versioned rule slots include it for delta and Codex compaction recovery. It instructs the Harness to gather available evidence, ask one material clarification round if needed, then execute and verify within the assigned scope without adding a checkpoint or review role. It is not authorization, a classifier, or a new execution gate. Historical notes are subordinate to current explicit instructions; code-backed access and binding business protocols remain in force. Source adapters retain their delivery conventions instead of repeating the execution default. The registered-group parallel option no longer prompts for a choice merely because work could be split; explicit parallel requests and existing plan ownership rules are unchanged.
 
 ## Stability gate
 

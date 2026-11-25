@@ -17,6 +17,8 @@ const context = await buildSystemContext({ sessionId: 'session-test-123' });
 
 assert.match(context, /RemoteLab is the transport and runtime substrate for this session/);
 assert.match(context, /does not replace the Harness's native task interpretation, planning, safety model, or tool use/);
+assert.match(context, /For research writing, lead with evidence/);
+assert.doesNotMatch(context, /使用严格的段落删除测试|维度建议采用的写法/);
 assert.match(context, /RemoteLab Surfaces/);
 assert.match(context, /default working directory for newly created files is ~\/instance-data\/workspace/);
 assert.match(context, /An explicit user-provided project or path takes precedence/);
