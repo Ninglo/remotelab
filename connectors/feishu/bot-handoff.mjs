@@ -37,6 +37,30 @@ export function withFeishuHandoffLock(runtime, summary, operation) {
   return locks.get(key)(operation);
 }
 
+// Independent established topics do not need to hold the chat-wide lock.
+// A reply that only contains a parent message ID can still wait for aliases.
+export async function withFeishuKnownTopicPublication(runtime, summary, operation) {
+  if (!summary?.chatId) return operation();
+  const publications = runtime.feishuTopicPublications ||= new Map();
+  const key = conversationKey(runtime, summary);
+  const pending = publications.get(key) || new Set();
+  publications.set(key, pending);
+  let finish;
+  const done = new Promise(resolve => { finish = resolve; });
+  pending.add(done);
+  try { return await operation(); }
+  finally {
+    finish();
+    pending.delete(done);
+    if (!pending.size) publications.delete(key);
+  }
+}
+
+export async function waitForFeishuTopicAliases(runtime, summary) {
+  const pending = runtime.feishuTopicPublications?.get(conversationKey(runtime, summary));
+  if (pending?.size) await Promise.all([...pending]);
+}
+
 export async function restoreFeishuBotHandoffScopes(runtime) {
   const receipts = createRecordStore(join(runtime.config.storageDir, 'delivery-receipts'));
   for (const receipt of await receipts.active()) {

@@ -1190,6 +1190,11 @@ The file replaces the text message under the same durable delivery ID, UUID and
 receipt; no extra summary message is sent. Upload failures use the existing safe
 retry path, while ambiguous message sends remain fenced against automatic resend.
 Restart recovery replays a saved receipt without uploading or sending again.
+Each Bot uses one claim loop with up to four concurrent deliveries
+(`REMOTELAB_FEISHU_DELIVERY_CONCURRENCY`). Core leases keep ordered parts of the
+same topic together; an upload or receipt in one topic does not stall other
+established topics. Saved receipts are acknowledged separately from claiming,
+and ambiguous sends still use the existing no-resend policy.
 Short replies retain the rendering below. Delivery notices and document comments
 keep their existing behavior. Already-delivered historical messages are not resent.
 

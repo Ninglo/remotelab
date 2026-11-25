@@ -153,7 +153,7 @@ import {
 } from '../connectors/feishu/response-policy.mjs';
 import {
   claimFeishuBotHandoff, recordFeishuBotHandoffScope, normalizeFeishuBotHandoffPolicy,
-  restoreFeishuBotHandoffScopes, withFeishuHandoffLock,
+  restoreFeishuBotHandoffScopes, waitForFeishuTopicAliases, withFeishuHandoffLock, withFeishuKnownTopicPublication,
 } from '../connectors/feishu/bot-handoff.mjs';
 import {
   createConnectorSession,
@@ -1482,7 +1482,7 @@ async function sendFeishuAttachment(runtime, summary, attachment, uuid = '') {
   return sendFeishuAttachmentImpl(runtime, summary, attachment, uuid, { ensureAuthCookie });
 }
 
-async function processSourceDeliveryOnce(runtime, helpers = {}) {
+function createSourceDeliveryWorker(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
   const failures = runtime.deliveryFailures ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-failures'));
@@ -1502,7 +1502,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     if (!result.response.ok) throw new Error(result.json?.error || 'Failed to record delivery failure');
     return result.json.delivery;
   };
-  const acknowledge = async receipt => {
+  const prepareAcknowledgement = async receipt => {
     if (receipt.kind === 'reaction' && !receipt.processingState) {
       await outcomeReactionStore.clean(receipt.target?.messageId,
         (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
@@ -1527,30 +1527,56 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       }
     }
     await appendLinkedFeishuProjectDelivery(runtime, receipt);
+  };
+  const acknowledge = async receipt => {
     const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, { method: 'POST', body: {
       leaseId: receipt.leaseId, externalId: receipt.externalId, messageId: receipt.messageId, threadId: receipt.threadId,
     } });
     if (!completed.response.ok) throw new Error(completed.json?.error || 'Failed to record delivery receipt');
     return completed.json.delivery;
   };
-  await receipts.flush(receipt => withFeishuHandoffLock(runtime, receipt.target, () => acknowledge(receipt)), replayOptions);
-  await failures.flush(acknowledgeFailure, replayOptions);
-  const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
-    connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
-    waitMs: Math.max(0, Number.parseInt(helpers.waitMs, 10) || 0),
-  }, signal: helpers.signal });
-  if (!response.ok) throw new Error(json?.error || 'Failed to claim delivery');
-  const claim = json?.claim;
-  if (!claim) return null;
+  // Known topics already have a routing address. Only publication that can
+  // establish a new address needs to fence a reply arriving before its aliases.
+  const withPublicationFence = (kind, target, operation) => kind === 'reaction' ? operation()
+    : target?.threadId || target?.topicId
+      ? withFeishuKnownTopicPublication(runtime, target, operation)
+      : withFeishuHandoffLock(runtime, target, operation);
+  const activeReceipts = new Set();
+  const replay = async () => {
+    await receipts.flush(async receipt => {
+      await withPublicationFence(receipt.kind, receipt.target, () => prepareAcknowledgement(receipt));
+      return acknowledge(receipt);
+    }, { ...replayOptions, skip: receipt => activeReceipts.has(receipt.deliveryId) });
+    await failures.flush(acknowledgeFailure, { ...replayOptions, skip: receipt => activeReceipts.has(receipt.deliveryId) });
+  };
+  const claimNext = async ({ waitMs = 0, signal } = {}) => {
+    const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
+      connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default', waitMs,
+    }, signal });
+    if (!response.ok) throw new Error(json?.error || 'Failed to claim delivery');
+    return json?.claim || null;
+  };
+  const deliver = async claim => {
+    activeReceipts.add(claim.delivery.id);
+    try {
+      return await deliverFeishuClaim(runtime, helpers, claim, {
+        request, receipts, failures, readReactionStore, outcomeReactionStore, replayOptions,
+        acknowledgeFailure, prepareAcknowledgement, acknowledge, withPublicationFence,
+      });
+    } finally { activeReceipts.delete(claim.delivery.id); }
+  };
+  return { replay, claimNext, deliver };
+}
+
+async function deliverFeishuClaim(runtime, helpers, claim, {
+  request, receipts, failures, readReactionStore, outcomeReactionStore, replayOptions,
+  acknowledgeFailure, prepareAcknowledgement, acknowledge, withPublicationFence,
+}) {
   const delivery = claim.delivery;
   const recordFailure = async failure => {
-    await failures.record({ deliveryId: delivery.id, leaseId: claim.leaseId, failure });
-    let failed;
-    await failures.flush(async receipt => {
-      const result = await acknowledgeFailure(receipt);
-      if (receipt.deliveryId === delivery.id && receipt.leaseId === claim.leaseId) failed = result;
-    }, replayOptions);
-    return failed;
+    const receipt = { deliveryId: delivery.id, leaseId: claim.leaseId, failure };
+    await failures.record(receipt);
+    return failures.acknowledge(receipt, acknowledgeFailure, replayOptions);
   };
   if (runtime.config.accessPolicy?.mode === 'roles') {
     const policy = runtime.config.accessPolicy;
@@ -1602,7 +1628,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
     chatType: 'group', ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
     ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) });
-  return withFeishuHandoffLock(runtime, summary, async () => {
+  let publishedReceipt;
+  const publicationResult = await withPublicationFence(delivery.kind, summary, async () => {
     if (delivery.processingState !== 'finished' && participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
       const status = await controller.state(summary);
@@ -1694,15 +1721,28 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text,
         summary.conversationKind === 'main' ? '' : sent.thread_id);
     }
-    await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
+    const receipt = { deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary,
       kind: delivery.kind, ...(delivery.processingState ? { processingState: delivery.processingState } : {}),
-      ...(delivery.kind === 'content' ? { text: delivery.text } : {}) });
-    let completed;
-    await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
-    return completed;
+      ...(delivery.kind === 'content' ? { text: delivery.text } : {}) };
+    await receipts.record(receipt);
+    // Prepare under the publication fence, but never hold it across the core
+    // acknowledgement. The replay path takes the same fence if preparation fails.
+    try { await prepareAcknowledgement(receipt); }
+    catch (error) {
+      return receipts.acknowledge(receipt, async () => { throw error; }, replayOptions);
+    }
+    publishedReceipt = receipt;
   });
+  return publishedReceipt ? receipts.acknowledge(publishedReceipt, acknowledge, replayOptions) : publicationResult;
+}
+
+async function processSourceDeliveryOnce(runtime, helpers = {}) {
+  const worker = createSourceDeliveryWorker(runtime, helpers);
+  await worker.replay();
+  const claim = await worker.claimNext(helpers);
+  return claim ? worker.deliver(claim) : null;
 }
 
 function startSourceDeliveryPoller(runtime, options = {}) {
@@ -1711,24 +1751,44 @@ function startSourceDeliveryPoller(runtime, options = {}) {
     Number.parseInt(options.waitMs, 10) || DEFAULT_SOURCE_DELIVERY_LONG_POLL_MS));
   const retryMs = Math.max(250,
     Number.parseInt(options.retryMs, 10) || DEFAULT_SOURCE_DELIVERY_RETRY_MS);
-  const processOnce = options.processOnce || processSourceDeliveryOnce;
-  runtime.sourceDeliveryPollStopped = false;
+  const worker = options.processOnce ? null : createSourceDeliveryWorker(runtime, options);
+  const concurrency = Math.max(1, Number.parseInt(options.concurrency ?? process.env.REMOTELAB_FEISHU_DELIVERY_CONCURRENCY, 10) || 4);
   runtime.sourceDeliveryPollAbort = new AbortController();
   const signal = runtime.sourceDeliveryPollAbort.signal;
+  const pending = new Set();
+  const pause = ms => delay(ms, undefined, { signal, ref: false }).catch(error => {
+    if (!signal.aborted) throw error;
+  });
+  const report = (label, error) => console.error(`[feishu-connector] ${label}: ${error?.message || error}`);
+  const replay = worker && (async () => {
+    while (!signal.aborted) {
+      try { await worker.replay(); }
+      catch (error) { report('delivery receipt replay failed', error); }
+      if (!signal.aborted) await pause(5_000);
+    }
+  })();
   const pollPromise = (async () => {
-    while (!runtime.sourceDeliveryPollStopped) {
-      try {
-        void runtime.cardReadSampler?.tick();
-        await processOnce(runtime, { waitMs, signal });
-      } catch (error) {
-        if (runtime.sourceDeliveryPollStopped || signal.aborted) break;
-        console.error(`[feishu-connector] source delivery wait failed: ${error?.message || error}`);
+    try {
+      while (!signal.aborted) {
         try {
-          await delay(retryMs, undefined, { signal });
-        } catch (delayError) {
-          if (!signal.aborted) throw delayError;
+          if (pending.size >= concurrency) { await Promise.race(pending); continue; }
+          void runtime.cardReadSampler?.tick();
+          if (!worker) { await options.processOnce(runtime, { waitMs, signal }); continue; }
+          // Only one long poll. Core leases preserve order within a topic;
+          // a slow send or receipt consumes one slot, not the whole Bot.
+          const claim = await worker.claimNext({ waitMs, signal });
+          if (!claim) continue;
+          const task = worker.deliver(claim).catch(error => report('source delivery failed', error))
+            .finally(() => pending.delete(task));
+          pending.add(task);
+        } catch (error) {
+          if (signal.aborted) break;
+          report('source delivery wait failed', error);
+          await pause(retryMs);
         }
       }
+    } finally {
+      await Promise.allSettled([...pending, replay]);
     }
   })();
   runtime.sourceDeliveryPollPromise = pollPromise.finally(() => {
@@ -1740,7 +1800,6 @@ function startSourceDeliveryPoller(runtime, options = {}) {
 
 function stopSourceDeliveryPoller(runtime) {
   if (!runtime?.sourceDeliveryPollPromise) return false;
-  runtime.sourceDeliveryPollStopped = true;
   runtime.sourceDeliveryPollAbort?.abort();
   return true;
 }
@@ -1984,8 +2043,14 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   // Publication can create thread aliases before its HTTP acknowledgement.
   // Fence only routing and bot admission against that publication; reaction,
   // attachment and RemoteLab transport work must not lock every chat topic.
-  const admission = await withFeishuHandoffLock(runtime, summary,
-    () => prepareFeishuMessage(runtime, summary, helpers));
+  const admission = await withFeishuHandoffLock(runtime, summary, async () => {
+    // A reply that only carries a parent ID may need aliases from an in-flight
+    // publication. A normal message on an established topic already has its route.
+    if ((isFeishuBotSender(summary) || summary.parentId) && !summary.threadId && !summary.topicId && !summary.rootId) {
+      await waitForFeishuTopicAliases(runtime, summary);
+    }
+    return prepareFeishuMessage(runtime, summary, helpers);
+  });
   if (admission.receipt) return admission.receipt;
   if (!admission.command && role === 'hr' && runtime.config.accessPolicy.roles.hrRecruitingWorkflow) {
     const candidate = admission.summary;

@@ -20,11 +20,19 @@ export function notifySourceDeliveryAvailable(deliveries = []) {
   const keys = new Set((Array.isArray(deliveries) ? deliveries : [deliveries])
     .filter(entry => entry?.state === 'pending')
     .map(routeKey));
-  for (const key of keys) {
-    const version = (versions.get(key) || 0) + 1;
-    versions.set(key, version);
-    for (const wake of [...(waiters.get(key) || [])]) wake('notified', version);
-  }
+  for (const key of keys) notify(key);
+}
+
+// Settling a lease can unblock a different Request in the same topic, even
+// when the settled Request has no remaining pending parts of its own.
+export function notifySourceDeliveryRoute(delivery) {
+  notify(routeKey(delivery));
+}
+
+function notify(key) {
+  const version = (versions.get(key) || 0) + 1;
+  versions.set(key, version);
+  for (const wake of [...(waiters.get(key) || [])]) wake('notified', version);
 }
 
 export function waitForSourceDeliverySignal(options = {}) {

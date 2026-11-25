@@ -3,7 +3,7 @@ import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
-import { findSessionMeta, loadSessionsMeta } from './session-meta-store.mjs';
+import { findSessionMeta } from './session-meta-store.mjs';
 import { updateSessionConversation } from './session-conversations.mjs';
 import { normalizeConversation as normalizeSourceDeliveryPlan, normalizeConversationTarget as normalizeTarget, normalizeConversationRouteId as normalizeSourceRouteId } from '../lib/conversation-target.mjs';
 export { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/conversation-target.mjs';
@@ -17,6 +17,7 @@ import { recoverTerminalReplyReceipt } from './native-final-publication.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 import {
   getSourceDeliverySignalVersion,
+  notifySourceDeliveryRoute,
   waitForSourceDeliverySignal,
 } from './source-delivery-signals.mjs';
 const queue = serialQueue();
@@ -144,21 +145,26 @@ export async function enqueueSourceDelivery(input = {}) {
   return record.deliveries[0];
 }
 
-const targetKey = entry => {
+const targetKeys = entry => {
   const t = entry.target || {};
   if (entry.connector === 'wechat') {
     // Serialise per account+peer so messages to different WeChat users never block each other.
-    return JSON.stringify(['wechat', entry.sourceRouteId, `${t.accountId || ''}:${t.peerUserId || ''}`, '']);
+    return [JSON.stringify(['wechat', entry.sourceRouteId, `${t.accountId || ''}:${t.peerUserId || ''}`, ''])];
   }
   if (entry.connector === 'email') {
     // Serialise per recipient+thread so each email thread is independently ordered.
-    return JSON.stringify(['email', entry.sourceRouteId, t.to || '', t.threadId || t.inReplyTo || '']);
+    return [JSON.stringify(['email', entry.sourceRouteId, t.to || '', t.threadId || t.inReplyTo || ''])];
   }
-  // Feishu (and any future unknown connector): existing key.
-  return JSON.stringify([entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', t.rootId || t.topicId || t.threadId || t.commentId || (t.replyInThread ? t.messageId : '') || '']);
+  // One topic may be represented by its root or by a native thread ID.
+  // Reserve every known alias so an attachment cannot pass its own text.
+  const aliases = t.commentId ? [t.commentId] : [t.rootId, t.topicId, t.threadId].filter(Boolean);
+  if (!aliases.length) aliases.push((t.replyInThread ? t.messageId : '') || '');
+  return [...new Set(aliases)].map(alias => JSON.stringify([
+    entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', alias,
+  ]));
 };
 
-async function mutateDelivery(id, update, { priorReceipt } = {}) {
+async function mutateDelivery(id, update, { priorReceipt, deferPublication = false } = {}) {
   const { key, index } = parseId(id);
   const record = await requests.mutate(key, current => {
     if (!current?.deliveries[index]) throw new Error('Delivery not found');
@@ -179,6 +185,15 @@ async function mutateDelivery(id, update, { priorReceipt } = {}) {
     return next;
   });
   const entry = record.deliveries[index];
+  if (entry.state === 'delivered' || entry.state === 'cancelled' || entry.state === 'unknown' || entry.state === 'delivery_failed') {
+    notifySourceDeliveryRoute(entry);
+  }
+  if (deferPublication) return { key, record, entry, priorReceipt };
+  await publishDeliveryMutation({ key, record, entry, priorReceipt });
+  return entry;
+}
+
+async function publishDeliveryMutation({ key, record, entry, priorReceipt }) {
   const updated = { ...entry, ...recoverTerminalReplyReceipt(record, entry) };
   // Keep the delivery receipt in canonical history, including after Request
   // archival. Both public workboard surfaces can then distinguish work from delivery.
@@ -194,7 +209,6 @@ async function mutateDelivery(id, update, { priorReceipt } = {}) {
   await rememberFeishuThreadSurface(entry);
   await requests.archiveFinished(key);
   broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
-  return record.deliveries[index];
 }
 
 async function inspectAndClaimSourceDelivery(options = {}) {
@@ -204,14 +218,17 @@ async function inspectAndClaimSourceDelivery(options = {}) {
     const nowMs = Date.parse(now);
     const timeout = options.leaseTimeoutMs || DELIVERY_LEASE_MS;
     const entries = await listSourceDeliveries({ connector: options.connector, sourceRouteId: options.sourceRouteId || 'default' });
-    const sessions = new Map((await loadSessionsMeta()).map(session => [session.id, session]));
+    const sessions = new Map();
     const blocked = new Set();
     let nextCheckAt = Infinity;
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
-      const session = sessions.get(entry.sessionId);
-      // A reaction belongs to this request's inbound message, even when the
-      // continuing group Session has since advanced to a newer message.
+      // A reaction always targets the original inbound message. Only content
+      // needs to learn a new publication address from its Session.
+      if (entry.kind !== 'reaction' && !sessions.has(entry.sessionId)) {
+        sessions.set(entry.sessionId, await findSessionMeta(entry.sessionId));
+      }
+      const session = entry.kind === 'reaction' ? null : sessions.get(entry.sessionId);
       let refined = entry.kind === 'reaction' ? null : refineConversation(entry, session?.conversation);
       if (refined && entry.target.participationScopeTopicId) refined = { ...refined, target: { ...refined.target,
         participationEpoch: entry.target.participationEpoch,
@@ -219,7 +236,7 @@ async function inspectAndClaimSourceDelivery(options = {}) {
         participationScopeMessageId: entry.target.participationScopeMessageId,
       } };
       const openingTopic = session?.conversation?.connector === 'feishu' && !sameConversation(session.conversation, session.conversation);
-      const key = openingTopic ? `session:${entry.sessionId}` : targetKey(refined || entry);
+      const keys = openingTopic ? [`session:${entry.sessionId}`] : targetKeys(refined || entry);
       const claimedAt = Date.parse(entry.claimedAt);
       if (entry.state === 'sending' && (!Number.isFinite(claimedAt) || nowMs - claimedAt >= timeout)) {
         entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: 'Sender lease expired without a receipt' }));
@@ -227,11 +244,12 @@ async function inspectAndClaimSourceDelivery(options = {}) {
       // Fence this uncertain operation, not the whole conversation. A later
       // receipt can still settle its original lease without resending it.
       if (entry.state === 'unknown') {
-        if (openingTopic) blocked.add(key); // Do not create a second root after an ambiguous first send.
+        if (openingTopic) blocked.add(keys[0]); // Do not create a second root after an ambiguous first send.
         continue;
       }
-      if (blocked.has(key)) continue;
-      blocked.add(key);
+      const alreadyBlocked = keys.some(key => blocked.has(key));
+      for (const key of keys) blocked.add(key);
+      if (alreadyBlocked) continue;
       if (entry.state === 'sending') {
         if (Number.isFinite(claimedAt)) nextCheckAt = Math.min(nextCheckAt, claimedAt + timeout);
         continue;
@@ -294,7 +312,7 @@ export async function completeSourceDelivery(id, leaseId, input = {}, executionP
   }
   const priorReceipt = before?.state === 'delivered' && before.receiptLeaseId === leaseId
     ? await findSourceDeliveryReceipt(before.sessionId, id, { legacyScan: true }) : null;
-  const delivered = await queue(async () => {
+  const mutation = await queue(async () => {
     const { key, index } = parseId(id);
     const record = await requests.get(key);
     const entry = record?.deliveries[index];
@@ -311,8 +329,12 @@ export async function completeSourceDelivery(id, leaseId, input = {}, executionP
     return { ...entry, state: 'delivered', externalId: trimString(input.externalId), receiptLeaseId: leaseId,
       deliveredAt: nowIso(input.now), deliveredThreadId: trimString(input.threadId),
       deliveredMessageId: trimString(input.messageId), leaseId: '', lastError: '' };
-    }, { priorReceipt });
+    }, { priorReceipt, deferPublication: true });
   });
+  // The committed receipt and any refined conversation address are already
+  // visible to the next claim. History and UI projection must not block it.
+  await publishDeliveryMutation(mutation);
+  const delivered = mutation.entry;
   // Resume only after releasing the delivery lock; plan admission enqueues its
   // own source notice. A failed continuation can be retried with this receipt.
   if (delivered.responseId?.startsWith('plan-topic:')) {
