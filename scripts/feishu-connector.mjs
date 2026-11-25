@@ -1752,9 +1752,9 @@ function startSourceDeliveryPoller(runtime, options = {}) {
   const retryMs = Math.max(250,
     Number.parseInt(options.retryMs, 10) || DEFAULT_SOURCE_DELIVERY_RETRY_MS);
   const worker = options.processOnce ? null : createSourceDeliveryWorker(runtime, options);
-  const concurrency = Math.max(1, Number.parseInt(options.concurrency ?? process.env.REMOTELAB_FEISHU_DELIVERY_CONCURRENCY, 10) || 4);
   runtime.sourceDeliveryPollAbort = new AbortController();
   const signal = runtime.sourceDeliveryPollAbort.signal;
+  // Track started work only so shutdown can drain it, not to gate claims.
   const pending = new Set();
   const pause = ms => delay(ms, undefined, { signal, ref: false }).catch(error => {
     if (!signal.aborted) throw error;
@@ -1771,11 +1771,10 @@ function startSourceDeliveryPoller(runtime, options = {}) {
     try {
       while (!signal.aborted) {
         try {
-          if (pending.size >= concurrency) { await Promise.race(pending); continue; }
           void runtime.cardReadSampler?.tick();
           if (!worker) { await options.processOnce(runtime, { waitMs, signal }); continue; }
-          // Only one long poll. Core leases preserve order within a topic;
-          // a slow send or receipt consumes one slot, not the whole Bot.
+          // One long poll; dispatch each lease without waiting for other
+          // topics to finish. Core leases preserve order within a topic.
           const claim = await worker.claimNext({ waitMs, signal });
           if (!claim) continue;
           const task = worker.deliver(claim).catch(error => report('source delivery failed', error))

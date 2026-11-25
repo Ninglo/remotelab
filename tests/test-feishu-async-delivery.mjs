@@ -30,16 +30,22 @@ const target = (threadId, extra = {}) => ({ connector: 'feishu', sourceRouteId: 
 const storageDir = join(root, 'connector');
 const runtime = () => ({ config: { sourceRouteId: route, storageDir } });
 const slowUpload = deferred(), slowReceipt = deferred(), uploading = deferred(), acknowledging = deferred();
+const heldLabels = ['hold-1', 'hold-2', 'hold-3', 'hold-4'];
+const heldUploads = new Map(heldLabels.map(label => [label, deferred()]));
+const releaseHeldUploads = deferred();
 const reactionSent = new Map([['b-inbound', deferred()], ['c-inbound', deferred()]]);
 const nextSent = deferred();
 let poll, replayed = 0, activeClaims = 0, maxClaims = 0;
 const sends = [];
 let rejectSlowReceipt = true;
 try {
-  const a = (await requests.accept({ sessionId: 'a', requestId: 'a-file', text: 'attachment',
+  const attachment = async label => (await requests.accept({ sessionId: label, requestId: `${label}-file`, text: 'attachment',
     options: { deliveryOnly: true }, result: { state: 'completed' },
-    plans: [{ ...target('thread-a', { rootId: 'root-a' }), kind: 'attachment', attachment: { assetId: 'file-a' } }],
+    plans: [{ ...target(`thread-${label}`, { rootId: `root-${label}` }), kind: 'attachment', attachment: { assetId: `file-${label}` } }],
   })).record.deliveries[0];
+  const a = await attachment('a');
+  const heldDeliveries = [];
+  for (const label of heldLabels) heldDeliveries.push(await attachment(label));
   const next = await enqueueSourceDelivery({ sessionId: 'a', responseId: 'next-a', text: 'body-a', sourceDelivery: target('thread-a') });
   const thinking = async label => (await requests.accept({ sessionId: label, requestId: `${label}-inbound`, text: 'please respond',
     options: { feishuConnectorAuthenticated: true, sourceContext: { connector: 'feishu', feishuProcessingReaction: true } },
@@ -66,7 +72,14 @@ try {
   };
   const helpers = {
     requestRemoteLab, receiptReplayOptions: { onError() {} },
-    sendFeishuAttachment: async () => {
+    sendFeishuAttachment: async (_runtime, summary) => {
+      const label = summary.threadId.slice('thread-'.length);
+      if (heldUploads.has(label)) {
+        heldUploads.get(label).resolve();
+        await releaseHeldUploads.promise;
+        return { message_id: `file-${label}`, thread_id: summary.threadId };
+      }
+      assert.equal(label, 'a');
       sends.push('a-attachment'); uploading.resolve(); await slowUpload.promise;
       return { message_id: 'file-message', thread_id: 'thread-a' };
     },
@@ -82,8 +95,10 @@ try {
   };
   const first = runtime();
   poll = { runtime: first, done: startSourceDeliveryPoller(first, helpers) };
-  await within(uploading.promise);
-  await within(reactionSent.get('b-inbound').promise);
+  // Five slow uploads are all live before B sends; a four-slot gate fails here.
+  await within(Promise.all([uploading.promise, ...[...heldUploads.values()].map(held => held.promise),
+    reactionSent.get('b-inbound').promise]));
+  for (const delivery of heldDeliveries) assert.equal((await getSourceDelivery(delivery.id)).state, 'sending');
   assert.deepEqual(sends, ['a-attachment', 'b-thinking']);
   assert.equal((await getSourceDelivery(next.id)).state, 'pending', 'root and thread aliases preserve same-topic order');
   slowUpload.resolve();
@@ -93,10 +108,12 @@ try {
   assert.equal((await getSourceDelivery(next.id)).state, 'pending', 'same-topic later work waits for the receipt');
   stopSourceDeliveryPoller(first);
   slowReceipt.resolve();
+  releaseHeldUploads.resolve();
   await within(poll.done);
   assert.equal(maxClaims, 1, 'only one long claim per Bot');
   assert.equal((await getSourceDelivery(b.id)).state, 'delivered');
   assert.equal((await getSourceDelivery(cReaction.id)).state, 'delivered');
+  for (const delivery of heldDeliveries) assert.equal((await getSourceDelivery(delivery.id)).state, 'delivered');
   assert.equal((await getSourceDelivery(a.id)).state, 'sending');
 
   // A connector restarting after the provider accepted a file acknowledges the
@@ -125,10 +142,10 @@ try {
     await completeSourceDelivery(c.id, third.leaseId, { externalId: 'third' });
     assert.equal((await within(fourth)).delivery.id, d.id);
   } finally { wait.abort(); await fourth; }
-  console.log('Feishu async delivery: same-chat independence, topic ordering, one long poll, wake on receipt, and no resend after restart.');
+  console.log('Feishu async delivery: five slow topics do not block a sixth; topic ordering, one long poll, receipt wake, and no resend after restart.');
 } finally {
   if (poll) stopSourceDeliveryPoller(poll.runtime);
-  slowUpload.resolve(); slowReceipt.resolve();
+  slowUpload.resolve(); slowReceipt.resolve(); releaseHeldUploads.resolve();
   if (poll) await within(poll.done);
   await rm(root, { recursive: true, force: true });
 }
