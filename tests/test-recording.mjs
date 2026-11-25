@@ -150,6 +150,47 @@ test('automatic selection is invariant to PCM chunk boundaries and rejects silen
   assert.equal(busy.accept(split.split(stereo(5000, 100, 16000)), [1]), null);
 });
 
+test('opt-in auto lane ends early only after three seconds of near-silent PCM', async (t) => {
+  const root = await temporary(t), factory = captureFactory();
+  const lanes = [{ id: 'b', receiverId: 'rx1', channel: 'auto', noSignalTimeoutMs: 3000 },
+    { id: 'other', receiverId: 'rx2', channel: 'auto' }];
+  const cfg = config({ lanes });
+  assert.throws(() => config({ lanes: [{ ...lanes[0], channel: 0 }] }), /requires automatic/);
+  assert.throws(() => config({ lanes: [{ ...lanes[0], noSignalTimeoutMs: 1000 }] }), /at least 2000/);
+  assert.equal(cfg.lanes[0].noSignalTimeoutMs, 3000);
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  await manager.init(); t.after(() => manager.shutdown());
+  let queued = 0;
+  manager.on('pending', () => queued++);
+  const first = (await manager.start('b')).recording;
+  const mic = () => factory.captures.get('rx1');
+  assert.equal(manager.status()[0].state, 'selecting', 'lack of samples is not an unplugged-mic verdict');
+  await feed(manager, mic(), 'rx1', stereo(1, -2, 47680));
+  assert.equal(manager.status()[0].state, 'selecting');
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 320));
+  assert.equal(manager.status().length, 0);
+  assert.ok(mic().killed);
+  const failed = await loadRecord(root, first.id);
+  assert.equal(failed.status, 'failed'); assert.equal(failed.channel, null);
+  assert.equal(failed.durationSeconds, 0); assert.match(failed.error, /^未能确认使用哪只麦：未检测到麦克风声音/);
+  assert.equal(queued, 0);
+
+  await manager.start('b');
+  await feed(manager, mic(), 'rx1', stereo(50, 55, 320)); // weak/similar, not silence or selected
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 48000));
+  assert.equal(manager.status()[0].state, 'selecting');
+  await feed(manager, mic(), 'rx1', stereo(50, 5500, 4800));
+  assert.equal(manager.status()[0].state, 'recording');
+  assert.equal((await manager.stop('b')).recording.channel, 1);
+
+  await manager.start('other');
+  await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(0, 0, 48000));
+  assert.equal(manager.status()[0].state, 'selecting', 'other lanes are unchanged');
+  await manager.start('b');
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 48000));
+  assert.equal(manager.status().find(x => x.laneId === 'b').state, 'selecting', 'do not alert over another lane');
+});
+
 test('unidentified recording cancels without uploading and fixed lanes cannot steal claimed microphones', async (t) => {
   const root = await temporary(t), factory = captureFactory();
   const cfg = config({ lanes: [{ id: 'a', receiverId: 'rx1', channel: 'auto' }, { id: 'b', receiverId: 'rx1', channel: 1 }] });

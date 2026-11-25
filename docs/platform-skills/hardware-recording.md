@@ -191,6 +191,14 @@ The busy microphone remains a comparison reference so its acoustic leakage
 cannot alone claim the free microphone. Loud unrelated sound can still mislead
 level-based selection; confirm the actual behavior in physical acceptance.
 
+For a quicker missing-mic prompt, opt in on the desired automatic lane with
+`noSignalTimeoutMs: 3000` (2000–5000 ms; omit or use `0` for the default). This
+ends an unsuccessful selection early only after that much near-silent PCM has
+arrived on the available channels and no other lane is active. It does not infer
+transmitter power from USB presence or from lack of samples. Weak or ambiguous
+signal still uses the normal selection timeout. The attempt ends without an
+upload and follows the existing failed-selection feedback path.
+
 Only one unresolved selection is accepted per receiver: finish identifying the
 first microphone (listen for its start cue) before starting the next recording.
 Button order alone cannot identify two unassigned microphones. This does not
