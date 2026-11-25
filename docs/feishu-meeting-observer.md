@@ -149,8 +149,8 @@ future-only meeting intake. Require these named people to actually attend and
 Index to be in the invited source chat. Do not scan personal calendars, change
 sharing, replay past meetings or change existing source rules.” Provide the
 source chat, provider-native calendar card message ID, exact event UID, names,
-whether any or all of them must attend, and effective cutoff. Keep actual
-identifiers in the private instance policy:
+whether any or all of them must attend, or opt in to the group's actual invitation
+alone, and the effective cutoff. Keep actual identifiers in the private instance policy:
 
 ```json
 {
@@ -167,10 +167,12 @@ identifiers in the private instance policy:
 
 Place this object under `scope` in `source_group_or_organizer` mode. The
 existing source-group/organizer routes are unchanged. For a meeting without a
-provider source chat, this route requires the real join snapshot and an exact
-registered calendar UID. `participantMatch: "any"` requires at least one listed
-person to have joined; `"all"` (the default) requires all listed people. A roster
-entry or invitation alone is not attendance. A native card in the registered chat locates the
+provider source chat, this route requires an exact registered calendar UID.
+`participantMatch: "invitation"` requires only the actual group invitation and
+Bot membership, not a human join or manual confirmation. `"any"` requires at
+least one listed person to have joined; `"all"` (the default) requires all listed
+people. A roster entry or invitation alone is not attendance. A native card in
+the registered chat locates the
 organizer's calendar; it does not prove an invitation. Read the exact confirmed
 occurrence, not the recurring master. If the meeting only supplies the master,
 resolve one matching occurrence in the meeting's own start/end window; reject
@@ -185,9 +187,11 @@ organizer explicitly approved an opaque series-to-chat binding, the registered
 target may also specify `confirmedBinding: { organizerCalendarId, sourceRef }`
 (the exact organizer calendar and original `feishu:om_…` confirmation). That
 binding may locate the calendar without a card and substitutes only for a
-`194001` list denial, not a proven missing or removed group invitation. Exact
-occurrence, actual attendance and Bot group membership still apply. Without
-this approval, keep the denial in the scope evidence and do not read materials.
+`194001` list denial in the `any`/`all` attendance modes, not in `invitation`
+mode and not for a proven missing or removed group invitation. Keep a denial
+without eligible evidence in the scope record and do not read materials.
+A calendar item visible to the Bot is not on its own an invitation; this path
+does not admit standalone Bot invitations outside the registered group sources.
 No new user OAuth or permission write is part of this path. To roll back, remove
 `scope.calendarSource`; the same gate is reapplied before pending job side effects.
 Validate with read-only source decisions (including a negative control), then

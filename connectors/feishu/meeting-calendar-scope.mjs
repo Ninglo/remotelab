@@ -31,13 +31,16 @@ export async function checkCalendarMeetingSource(policy, meeting, saved, endedAt
     return reject('calendar_instance_unverified');
   const required = config.requiredParticipantOpenIds;
   const participantMatch = config.participantMatch === undefined ? 'all' : config.participantMatch;
-  if (!Array.isArray(required) || !required.length || !required.every(id => /^ou_[A-Za-z0-9_]+$/.test(id))
-    || !['any', 'all'].includes(participantMatch)) return reject('calendar_participation_unconfigured');
+  const invitationOnly = participantMatch === 'invitation';
   evidence.participantMatch = participantMatch;
-  const attended = joinIds(meeting.participants);
-  const present = id => attended.has(id);
-  if (!(participantMatch === 'any' ? required.some(present) : required.every(present)))
-    return reject('calendar_required_attendees_unverified');
+  if (!invitationOnly) {
+    if (!Array.isArray(required) || !required.length || !required.every(id => /^ou_[A-Za-z0-9_]+$/.test(id))
+      || !['any', 'all'].includes(participantMatch)) return reject('calendar_participation_unconfigured');
+    const attended = joinIds(meeting.participants);
+    const present = id => attended.has(id);
+    if (!(participantMatch === 'any' ? required.some(present) : required.every(present)))
+      return reject('calendar_required_attendees_unverified');
+  }
 
   const get = (url, params) => api({ method: 'GET', url, params });
   let stage = 'source_locator';
@@ -107,14 +110,16 @@ export async function checkCalendarMeetingSource(policy, meeting, saved, endedAt
       if (!groupFound) return reject('calendar_source_group_not_invited');
     } catch (error) {
       if (Number(materialError(error).code) !== 194001) throw error;
-      if (!confirmed) return reject('calendar_invite_lookup_denied', { stage, error: materialError(error) });
+      if (invitationOnly || !confirmed) return reject('calendar_invite_lookup_denied', { stage, error: materialError(error) });
       evidence.calendarBindingSource = target.confirmedBinding.sourceRef;
       source = 'calendar_confirmed_source_binding';
     }
     stage = 'bot_source_group_membership';
     const member = await get(`/open-apis/im/v1/chats/${target.chatId}/members/is_in_chat`);
     if (member.is_in_chat !== true) return reject('calendar_bot_not_in_source_group');
-    return { allowed: true, reason: source, ...evidence, evidence: 'exact_calendar_occurrence_actual_attendance_and_bot_membership' };
+    return { allowed: true, reason: source, ...evidence, evidence: invitationOnly
+      ? 'exact_calendar_occurrence_group_invitation_and_bot_membership'
+      : 'exact_calendar_occurrence_actual_attendance_and_bot_membership' };
   } catch (error) {
     return reject('calendar_source_lookup_failed', { stage, error: materialError(error) });
   }
