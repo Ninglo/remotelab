@@ -191,13 +191,15 @@ The busy microphone remains a comparison reference so its acoustic leakage
 cannot alone claim the free microphone. Loud unrelated sound can still mislead
 level-based selection; confirm the actual behavior in physical acceptance.
 
-For a quicker missing-mic prompt, opt in on the desired automatic lane with
-`noSignalTimeoutMs: 3000` (2000–5000 ms; omit or use `0` for the default). This
-ends an unsuccessful selection early only after that much near-silent PCM has
-arrived on the available channels and no other lane is active. It does not infer
-transmitter power from USB presence or from lack of samples. Weak or ambiguous
-signal still uses the normal selection timeout. The attempt ends without an
-upload and follows the existing failed-selection feedback path.
+For a spoken 10-second quiet reminder on macOS, prepare
+`cues/quiet-10s.mp3` under the recording root and set
+`remindAfterTenSilentSeconds: true` on the desired automatic lane. Omit it to
+keep existing behavior. During microphone selection, ten continuous seconds of
+near-silent PCM on the available channels triggers one reminder if no other
+lane is active. This does not infer transmitter power and does not cancel the
+attempt or change its normal selection timeout. Microphone selection briefly
+ignores the speaker playback and its buffered tail, then resumes. There is no
+quiet reminder once the lane is recording.
 
 Only one unresolved selection is accepted per receiver: finish identifying the
 first microphone (listen for its start cue) before starting the next recording.

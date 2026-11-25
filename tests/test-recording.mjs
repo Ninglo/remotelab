@@ -150,45 +150,58 @@ test('automatic selection is invariant to PCM chunk boundaries and rejects silen
   assert.equal(busy.accept(split.split(stereo(5000, 100, 16000)), [1]), null);
 });
 
-test('opt-in auto lane ends early only after three seconds of near-silent PCM', async (t) => {
-  const root = await temporary(t), factory = captureFactory();
-  const lanes = [{ id: 'b', receiverId: 'rx1', channel: 'auto', noSignalTimeoutMs: 3000 },
+test('opt-in quiet reminder requires ten continuous seconds, never cancels, and excludes its own audio', async (t) => {
+  const root = await temporary(t), factory = captureFactory(), players = [];
+  const lanes = [{ id: 'b', receiverId: 'rx1', channel: 'auto', remindAfterTenSilentSeconds: true },
     { id: 'other', receiverId: 'rx2', channel: 'auto' }];
-  const cfg = config({ lanes });
+  const cfg = config({ lanes, submissionMode: 'local' });
   assert.throws(() => config({ lanes: [{ ...lanes[0], channel: 0 }] }), /requires automatic/);
-  assert.throws(() => config({ lanes: [{ ...lanes[0], noSignalTimeoutMs: 1000 }] }), /at least 2000/);
-  assert.equal(cfg.lanes[0].noSignalTimeoutMs, 3000);
-  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture });
+  assert.equal(cfg.lanes[0].remindAfterTenSilentSeconds, true);
+  function spawnQuietCue(path) {
+    assert.equal(path, join(root, 'cues', 'quiet-10s.mp3'));
+    const child = new EventEmitter();
+    child.kill = signal => child.emit('close', null, signal);
+    players.push(child);
+    return child;
+  }
+  const manager = new RecordingManager({ root, config: cfg, spawnCapture: factory.spawnCapture, spawnQuietCue });
   await manager.init(); t.after(() => manager.shutdown());
   let queued = 0;
   manager.on('pending', () => queued++);
   const first = (await manager.start('b')).recording;
   const mic = () => factory.captures.get('rx1');
-  assert.equal(manager.status()[0].state, 'selecting', 'lack of samples is not an unplugged-mic verdict');
-  await feed(manager, mic(), 'rx1', stereo(1, -2, 47680));
-  assert.equal(manager.status()[0].state, 'selecting');
+  await feed(manager, mic(), 'rx1', stereo(1, -2, 9 * 16000));
+  await feed(manager, mic(), 'rx1', stereo(50, 55, 320)); // weak, but breaks consecutive quiet
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 10 * 16000 - 320));
+  assert.equal(players.length, 0);
   await feed(manager, mic(), 'rx1', stereo(0, 0, 320));
-  assert.equal(manager.status().length, 0);
-  assert.ok(mic().killed);
-  const failed = await loadRecord(root, first.id);
-  assert.equal(failed.status, 'failed'); assert.equal(failed.channel, null);
-  assert.equal(failed.durationSeconds, 0); assert.match(failed.error, /^未能确认使用哪只麦：未检测到麦克风声音/);
-  assert.equal(queued, 0);
-
-  await manager.start('b');
-  await feed(manager, mic(), 'rx1', stereo(50, 55, 320)); // weak/similar, not silence or selected
-  await feed(manager, mic(), 'rx1', stereo(0, 0, 48000));
+  assert.equal(players.length, 1);
   assert.equal(manager.status()[0].state, 'selecting');
+  assert.equal(queued, 0);
+  players[0].emit('spawn');
+  await feed(manager, mic(), 'rx1', stereo(9999, 50, 4800));
+  assert.equal(manager.status()[0].state, 'selecting', 'speaker cue must not select the microphone');
+  players[0].emit('close', 0, null);
+  await feed(manager, mic(), 'rx1', stereo(9999, 50, 6400)); // buffered playback tail
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 10 * 16000));
+  assert.equal(players.length, 1, 'one prompt per attempt');
   await feed(manager, mic(), 'rx1', stereo(50, 5500, 4800));
   assert.equal(manager.status()[0].state, 'recording');
   assert.equal((await manager.stop('b')).recording.channel, 1);
-
+  const saved = await loadRecord(root, first.id);
+  assert.equal(saved.quietReminder.state, 'finished');
+  assert.ok(!(await samples(root, saved)).includes(9999));
   await manager.start('other');
-  await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(0, 0, 48000));
-  assert.equal(manager.status()[0].state, 'selecting', 'other lanes are unchanged');
+  await feed(manager, factory.captures.get('rx2'), 'rx2', stereo(0, 0, 160000));
   await manager.start('b');
-  await feed(manager, mic(), 'rx1', stereo(0, 0, 48000));
-  assert.equal(manager.status().find(x => x.laneId === 'b').state, 'selecting', 'do not alert over another lane');
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 160000));
+  assert.equal(players.length, 1, 'do not play over another lane');
+  await manager.stop('other');
+  await feed(manager, mic(), 'rx1', stereo(0, 0, 320));
+  assert.equal(players.length, 2);
+  const cancelled = (await manager.stop('b')).recording;
+  assert.equal(cancelled.status, 'failed');
+  assert.equal(queued, 0);
 });
 
 test('unidentified recording cancels without uploading and fixed lanes cannot steal claimed microphones', async (t) => {
