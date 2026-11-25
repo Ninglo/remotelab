@@ -1,11 +1,13 @@
 import { join } from 'node:path';
 import { readRecord } from '../../lib/durable-records.mjs';
 import { createMeetingCli, materialError } from './meeting-materials.mjs';
+import { checkCalendarMeetingSource } from './meeting-calendar-scope.mjs';
 
 // Unknown provenance can be checked again without admitting artifact access.
 // A verified exclusion or identity mismatch must never enter this recovery path.
 export const unresolvedMeetingScope = decision => decision?.allowed === false && [
   'scope_lookup_failed', 'source_group_membership_unavailable', 'organizer_lookup_unavailable', 'organizer_unverified',
+  'calendar_source_lookup_failed',
 ].includes(decision.reason);
 
 // Enterprise discovery and artifact ACLs are capabilities, not participation.
@@ -105,6 +107,10 @@ export function createMeetingScopeChecker(runtime, api, options = {}) {
           } while (true);
         } catch (error) { return result(false, 'organizer_lookup_unavailable', { chatId, error: materialError(error) }); }
       }
+    }
+    if (organizerMode && !chatId && policy.scope.calendarSource) {
+      const calendar = await checkCalendarMeetingSource(policy, data.meeting, savedMatches ? saved : null, endedAt, api);
+      if (calendar) return calendar;
     }
     if (membershipError) return result(false, 'source_group_membership_unavailable', { chatId, error: membershipError });
     if (organizerMode) return result(false, ownerOpenId || !organizerEligible

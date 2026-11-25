@@ -772,6 +772,7 @@
             "connectors/feishu/meeting-ingest.mjs",
             "connectors/feishu/meeting-intake.mjs",
             "connectors/feishu/meeting-scope.mjs",
+            "connectors/feishu/meeting-calendar-scope.mjs",
             "connectors/feishu/meeting-materials.mjs",
             "scripts/feishu-meeting-ingest.mjs",
             "scripts/feishu-connector.mjs"

@@ -128,7 +128,8 @@ Source eligibility is required even for samples and recovery commands. In
 
 Bot attendance alone, membership of a named human in the group, the host,
 participants, title, destination group and existing artifact access do not
-qualify under this mode. If owner metadata is absent, explicit
+qualify under this mode. A separate, opt-in calendar source is described below.
+If owner metadata is absent, explicit
 `userOrganizerLookup: true` permits the existing profile's authorized user to
 search by organizer and exact meeting time; all pages are checked for the exact
 meeting ID. A host is never substituted for the organizer. Unresolved ownership
@@ -140,6 +141,56 @@ actual Bot attendance or source-group Bot membership qualify. Its optional
 existing user profile. These legacy extensions do not apply to the new mode.
 Top-level `ownerOpenIds` remains an additional restriction, not an alternative
 admission rule; use `scope.organizerOpenIds` for the union described above.
+
+### Designated calendar sources
+
+Operator prompt: “Add this series from its original Feishu group card to
+future-only meeting intake. Require these named people to actually attend and
+Index to be in the invited source chat. Do not scan personal calendars, change
+sharing, replay past meetings or change existing source rules.” Provide the
+source chat, provider-native calendar card message ID, exact event UID, names
+and effective cutoff. Keep actual identifiers in the private instance policy:
+
+```json
+{
+  "calendarSource": {
+    "notBefore": "2026-11-25T12:30:00Z",
+    "requiredParticipantOpenIds": ["ou_example1", "ou_example2", "ou_example3"],
+    "targets": {
+      "example-event-uid": { "chatId": "oc_example", "cardMessageId": "om_example" }
+    }
+  }
+}
+```
+
+Place this object under `scope` in `source_group_or_organizer` mode. The
+existing source-group/organizer routes are unchanged. For a meeting without a
+provider source chat, this route requires the real join snapshot and an exact
+registered calendar UID. A native card in the registered chat locates the
+organizer's calendar; it does not prove an invitation. Read the exact confirmed
+occurrence, not the recurring master. If the meeting only supplies the master,
+resolve one matching occurrence in the meeting's own start/end window; reject
+ambiguous and cancelled occurrences. An active chat-type invitation and current
+Bot membership are required. A different UID is a new registration, even if the
+title is unchanged.
+
+Calendar details and invitation lists have separate resource permissions.
+A card may permit basic details while its attendee-list call returns `194001`;
+the organizer calendar can return the list or deny it independently. If the
+organizer explicitly approved an opaque series-to-chat binding, the registered
+target may also specify `confirmedBinding: { organizerCalendarId, sourceRef }`
+(the exact organizer calendar and original `feishu:om_…` confirmation). That
+binding may locate the calendar without a card and substitutes only for a
+`194001` list denial, not a proven missing or removed group invitation. Exact
+occurrence, actual attendance and Bot group membership still apply. Without
+this approval, keep the denial in the scope evidence and do not read materials.
+No new user OAuth or permission write is part of this path. To roll back, remove
+`scope.calendarSource`; the same gate is reapplied before pending job side effects.
+Validate with read-only source decisions (including a negative control), then
+read back the next real eligible delivery. A historical source probe must not
+submit an intake job.
+
+### Scope receipts
 
 `meeting-ingest/scope/<meetingId>.json` records the decision and evidence. The
 same check precedes material reads, visible delivery and permission/analysis
