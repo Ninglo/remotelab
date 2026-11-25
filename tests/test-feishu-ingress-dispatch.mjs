@@ -9,7 +9,8 @@ import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'feishu-ingress-dispatch-'));
 setIsolatedTestHome(home);
-const { handleMessage, buildFeishuInboxKey, initializeInbox } = await import('../scripts/feishu-connector.mjs');
+const { handleMessage, buildFeishuInboxKey, initializeInbox, submitRemoteLabRequest } = await import('../scripts/feishu-connector.mjs');
+const { resolveFeishuGroupSettings } = await import('../connectors/feishu/group-settings.mjs');
 const runtime = {
   config: { storageDir: home, sourceRouteId: 'bot', responsePolicy: { group: 'all' } },
   storagePaths: { messageIndexPath: join(home, 'message-index.json') },
@@ -86,6 +87,9 @@ try {
   const received = [];
   let rejectObservation = false;
   let rejectAdmission = false;
+  let bindingMode = null;
+  let boundSystemPrompt;
+  const admissionCalls = [];
   const observations = [];
   const notices = [];
   const retryPackets = [];
@@ -94,6 +98,24 @@ try {
     for await (const chunk of request) text += chunk;
     const body = text ? JSON.parse(text) : {};
     response.setHeader('content-type', 'application/json');
+    if (bindingMode) {
+      admissionCalls.push([request.method, request.url]);
+      if (request.url === '/api/session-conversations/resolve') {
+        assert.equal(body.includeFeishuAdmission, true);
+        response.end(JSON.stringify({ sessionId: 'bound-fixture', ...(bindingMode === 'metadata'
+          ? { admissionSession: { id: 'bound-fixture', systemPrompt: boundSystemPrompt } } : {}) }));
+        return;
+      }
+      if (request.method === 'GET' && request.url === '/api/sessions/bound-fixture') {
+        response.end(JSON.stringify({ session: { id: 'bound-fixture', systemPrompt: boundSystemPrompt } }));
+        return;
+      }
+      if (request.url === '/api/sessions/bound-fixture/messages') {
+        response.statusCode = 202;
+        response.end(JSON.stringify({ response: { id: body.requestId }, run: { id: 'bound-run' } }));
+        return;
+      }
+    }
     if (rejectObservation && request.url === '/api/session-conversations/resolve') {
       response.end(JSON.stringify({ sessionId: 'origin-session', threadOriginRunId: 'origin-run' }));
       return;
@@ -192,6 +214,23 @@ try {
     assert.equal(recovered.receipt.sessionId, frozen.sessionId);
     assert.equal(recovered.receipt.duplicate, true);
     assert.equal(recovered.receipt.runId, 'same-run');
+    const connectorApi = async (path, data) => {
+      const response = await fetch(httpRuntime.config.chatBaseUrl + path, { method: data?.method || 'GET',
+        ...(data?.body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data.body) } : {}) });
+      return { response, json: await response.json() };
+    };
+    httpRuntime.requestRemoteLab = connectorApi;
+    const boundSummary = { ...base, threadId: 'bound-thread', conversationKind: 'thread' };
+    boundSystemPrompt = resolveFeishuGroupSettings(httpRuntime.config, boundSummary).systemPrompt;
+    bindingMode = 'metadata';
+    assert.equal((await submitRemoteLabRequest(httpRuntime, { ...boundSummary, messageId: 'metadata-input' })).runId, 'bound-run');
+    assert.deepEqual(admissionCalls, [['POST', '/api/session-conversations/resolve'], ['POST', '/api/sessions/bound-fixture/messages']],
+      'bound topics no longer read the entire Session before submitting to the model');
+    admissionCalls.length = 0;
+    bindingMode = 'legacy';
+    assert.equal((await submitRemoteLabRequest(httpRuntime, { ...boundSummary, messageId: 'legacy-input' })).runId, 'bound-run');
+    assert.ok(admissionCalls.some(([method, path]) => method === 'GET' && path === '/api/sessions/bound-fixture'), 'older control planes still work');
+    bindingMode = null;
     rejectObservation = true;
     rejectAdmission = true;
     httpRuntime.requestRemoteLab = async (path, options = {}) => {

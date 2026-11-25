@@ -79,7 +79,7 @@ export async function recordFeishuThreadSessionBinding(runtime, summary, session
 
 // Mainline, private chat and topic inputs resolve through the same authority.
 // The connector's thread index is only a reader for pre-binding records.
-export async function findFeishuSessionBinding(runtime, summary) {
+export async function findFeishuSessionBinding(runtime, summary, { includeAdmission = false } = {}) {
   const pathname = trimString(runtime?.storagePaths?.messageIndexPath);
   const threadId = getFeishuThreadId(summary);
   const messageId = buildFeishuThreadBindingMessageId(threadId);
@@ -89,9 +89,13 @@ export async function findFeishuSessionBinding(runtime, summary) {
     sourceRouteId: runtime.config?.sourceRouteId || 'default', target: buildFeishuSessionConversationTarget(summary) };
   const request = runtime.requestRemoteLab;
   if (request) {
-    const result = await request('/api/session-conversations/resolve', { method: 'POST', body: { conversation } });
+    const result = await request('/api/session-conversations/resolve', { method: 'POST', body: {
+      conversation, ...(includeAdmission ? { includeFeishuAdmission: true } : {}),
+    } });
     if (!result.response.ok) throw new Error(result.json?.error || 'Unable to resolve Session conversation');
     if (result.json.sessionId) return { sessionId: result.json.sessionId, direction: 'binding', chatId, conversationId: threadId,
+      ...(includeAdmission && result.json.admissionSession?.id === result.json.sessionId
+        ? { admissionSession: result.json.admissionSession } : {}),
       ...(result.json.continuationRunId ? { continuationRunId: result.json.continuationRunId } : {}),
       ...(result.json.threadOriginRunId ? { threadOriginRunId: result.json.threadOriginRunId } : {}) };
   }

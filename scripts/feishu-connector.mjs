@@ -1098,8 +1098,12 @@ async function submitRemoteLabRequest(runtime, summary, {
   const groupFeedFolder = join(homedir(), '.remotelab', 'workspace', 'group-feed',
     runtime.config.sourceRouteId || 'default', effectiveSummary.chatId);
   if (groupFeed) await mkdir(groupFeedFolder, { recursive: true, mode: 0o700 });
-  const runtimeSelection = effectiveSummary.runtimeSelectionOverride
-    || await resolveFeishuRuntimeSelection(runtime, effectiveSummary);
+  const [runtimeSelection, threadBinding] = await Promise.all([
+    effectiveSummary.runtimeSelectionOverride || resolveFeishuRuntimeSelection(runtime, effectiveSummary),
+    effectiveSummary.logContinuation?.sessionId
+      ? { sessionId: effectiveSummary.logContinuation.sessionId }
+      : findFeishuSessionBinding(runtime, effectiveSummary, { includeAdmission: true }),
+  ]);
   const sessionPayload = {
     folder: groupFeed ? groupFeedFolder : runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
@@ -1122,16 +1126,17 @@ async function submitRemoteLabRequest(runtime, summary, {
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
-  const threadBinding = effectiveSummary.logContinuation?.sessionId
-    ? { sessionId: effectiveSummary.logContinuation.sessionId }
-    : await findFeishuSessionBinding(runtime, effectiveSummary);
   let session;
   if (threadBinding?.sessionId) {
-    const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
-    if (!result.response?.ok || !result.json?.session?.id) {
-      throw new Error(result.json?.error || `Unable to read bound Session (${result.response?.status || 'unknown'})`);
+    session = threadBinding.admissionSession;
+    // Legacy cores and origin-backed continuations may only return an ID.
+    if (!session) {
+      const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
+      if (!result.response?.ok || !result.json?.session?.id) {
+        throw new Error(result.json?.error || `Unable to read bound Session (${result.response?.status || 'unknown'})`);
+      }
+      session = result.json.session;
     }
-    session = result.json.session;
     const configuredSystemPrompt = sessionPayload.systemPrompt.trim();
     const currentSystemPrompt = typeof session.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
     if (!threadBinding.continuationRunId && !threadBinding.threadOriginRunId && !isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {

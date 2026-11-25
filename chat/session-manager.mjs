@@ -3730,8 +3730,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const deliveryPlan = priorRequest
     ? normalizeSourceDeliveryPlan(priorRequest.deliveryPlan || priorRequest.options.sourceDelivery)
     : resolveSessionDeliveryPlan(session, options);
-  const initialDeliveries = deliveryPlan
-    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
+  // Feishu and email never produce a separate initial Session notice. For
+  // other transports only the user-message count is needed, not a history scan.
+  const initialDeliveries = deliveryPlan && !['feishu', 'email'].includes(deliveryPlan.connector)
+    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId, { metadataOnly: true }), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
   await observeFeatureAdmission(record);

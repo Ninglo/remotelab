@@ -792,7 +792,16 @@ export async function handleControlRoutes({
       const payload = JSON.parse(await readBody(req, 32768));
       const session = await findSessionConversation(payload.conversation);
       const continuation = session ? null : await findActiveFeishuThreadExecution(payload.conversation);
+      // A bound Feishu input only needs these metadata fields before submission.
+      // Do not include history, run projections, or browser connector state.
+      const admissionSession = payload.includeFeishuAdmission === true && authSession?.authKind === 'service'
+        && session?.conversation?.connector === 'feishu' ? {
+          id: session.id, systemPrompt: session.systemPrompt || '',
+          executionProfile: session.executionProfile,
+          privateConversationStart: session.privateConversationStart,
+        } : null;
       writeJson(res, 200, { sessionId: session?.id || continuation?.sessionId || null,
+        ...(admissionSession ? { admissionSession } : {}),
         ...(continuation ? { continuationRunId: continuation.continuationRunId, threadOriginRunId: continuation.threadOriginRunId } : {}),
         conversation: session?.conversation || null });
     } catch (error) { writeJson(res, 400, { error: error.message }); }

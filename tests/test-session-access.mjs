@@ -22,9 +22,13 @@ people.find(p => p.id === 'admin').credentials.push({ id: 'admin-password', type
 await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'a',
   administratorPersonIds: ['admin'], people, serviceToken: 'f'.repeat(64) }));
 const ids = { a: 'a'.repeat(32), b: 'b'.repeat(32), group: 'c'.repeat(32), unknown: 'd'.repeat(32) };
+const feishuPrivate = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'fixture-private', chatType: 'p2p', conversationKind: 'main' } };
+const privateStart = { messageId: 'om_boundary', at: 1795587300000 };
 await writeFile(join(config, 'chat-sessions.json'), JSON.stringify(Object.entries(ids).map(([who, id]) => ({
   id, name: who + '-secret', folder: home, tool: 'codex', sourceId: 'web', created: new Date().toISOString(),
-  ...(who === 'a' ? { initiatedByIdentityId: 'feishu-a' } : who === 'b' ? { initiatedByIdentityId: 'web-b' }
+  ...(who === 'a' ? { initiatedByIdentityId: 'feishu-a', conversation: feishuPrivate,
+    systemPrompt: 'fixture system prompt', executionProfile: 'quick', privateConversationStart: privateStart }
+    : who === 'b' ? { initiatedByIdentityId: 'web-b' }
     : who === 'group' ? { groupFeed: true, initiatedByIdentityId: 'identity_system' } : {}),
 }))));
 const { handleRequest } = await import('../chat/router.mjs');
@@ -64,6 +68,16 @@ try {
     `/api/sessions/${ids.b}/events?filter=all`, `/api/sessions/${ids.b}/events/1/body`, `/api/sessions/${ids.b}/source-context`,
     `/api/sessions/${ids.b}/workboards`]) assert.equal((await call('a', route)).status, 403, route);
   assert.equal((await call('b', `/api/sessions/${ids.b}`)).status, 200);
+  const resolveRoute = '/api/session-conversations/resolve';
+  const admissionRequest = { conversation: feishuPrivate, includeFeishuAdmission: true };
+  const serviceResolution = await call('service', resolveRoute, 'POST', admissionRequest);
+  assert.equal(serviceResolution.status, 200);
+  assert.deepEqual(serviceResolution.data.admissionSession, { id: ids.a, systemPrompt: 'fixture system prompt', executionProfile: 'quick', privateConversationStart: privateStart });
+  assert.equal((await call('service', resolveRoute, 'POST', { conversation: feishuPrivate })).data.admissionSession, undefined);
+  assert.equal((await call('admin', resolveRoute, 'POST', admissionRequest)).data.admissionSession, undefined);
+  assert.equal((await call('b', resolveRoute, 'POST', admissionRequest)).status, 403);
+  const wrongBot = { ...feishuPrivate, sourceRouteId: 'other-bot' };
+  assert.equal((await call('service', resolveRoute, 'POST', { ...admissionRequest, conversation: wrongBot })).data.sessionId, null);
   const deniedPage = await call('a', '/?session=' + ids.b);
   assert.match(deniedPage.data, /进入我的工作区/);
   assert.ok(!deniedPage.data.includes('b-secret'), 'denial page reveals no private Session details');
