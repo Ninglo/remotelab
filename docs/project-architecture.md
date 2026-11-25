@@ -128,6 +128,22 @@ detached runner -> raw spool/status/result -> normalized Session events
 WebSocket only announces that clients should refetch. Detached execution survives
 control-plane restarts through durable Request/Run state and reconciliation.
 
+On cgroup v2 hosts, an instance can opt in to a separate runner subgroup via
+`REMOTELAB_RUNNER_CGROUP_PROCS`. The detached launcher enters that subgroup
+before executing the sidecar, so its tools inherit the same budget. A join
+failure rejects the launch rather than silently running in the mainline group.
+Without the variable, the native systemd/process startup policy is unchanged.
+For a systemd unit with `KillMode=process`, `Delegate=io` and
+`DelegateSubgroup=interactive`, the operator can use the root-owned
+`scripts/prepare-runner-io-cgroup.sh` via `ExecStartPre` to preserve old runners
+and set a per-device aggregate budget on `runner-bulk`. Use an instance-specific
+drop-in, verify live placement and `io.max`, and keep the connector out of the
+capped subgroup. This protects headroom from that instance's managed runners;
+it is not a minimum bandwidth guarantee against unrelated services or a shared
+storage backend. Rollback removes the instance drop-in, resets the bulk limits
+to `max` for retained processes, and restarts only the core through systemd. No
+state migration is involved.
+
 Small whole-document state uses `chat/fs-utils.mjs`: `readJson` returns its
 default only for `ENOENT`; malformed JSON, permission and other I/O errors
 propagate, stopping read/modify/write before replacement. Core startup removes

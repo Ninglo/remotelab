@@ -202,12 +202,65 @@ export function spawnDetachedRunnerAsProcess(runId, {
   };
 }
 
+// Optional host-managed cgroup. Join before exec so every tool inherits the
+// boundary, and never fall back to an unisolated runner on admission failure.
+export async function spawnDetachedRunnerInCgroup(runId, {
+  cgroupProcs,
+  spawnImpl = spawnProcess,
+  processExecPath = process.execPath,
+  runnerScriptPath = runnerEntry,
+} = {}) {
+  if (!/^\/sys\/fs\/cgroup\/(?:[\w.:-]+\/)+cgroup\.procs$/.test(cgroupProcs || '')) {
+    throw new Error('Invalid detached runner cgroup path');
+  }
+  const launchMode = DETACHED_RUNNER_PROCESS_LAUNCH_MODE;
+  const child = spawnImpl('/bin/sh', ['-c',
+    'printf "%s\\n" "$$" > "$1" || exit 125; printf "joined\\n" >&3 || exit 125; exec 3>&-; shift; exec "$@"',
+    'remotelab-runner-cgroup', cgroupProcs, processExecPath, runnerScriptPath, runId], {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'ignore', 'pipe'],
+    env: buildDetachedRunnerEnvironment({ launchMode }),
+  });
+  await new Promise((resolve, reject) => {
+    const reply = child.stdio[3];
+    let ack = '';
+    const fail = () => finish(new Error('Detached runner could not join its configured cgroup'));
+    const timeout = setTimeout(fail, 3000);
+    let settled = false;
+    function finish(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reply.removeListener('data', receive);
+      reply.removeListener('end', fail);
+      reply.destroy();
+      if (error) { child.kill(); reject(error); }
+      else resolve();
+    }
+    function receive(chunk) {
+      ack += chunk;
+      if (ack === 'joined\n') finish();
+      else if (ack.length >= 7) fail();
+    }
+    child.once('error', fail);
+    reply.once('error', fail);
+    reply.on('data', receive);
+    reply.once('end', fail);
+  });
+  child.unref?.();
+  return { pid: child.pid, unitName: null, unitScope: null, launchMode };
+}
+
 export function createDetachedRunnerSpawner({
   execFileImpl = execFileAsync,
   spawnImpl = spawnProcess,
   getScopeImpl = getCurrentSystemdManagerScope,
+  env = process.env,
 } = {}) {
   return async function spawnDetachedRunner(runId) {
+    if (env.REMOTELAB_RUNNER_CGROUP_PROCS) {
+      return spawnDetachedRunnerInCgroup(runId, { cgroupProcs: env.REMOTELAB_RUNNER_CGROUP_PROCS, spawnImpl });
+    }
     const scope = await getScopeImpl();
     if (shouldUseSystemdDetachedRunner({ scope })) {
       try {
