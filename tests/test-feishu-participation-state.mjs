@@ -197,6 +197,33 @@ try {
     releaseCard({ code: 0 });
     await runtime.participation.idle();
   }
+  const deniedGroup = { ...base, chatId: 'no-top-notice', messageId: 'deny-pin-control' };
+  runtime.config.groups[deniedGroup.chatId] = { participationMode: 'ambient', participationControls: true };
+  runtime.appClient.im.v1.message.patch = async () => ({ code: 0 });
+  runtime.appClient.im.v1.message.create = async () => ({ code: 0, data: { message_id: 'om_unpinned', create_time: Date.now() } });
+  let pinAttempts = 0;
+  runtime.appClient.im.v1.chatTopNotice.putTopNotice = async () => {
+    pinAttempts++;
+    throw new Error('HTTP 400: Access denied. One of the following scopes is required: [im:chat, im:chat.top_notice:write_only].');
+  };
+  assert.equal((await runtime.participation.intake({ ...deniedGroup, messageText: '暂停接收消息' })).mode, 'paused');
+  await runtime.participation.idle();
+  const denied = await runtime.participation.state(deniedGroup);
+  assert.equal(denied.mode, 'paused');
+  assert.equal(denied.cardMessageId, 'om_unpinned');
+  assert.notEqual(denied.pinnedMessageId, 'om_unpinned');
+  assert.equal(denied.pinPending, false);
+  assert.equal(denied.pinFailure.reason, 'missing_top_notice_scope');
+  assert.equal(await runtime.participation.intake({ ...deniedGroup, messageId: 'follow-up-invitation',
+    messageText: 'ping', mentions: [{ openId: 'bot' }] }), null);
+  await runtime.participation.idle();
+  assert.equal(pinAttempts, 1);
+
+  const transientGroup = { ...deniedGroup, chatId: 'pin-transport-timeout', messageId: 'pin-timeout-control' };
+  runtime.config.groups[transientGroup.chatId] = runtime.config.groups[deniedGroup.chatId];
+  runtime.appClient.im.v1.chatTopNotice.putTopNotice = async () => { throw new Error('network timeout'); };
+  await assert.rejects(runtime.participation.change(transientGroup, 'paused'), /network timeout/);
+  assert.equal((await runtime.participation.state(transientGroup)).pinPending, true);
   await Promise.all([...(runtime.jevReactionJobs?.values() || [])]);
   console.log('Feishu participation: mute, resume, invitations, retired listening, scope and persistence passed');
 } finally { await rm(home, { recursive: true, force: true }); }

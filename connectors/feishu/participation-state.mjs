@@ -245,10 +245,25 @@ export function createParticipationController(runtime, { resolveSession, cancelS
     }
     const canPin = !record.source.topicId && (!existingOnly || managedPin);
     if (record.pinPending && canPin) {
-      const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
-        data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
-      if (result?.code) throw new Error(result.msg || 'Agent status card pin failed');
-      record = await records.mutate(record.key, current => ({ ...current, pinnedMessageId: messageId, pinPending: false }));
+      try {
+        const result = await runtime.appClient.im.v1.chatTopNotice.putTopNotice({ path: { chat_id: record.source.chatId },
+          data: { chat_top_notice: [{ action_type: '1', message_id: messageId }] } });
+        if (result?.code) throw feishuResponseError(result, 'Agent status card pin failed');
+      } catch (error) {
+        const message = String(error?.message);
+        const denied = /not have|denied|scopes? (?:is|are) required|尚未开通/i.test(message);
+        if (!denied || !message.includes('im:chat.top_notice:write_only')) throw error;
+        // The card and participation state already exist. A missing optional
+        // scope must not turn that control into an inbox retry.
+        record = await records.mutate(record.key, current => ({ ...current,
+          pinPending: false, pinnedMessageId: current?.pinnedMessageId || '',
+          pinFailure: { reason: 'missing_top_notice_scope', at: new Date().toISOString() },
+        }));
+        console.warn('[feishu-participation] status card left unpinned: missing top-notice scope');
+      }
+      if (record.pinPending) record = await records.mutate(record.key, current => ({ ...current,
+        pinnedMessageId: messageId, pinPending: false, pinFailure: null,
+      }));
     }
     if (runtime.storagePaths?.messageIndexPath && record.sessionId) {
       await recordFeishuOutboundMessageSession(runtime, { ...record.source, chatType: 'group',

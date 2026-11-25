@@ -305,6 +305,9 @@ causes an age read, patch or replacement. Real changes update the current card;
 if it is beyond the provider's 14-day window or rejected with `230031`, the
 pinned card may be replaced and its top-notice binding updated. There is no
 13-day renewal trigger. Suppressed or superseded bindings stay inactive.
+If Feishu denies the optional top-notice scope, the existing status card stays
+unpinned and the participation change does not block later messages. This does
+not grant a new scope or treat network timeouts as permission denials.
 Conversation participation cards are updated only during their current
 interaction; they are never renewed by age or restored as live dashboards.
 Unknown replacement sends stay pending across restart. See
