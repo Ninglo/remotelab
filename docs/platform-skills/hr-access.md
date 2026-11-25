@@ -16,6 +16,8 @@ For an already registered person whose Touma account has just become available, 
 
 Policy reads refresh at admission, protected-source reads and connector delivery. A registry failure denies protected work. On a general-purpose instance, unrelated technical requests can continue without HR rights. Restricted HR browser instances fail closed for unavailable policy checks. WebSocket delivery applies the same session visibility checks as HTTP.
 
+In the personal Feishu recruiting chat, supplying the requested application type or position continues through the fixed recruiting workflow, with its existing candidate ownership checks. Job and SOP inquiries use the scoped read-only service. The shared browser identity remains limited to its collaboration scope.
+
 This implements application and authenticated entry boundaries. It does not isolate root/sudo, arbitrary filesystem tools, content already in an old model context, or external copies. Those remain subject to the current execution rules and require separate OS/tool isolation to become hard boundaries. Do not report documentation updates as universal enforcement.
 
 Verify with the isolated HR-policy, request-content-operation, Feishu restricted-access/delivery, session-access and protected-source tests. Coordinate business-schema migration and seed validation before enabling registry configuration; preserve exact automation grants, alert receipts and independent work. Rollback configuration must point to a previously validated policy, never an empty allowlist or permissive fallback.
