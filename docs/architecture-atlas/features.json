@@ -659,6 +659,7 @@
             "chat/message-routing-policy.mjs",
             "connectors/feishu/recruiting-workflow.mjs",
             "connectors/feishu/restricted-access.mjs",
+            "connectors/feishu/interview-scorecard.mjs",
             "connectors/feishu/delivery-access.mjs",
             "connectors/feishu/automation-delivery-access.mjs",
             "docs/external-message-protocol.md",

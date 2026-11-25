@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { acceptInterviewScorecard, processInterviewScorecard } from '../connectors/feishu/interview-scorecard.mjs';
 import { refreshRuntimeHrPolicy } from '../lib/hr-policy.mjs';
 import { normalizeRoleAccess, feishuAccessRole, requireFullFeishuAccess, queryRestrictedInterview, queryHrRecruiting,
   restrictedInterviewOptions, INTERVIEW_QUERY_UNAVAILABLE, summarizeFeishuCardAction } from '../connectors/feishu/restricted-access.mjs';
@@ -2375,6 +2376,7 @@ function initializeInbox(runtime) {
       return { notificationDeliveryId: notice.deliveryId, alert };
     },
     process: async (entry, update) => {
+      if (entry.summary.sourceKind === 'interview_scorecard') return processInterviewScorecard(runtime,entry.summary);
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       if (!allowed) return { blocked: true };
       // Once admission is definitely rejected, retries only publish the same
@@ -2714,7 +2716,10 @@ async function main() {
     'im.message.recalled_v1': displayHint('im.message.recalled_v1'),
     'calendar.calendar.changed_v4': displayHint('calendar.calendar.changed_v4'),
     'calendar.calendar.event.changed_v4': displayHint('calendar.calendar.event.changed_v4'),
-    'card.action.trigger': withFeishuCardAccess(config, async raw => {
+    'card.action.trigger': async raw => {
+      const scorecardFeedback=await acceptInterviewScorecard(runtime,raw,inbox);
+      if (scorecardFeedback) return scorecardFeedback;
+      return withFeishuCardAccess(config, async raw => {
       const authorizeCard = summary => isAllowedCardAction(config, raw, summary);
       const automationFeedback = await handleAutomationCardAction(runtime, raw, {
         request: (path, options) => requestRemoteLab(runtime, path, options),
@@ -2753,7 +2758,8 @@ async function main() {
           console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
       }
       return { toast: feedback.toast };
-    }),
+      })(raw);
+    },
     'im.message.reaction.created_v1': persistReactionFeedback,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });

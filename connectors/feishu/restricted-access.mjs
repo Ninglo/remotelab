@@ -30,9 +30,13 @@ export function normalizeRoleAccess(value) {
       || !value.recruitingWorkflowCommand.length || !value.recruitingWorkflowCommand[0].startsWith('/')
       || value.recruitingWorkflowCommand.some(arg => typeof arg !== 'string' || !arg || arg.includes('\0'))))
     throw new Error('Invalid fixed recruiting workflow command');
+  if (value.scorecardWorkflowCommand !== undefined && (!Array.isArray(value.scorecardWorkflowCommand)
+      || !value.scorecardWorkflowCommand.length || !value.scorecardWorkflowCommand[0].startsWith('/')
+      || value.scorecardWorkflowCommand.some(arg=>typeof arg!=='string' || !arg || arg.includes('\0'))))
+    throw new Error('Invalid fixed scorecard workflow command');
   if (value.hrRecruitingWorkflow !== undefined && typeof value.hrRecruitingWorkflow !== 'boolean')
     throw new Error('Invalid HR recruiting workflow flag');
-  return { hrPolicy: value.hrPolicy === true, hrRecruitingWorkflow: value.hrRecruitingWorkflow === true, ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
+  return { ...(value.scorecardWorkflowCommand ? {scorecardWorkflowCommand:[...value.scorecardWorkflowCommand]} : {}), hrPolicy: value.hrPolicy === true, hrRecruitingWorkflow: value.hrRecruitingWorkflow === true, ...(value.recruitingWorkflowCommand ? {recruitingWorkflowCommand:[...value.recruitingWorkflowCommand]} : {}), appId: value.appId, tenantKey: value.tenantKey,
     hrOpenIds: [...value.hrOpenIds], collaboratorOpenIds: [...collaboratorOpenIds],
     interviewerOpenIds: [...value.interviewerOpenIds], recruitingInternOpenIds: [...recruitingInternOpenIds],
     endpoint: value.endpoint, credentialsPath: value.credentialsPath };

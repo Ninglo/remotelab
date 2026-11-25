@@ -1443,3 +1443,21 @@ input. A policy read failure keeps the original envelope pending under the inbox
 bounded retry policy. A successful read applies current revocations immediately.
 Recovery from a failed read therefore happens before an authorization rejection
 can complete and archive the input.
+
+### Fixed interview scorecard callbacks
+
+A role-governed HR connector can register `accessPolicy.roles.scorecardWorkflowCommand`
+(an absolute executable plus fixed arguments). Use the existing connector subscription
+for `card.action.trigger`; do not launch another WebSocket consumer. The `pretrain_`
+form-button namespace enters a narrow business lane, not a RemoteLab Session or general
+agent. App/tenant/operator and callback shape are verified before durable inbox admission.
+Admission uses the initialized policy snapshot to stay within the callback deadline;
+execution refreshes authoritative policy before invoking the registered handler.
+The handler must bind operator/chat/message to the original scorecard receipt and recheck
+assignment at the signed business API. Selection is draft-only; final Submit owns the
+idempotent write. Other card handlers retain their existing access gate.
+
+This reuses the connector inbox ordering, crash/retry bounds and 90-day input archive.
+The business module owns draft and submission receipts; no card data is placed into
+ordinary conversation history or passed to a model. Enable only after validating the
+business handler, its current permissions, and private test-card delivery.
