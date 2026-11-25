@@ -30,10 +30,14 @@ export async function checkCalendarMeetingSource(policy, meeting, saved, endedAt
     && (!detail || !observer || detail[1] !== observer[1] || (detail[2] !== '0' && observer[2] !== '0')))
     return reject('calendar_instance_unverified');
   const required = config.requiredParticipantOpenIds;
-  if (!Array.isArray(required) || !required.length || !required.every(id => /^ou_[A-Za-z0-9_]+$/.test(id)))
-    return reject('calendar_participation_unconfigured');
+  const participantMatch = config.participantMatch === undefined ? 'all' : config.participantMatch;
+  if (!Array.isArray(required) || !required.length || !required.every(id => /^ou_[A-Za-z0-9_]+$/.test(id))
+    || !['any', 'all'].includes(participantMatch)) return reject('calendar_participation_unconfigured');
+  evidence.participantMatch = participantMatch;
   const attended = joinIds(meeting.participants);
-  if (!required.every(id => attended.has(id))) return reject('calendar_required_attendees_unverified');
+  const present = id => attended.has(id);
+  if (!(participantMatch === 'any' ? required.some(present) : required.every(present)))
+    return reject('calendar_required_attendees_unverified');
 
   const get = (url, params) => api({ method: 'GET', url, params });
   let stage = 'source_locator';

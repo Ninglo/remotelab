@@ -73,6 +73,19 @@ try {
   reset(); meeting.participants = roster.slice(0, 2).concat({ id: 'ou_c', status: 4 });
   await checkReason('calendar_required_attendees_unverified');
   assert.equal(requests.length, 1);
+  const any = structuredClone(policy);
+  any.scope.calendarSource.participantMatch = 'any';
+  for (const participant of roster) {
+    reset(); meeting.participants = [participant];
+    await checkReason('calendar_invited_source_group', any);
+  }
+  reset(); meeting.participants = [{ id: 'ou_a', status: 4 }, { id: 'ou_other', first_join_time: start }];
+  await checkReason('calendar_required_attendees_unverified', any);
+  assert.equal(requests.length, 1, 'no calendar access if none actually attended');
+  reset(); inGroup = false;
+  await checkReason('calendar_bot_not_in_source_group', any);
+  reset(); any.scope.calendarSource.participantMatch = 'invalid';
+  await checkReason('calendar_participation_unconfigured', any);
   reset(); cardChat = 'oc_other';
   await checkReason('calendar_source_card_unverified');
   reset(); eventStatus = 'cancelled';

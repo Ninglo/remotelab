@@ -148,14 +148,16 @@ Operator prompt: “Add this series from its original Feishu group card to
 future-only meeting intake. Require these named people to actually attend and
 Index to be in the invited source chat. Do not scan personal calendars, change
 sharing, replay past meetings or change existing source rules.” Provide the
-source chat, provider-native calendar card message ID, exact event UID, names
-and effective cutoff. Keep actual identifiers in the private instance policy:
+source chat, provider-native calendar card message ID, exact event UID, names,
+whether any or all of them must attend, and effective cutoff. Keep actual
+identifiers in the private instance policy:
 
 ```json
 {
   "calendarSource": {
     "notBefore": "2026-11-25T12:30:00Z",
     "requiredParticipantOpenIds": ["ou_example1", "ou_example2", "ou_example3"],
+    "participantMatch": "any",
     "targets": {
       "example-event-uid": { "chatId": "oc_example", "cardMessageId": "om_example" }
     }
@@ -166,7 +168,9 @@ and effective cutoff. Keep actual identifiers in the private instance policy:
 Place this object under `scope` in `source_group_or_organizer` mode. The
 existing source-group/organizer routes are unchanged. For a meeting without a
 provider source chat, this route requires the real join snapshot and an exact
-registered calendar UID. A native card in the registered chat locates the
+registered calendar UID. `participantMatch: "any"` requires at least one listed
+person to have joined; `"all"` (the default) requires all listed people. A roster
+entry or invitation alone is not attendance. A native card in the registered chat locates the
 organizer's calendar; it does not prove an invitation. Read the exact confirmed
 occurrence, not the recurring master. If the meeting only supplies the master,
 resolve one matching occurrence in the meeting's own start/end window; reject
