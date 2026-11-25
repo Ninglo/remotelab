@@ -17,18 +17,26 @@ esac
 /usr/bin/grep -Fxq "0::/system.slice/$unit/.control" /proc/self/cgroup
 bulk=$base/runner-bulk
 mkdir -p "$bulk"
-# KillMode=process intentionally preserves old detached runners. Move only
-# direct members of our unit, without signalling them. New descendants inherit
-# the subgroup once their parent has moved. No unrelated services are touched.
-for pass in 1 2 3; do
-    while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        if ! /usr/bin/grep -Fxq "0::/system.slice/$unit" "/proc/$pid/cgroup" 2>/dev/null; then continue; fi
-        if ! (printf '%s\n' "$pid" > "$bulk/cgroup.procs"); then
-            [ ! -e "/proc/$pid" ] || exit 1
-        fi
-    done < "$base/cgroup.procs"
-    if ( ! IFS= read -r unused ) < "$base/cgroup.procs"; then break; fi
+# A restrictive service UMask (for example 0077) must not prevent the
+# runner UID from traversing the subgroup. Only its process-entry file is writable.
+chgrp "$(id -gn "$owner")" "$bulk"
+chmod 0750 "$bulk"
+# KillMode=process intentionally preserves old detached runners. At ExecStartPre
+# the new interactive main has not started, so any survivors in these two
+# leaves can be moved without signals. Do not touch .control or sibling units.
+for leaf in "$base" "$base/interactive"; do
+    [ -r "$leaf/cgroup.procs" ] || continue
+    for pass in 1 2 3; do
+        while IFS= read -r pid; do
+            [ -n "$pid" ] || continue
+            if ! /usr/bin/grep -Fxq "0::${leaf#/sys/fs/cgroup}" "/proc/$pid/cgroup" 2>/dev/null; then continue; fi
+            if ! (printf '%s\n' "$pid" > "$bulk/cgroup.procs"); then
+                [ ! -e "/proc/$pid" ] || exit 1
+            fi
+        done < "$leaf/cgroup.procs"
+        if ( ! IFS= read -r unused ) < "$leaf/cgroup.procs"; then break; fi
+    done
+    ( ! IFS= read -r unused ) < "$leaf/cgroup.procs"
 done
 printf '+io\n' > "$base/cgroup.subtree_control"
 printf '%s rbps=%s riops=%s wbps=%s wiops=%s\n' "$dev" "$read_bps" "$read_iops" "$write_bps" "$write_iops" > "$bulk/io.max"
