@@ -1,5 +1,8 @@
 import { runtimeHrPolicy, resolveHrActor, authorizeHr, hrScopes } from '../../lib/hr-policy.mjs';
-import { hrCollaborationReply, isHrCollaborationQuery, isHrRecruitingFieldDeclaration } from '../../chat/hr-collaboration.mjs';
+import {
+  hrCollaborationReply, isHrCollaborationQuery, isHrRecruitingFieldDeclaration,
+  isHrRecruitingScheduleShorthand,
+} from '../../chat/hr-collaboration.mjs';
 import { readFile } from 'node:fs/promises';
 import { createHash, createHmac } from 'node:crypto';
 import { join } from 'node:path';
@@ -186,9 +189,9 @@ export async function queryRestrictedInterview(policy, summary, { fetchImpl = fe
       appId:policy.roles.appId, tenant:policy.roles.tenantKey}, actor,
       {text:summary.messageText, options:{requestId:'feishu:'+summary.messageId}}, {fetchImpl, now:now()});
   }
-  const recruitingFieldReply = actor?.userId && hrScopes(runtimeHrPolicy().policy, actor, 'candidate.write').length
-    && isHrRecruitingFieldDeclaration(summary.messageText);
-  const interviewRead = actor?.roles.includes('interviewer') && ['text','post'].includes(summary.messageType) && !recruitingFieldReply
+  const recruitingParserFirst = actor?.userId && hrScopes(runtimeHrPolicy().policy, actor, 'candidate.write').length
+    && (isHrRecruitingFieldDeclaration(summary.messageText) || isHrRecruitingScheduleShorthand(summary.messageText));
+  const interviewRead = actor?.roles.includes('interviewer') && ['text','post'].includes(summary.messageType) && !recruitingParserFirst
     && !/录入|入库|新建|上传|安排|排期|改期|取消|提交|写入|追加|补充|修改|更改|删除|继续办理/u.test(summary.messageText || '');
   if (role === 'recruiting_intern' && policy.roles.recruitingWorkflowCommand && !interviewRead) {
     const result = await workflowImpl(policy.roles.recruitingWorkflowCommand, summary, {readOnly});

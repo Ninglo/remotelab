@@ -6,8 +6,12 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 import { isHrCollaborationQuery } from '../chat/hr-collaboration.mjs';
 
 const declaration = '应聘类型实习，应聘岗位数据算法工程师';
+const followUp = '林示远数据算法岗位2面，面试官顾示秋：https://meeting.example.invalid/demo';
+const firstRound = '入库，数据算法岗位（实习）一面，面试官顾示秋：https://meeting.example.invalid/demo';
 for (const text of [
   declaration,
+  followUp,
+  firstRound,
   '应聘岗位：数据算法工程师，实习',
   '岗位是数据算法工程师',
   '岗位名称：数据算法工程师',
@@ -20,6 +24,7 @@ for (const text of [
 for (const text of [
   '查询在招岗位', '有哪些应聘岗位？', '应聘岗位有什么要求', '应聘岗位是哪个',
   '查看招聘优先级', 'SOP操作说明', '这个岗位是什么', '应聘岗位具体要求？', '应聘岗位要填什么？', '应聘岗位？',
+  '查看数据算法岗位第二轮面试官是谁：https://meeting.example.invalid/demo',
 ]) assert.equal(isHrCollaborationQuery(text), true, text);
 
 const root = await mkdtemp(join(tmpdir(), 'hr-collaboration-declarations-'));
@@ -90,12 +95,17 @@ try {
 
   assert.equal(await send('recruiter', declaration), '已接续原招聘办理');
   assert.equal(await send('dual', declaration), '已接续原招聘办理');
+  assert.equal(await send('recruiter', firstRound), '已接续原招聘办理');
+  assert.equal(await send('recruiter', followUp), '已接续原招聘办理');
+  assert.equal(await send('dual', followUp), '已接续原招聘办理');
   assert.match(await send('recruiter', '查询在招岗位'), /测试岗位/u);
   assert.equal(await send('dual', 'SOP 操作说明'), '测试 SOP');
   assert.match(await send('catalog', declaration), /测试岗位/u);
   assert.deepEqual(await send('unregistered', declaration), { blocked: true });
   assert.deepEqual(calls, [
     ['workflow', 'ou_recruiter', declaration], ['workflow', 'ou_dual', declaration],
+    ['workflow', 'ou_recruiter', firstRound], ['workflow', 'ou_recruiter', followUp],
+    ['workflow', 'ou_dual', followUp],
     ['service', 'recruiter', 'jobs'], ['service', 'dual', 'jobs'], ['service', 'catalog', 'jobs'],
   ]);
   console.log('PASS: recruiting field replies reach the fixed Feishu workflow; catalog and SOP reads stay scoped');

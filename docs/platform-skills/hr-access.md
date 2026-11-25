@@ -18,6 +18,8 @@ Policy reads refresh at admission, protected-source reads and connector delivery
 
 In the personal Feishu recruiting chat, supplying the requested application type or position continues through the fixed recruiting workflow, with its existing candidate ownership checks. Job and SOP inquiries use the scoped read-only service. The shared browser identity remains limited to its collaboration scope.
 
+Compact scheduling messages can include the words “岗位” or “职位” in the job title. When the message gives a round, interviewer and meeting link, route it to the recruiting parser for intent and field extraction. The business workflow still validates the candidate, required fields and current write scope.
+
 This implements application and authenticated entry boundaries. It does not isolate root/sudo, arbitrary filesystem tools, content already in an old model context, or external copies. Those remain subject to the current execution rules and require separate OS/tool isolation to become hard boundaries. Do not report documentation updates as universal enforcement.
 
 Verify with the isolated HR-policy, request-content-operation, Feishu restricted-access/delivery, session-access and protected-source tests. Coordinate business-schema migration and seed validation before enabling registry configuration; preserve exact automation grants, alert receipts and independent work. Rollback configuration must point to a previously validated policy, never an empty allowlist or permissive fallback.

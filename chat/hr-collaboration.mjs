@@ -1,18 +1,30 @@
 import { readFile } from 'node:fs/promises';
 import { createHmac } from 'node:crypto';
 
+const HR_INQUIRY = /查询|查看|看看|看一下|想了解|介绍|什么|哪[个些里]|是啥|如何|怎么|(?:岗位|职位)的?(?:具体)?(?:要求|职责)|SOP|操作说明/iu;
+
 export function isHrRecruitingFieldDeclaration(text) {
   const value = String(text || '');
   const fields = /(?:(?:应聘(?:类型|岗位|职位)|用工类型)\s*[:：]?|(?:岗位|职位)(?:名称|方向)?\s*[:：是为])\s*[^\s:：，,。！？!?；;、]/u;
-  const inquiry = /查询|查看|看看|看一下|想了解|介绍|什么|哪[个些里]|是啥|如何|怎么|(?:岗位|职位)的?(?:具体)?(?:要求|职责)|SOP|操作说明/iu;
-  return fields.test(value) && !inquiry.test(value);
+  return fields.test(value) && !HR_INQUIRY.test(value);
+}
+
+// These fields identify messages that need the recruiting parser to decide intent.
+export function isHrRecruitingScheduleShorthand(text) {
+  const value = String(text || '');
+  return /(?:[一二三四1-4]\s*面|第[一二三四1-4]\s*轮)/u.test(value)
+    && /面试官\s*[:：]?\s*[^\s:：，,。！？!?；;、]/u.test(value)
+    && /https?:\/\/[^\s<>]+/iu.test(value)
+    && !HR_INQUIRY.test(value)
+    && !/是谁|几点|有没有|是否/u.test(value);
 }
 
 export function isHrCollaborationQuery(text) {
   const value = String(text || '');
   return /岗位|职位|招聘需求|招聘优先级|招聘待办|\bJD\b|SOP|操作说明/iu.test(value)
     && !/候选人|简历|录入|入库|排期|改期|安排|提交|更新|新建|修改|追加|删除|继续办理/u.test(value)
-    && !isHrRecruitingFieldDeclaration(value);
+    && !isHrRecruitingFieldDeclaration(value)
+    && !isHrRecruitingScheduleShorthand(value);
 }
 
 export async function hrCollaborationReply(config, actor, input, { fetchImpl = fetch, now = Date.now() } = {}) {
