@@ -77,13 +77,14 @@ assert.match(fallback.find((event) => event.type === 'status')?.content || '', /
 
 assert.deepEqual(
   parseAntigravityModels([
+    'Fetching available models...',
     '\u001b[32mgemini-test-high\u001b[0m     Gemini Test (High)',
-    'gemini-test-medium   Gemini Test (Medium)',
+    'gemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)',
     '',
   ].join('\n')).map((model) => [model.id, model.label]),
   [
     ['gemini-test-high', 'Gemini Test (High)'],
-    ['gemini-test-medium', 'Gemini Test (Medium)'],
+    ['gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen (Medium)'],
   ],
 );
 

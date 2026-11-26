@@ -11,7 +11,7 @@ export function parseAntigravityModels(output) {
   for (const rawLine of String(output || '').split(/\r?\n/)) {
     const line = rawLine.replace(ANSI_ESCAPE_RE, '').trim();
     if (!line) continue;
-    const match = line.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)\s{2,}(.+)$/);
+    const match = line.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\t|\s{2,})(.+)$/);
     if (!match || seen.has(match[1])) continue;
     seen.add(match[1]);
     models.push({
