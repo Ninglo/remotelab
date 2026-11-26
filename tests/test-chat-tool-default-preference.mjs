@@ -233,4 +233,43 @@ assert.deepEqual(
   'Claude should remain visible for existing sessions as a normal public tool',
 );
 
+// Keep the previous runtime's models out of the picker while the new catalog is pending.
+const pickerSource = readFileSync(join(repoRoot, 'static', 'chat', 'tooling.js'), 'utf8');
+const modelPicker = {
+  style: {},
+  innerHTML: 'previous Codex models',
+  removeAttribute() {},
+  setAttribute(name, value) { this[name] = value; },
+  appendChild(option) { this.option = option; },
+};
+let finishCatalog;
+const switching = {
+  console,
+  selectedTool: 'antigravity',
+  modelPickerTool: 'codex',
+  selectedModel: 'gpt-6.2-sol',
+  inlineModelSelect: modelPicker,
+  inlineProviderSelect: { style: {} },
+  effortSelect: { style: {} },
+  runtimePresetSelect: null,
+  document: { createElement: () => ({}) },
+  t: key => key,
+  canChangeRuntimeSelectionFromUi: () => true,
+  getAttachedSessionToolPreferences: () => null,
+  fetchModelResponse: () => new Promise(resolve => { finishCatalog = resolve; }),
+};
+const loadModels = vm.runInNewContext([
+  extractFunctionSource(pickerSource, 'resetCurrentModelPickerUi'),
+  'async ' + extractFunctionSource(pickerSource, 'loadModelsForCurrentTool'),
+  'loadModelsForCurrentTool;',
+].join('\n'), switching);
+const pending = loadModels();
+assert.equal(modelPicker.innerHTML, '', 'clear old models before the next request returns');
+assert.equal(modelPicker.option.textContent, 'tooling.loadingModels');
+assert.equal(modelPicker['aria-busy'], 'true');
+assert.equal(switching.selectedModel, null);
+switching.selectedTool = 'pi';
+finishCatalog({});
+await pending;
+
 console.log('test-chat-tool-default-preference: ok');

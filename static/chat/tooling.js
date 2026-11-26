@@ -734,6 +734,7 @@ function refreshPrimaryToolPicker({ keepToolIds = [], selectedValue = "" } = {})
   return resolvedTool;
 }
 
+let modelPickerTool = "";
 const modelResponseCache = new Map();
 const pendingModelResponseRequests = new Map();
 
@@ -870,6 +871,7 @@ function renderInlineProviderOptions(providers, selectedValue) {
 }
 
 function renderInlineModelOptions(models, { includeDefault = true, selectedValue = "" } = {}) {
+  inlineModelSelect.removeAttribute("aria-busy");
   inlineModelSelect.innerHTML = "";
   if (includeDefault) {
     const defaultOption = document.createElement("option");
@@ -889,6 +891,8 @@ function renderInlineModelOptions(models, { includeDefault = true, selectedValue
 }
 
 function resetCurrentModelPickerUi() {
+  modelPickerTool = "";
+  selectedModel = null;
   currentToolModels = [];
   currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
   currentToolEffortLevels = null;
@@ -899,6 +903,7 @@ function resetCurrentModelPickerUi() {
   selectedEffort = null;
   inlineProviderSelect.innerHTML = "";
   inlineProviderSelect.style.display = "none";
+  inlineModelSelect.removeAttribute("aria-busy");
   inlineModelSelect.innerHTML = "";
   inlineModelSelect.style.display = "none";
   effortSelect.style.display = "none";
@@ -912,9 +917,20 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
   }
   const toolId = selectedTool;
   if (!toolId) {
-    selectedModel = null;
     resetCurrentModelPickerUi();
     return;
+  }
+  if (modelPickerTool !== toolId) {
+    resetCurrentModelPickerUi();
+    modelPickerTool = toolId;
+    const loading = document.createElement("option");
+    loading.textContent = t("tooling.loadingModels");
+    loading.value = "";
+    loading.disabled = true;
+    inlineModelSelect.appendChild(loading);
+    loading.selected = true;
+    inlineModelSelect.style.display = "";
+    inlineModelSelect.setAttribute("aria-busy", "true");
   }
   try {
     const sessionPreferences = getAttachedSessionToolPreferences(toolId);
@@ -1000,6 +1016,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     // Runtime controls belong to the attached Session or pending draft. The
     // next draft always starts again from the immutable Auto default.
   } catch (error) {
+    if (selectedTool !== toolId) return;
     console.warn("[models] Failed to load model picker:", error?.message || error);
     resetCurrentModelPickerUi();
   }
