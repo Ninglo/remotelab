@@ -35,7 +35,8 @@ export async function acceptInterviewScorecard(runtime, raw, inbox) {
     const summary=scorecardSummary(runtime.config,raw);
     if (!await permitted(runtime,summary,false)) return {toast:{type:'error',content:'当前身份没有面评填写权限。'}};
     await inbox.accept('scorecard:'+summary.callbackId,{summary,sourceLabel:'card.action.trigger'});
-    return {toast:{type:'info',content:summary.action.name==='pretrain_submit'?'正在提交面评…':'正在保存选择…'}};
+    const score=summary.action.name.match(/_([0-5])$/)?.[1];
+    return {toast:{type:'info',content:summary.action.name==='pretrain_submit'?'面评已接收，正在提交…':`已接收 ${score==='0'?'未考察':score+' 分'}，正在保存…`}};
   } catch {
     return {toast:{type:'error',content:'面评操作未接收，请稍后重试。'}};
   }

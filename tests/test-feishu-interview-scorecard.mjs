@@ -16,7 +16,7 @@ try {
  const summary=scorecardSummary(runtime.config,raw);assert.equal(summary.sender.openId,'ou_fixture');
  assert.throws(()=>requireFullFeishuAccess(runtime.config.accessPolicy,summary),'special lane never enables general agent');
  let accepted=0;const inbox={accept:async()=>{accepted++;}};
- assert.equal((await acceptInterviewScorecard(runtime,raw,inbox)).toast.type,'info');assert.equal(accepted,1);
+ const acknowledgement=await acceptInterviewScorecard(runtime,raw,inbox);assert.equal(acknowledgement.toast.type,'info');assert.match(acknowledgement.toast.content,/已接收 3 分/);assert.equal(accepted,1);
  assert.equal((await processInterviewScorecard(runtime,summary)).handled,true);
  let paints=0;runtime.appClient={im:{message:{patch:async args=>{paints++;assert.equal(args.path.message_id,'om_fixture');return {code:0};}}}};
  const repaint={messageId:'om_fixture',content:JSON.stringify({schema:'2.0',body:{elements:[]}})};

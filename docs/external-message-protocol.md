@@ -367,7 +367,9 @@ executor. The connector requests `deferRepaint: true`; after persisting the draf
 or submission, the executor can return up to three complete Card 2.0 repaint
 instructions. The connector validates message IDs and the provider's 30-KB limit,
 then applies them through its existing authenticated SDK client. This avoids a
-fresh CLI/auth/HTTP setup on every score click. Failed repaints retain the inbox
+fresh CLI/auth/HTTP setup on every score click. After durable admission, an
+immediate toast names the received score (or unassessed choice); it indicates
+receipt while saving, rather than asserting that final submission succeeded. Failed repaints retain the inbox
 receipt and retry from persisted business state; the durable receipt stores only
 the repaint count, not duplicated card bodies. Legacy executors that already
 repaint and return no instructions remain compatible.
