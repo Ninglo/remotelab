@@ -114,7 +114,7 @@ function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
 
 function findCurrentToolModelRecord(modelId = selectedModel) {
   if (!Array.isArray(currentToolModels) || currentToolModels.length === 0) return null;
-  if (selectedTool === "claude" && !modelId) return null;
+  if ((selectedTool === "claude" || selectedTool === "antigravity") && !modelId) return null;
   if (modelId) {
     const matched = currentToolModels.find((model) => model.id === modelId);
     if (matched) return matched;
@@ -147,7 +147,8 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
       ? reasoning.levels || []
       : null;
   if (currentToolReasoningKind === "enum") {
-    effortSelect.style.display = "";
+    const fixedAntigravityEffort = selectedTool === "antigravity" && currentToolEffortLevels.length === 1;
+    effortSelect.style.display = fixedAntigravityEffort ? "none" : "";
     effortSelect.innerHTML = "";
     for (const level of currentToolEffortLevels) {
       const opt = document.createElement("option");
@@ -890,6 +891,15 @@ function renderInlineModelOptions(models, { includeDefault = true, selectedValue
     : (includeDefault ? "" : models[0]?.id || "");
 }
 
+function resolveAntigravityPickerVariant(modelId) {
+  for (const model of currentToolModels) {
+    const effort = Object.keys(model.effortVariants || {})
+      .find(level => model.effortVariants[level] === modelId);
+    if (effort) return { model: model.id, hasEffort: true, effort };
+  }
+  return null;
+}
+
 function resetCurrentModelPickerUi() {
   modelPickerTool = "";
   selectedModel = null;
@@ -964,6 +974,9 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     const requestedModel = concreteCodex && attachedModel === "auto"
       ? defaultModel
       : attachedModel || (!currentSessionId ? defaultModel : savedModel);
+    const antigravityVariant = toolId === "antigravity"
+      ? resolveAntigravityPickerVariant(requestedModel)
+      : null;
 
     if (toolId === "pi") {
       const providers = getPiProviderCatalog();
@@ -994,11 +1007,11 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       selectedModelProvider = "";
       inlineProviderSelect.innerHTML = "";
       inlineProviderSelect.style.display = "none";
-      const nativeClaudeDefault = toolId === "claude"
+      const nativeModelDefault = (toolId === "claude" || toolId === "antigravity")
         && sessionPreferences?.hasModel
         && sessionPreferences.model === "";
-      selectedModel = nativeClaudeDefault ? "" : requestedModel;
-      if ((!selectedModel && !nativeClaudeDefault)
+      selectedModel = nativeModelDefault ? "" : (antigravityVariant?.model || requestedModel);
+      if ((!selectedModel && !nativeModelDefault)
         || (selectedModel && !visibleModels.some((model) => model.id === selectedModel))) {
         selectedModel = visibleModels.some((model) => model.id === defaultModel)
           ? defaultModel
@@ -1011,7 +1024,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     }
 
     inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
-    applyCurrentModelReasoningUi({ sessionPreferences });
+    applyCurrentModelReasoningUi({ sessionPreferences: antigravityVariant || sessionPreferences });
     syncRuntimePresetUi();
     // Runtime controls belong to the attached Session or pending draft. The
     // next draft always starts again from the immutable Auto default.

@@ -7,6 +7,7 @@ import {
   usageEvent,
 } from '../normalizer.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
+import { antigravityVariantEffort } from '../antigravity-models.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -225,12 +226,11 @@ export function buildAntigravityArgs(prompt, options = {}) {
   if (options.conversationId) {
     args.push('--conversation', String(options.conversationId));
   }
-  if (options.model) {
-    args.push('--model', String(options.model));
+  const model = trimString(options.model);
+  if (model) {
+    args.push('--model', model);
   }
-  const requestedEffort = trimString(options.effort);
-  const fixedEffort = String(options.model || '').match(/-(low|medium|high|xhigh|max)$/i)?.[1] || '';
-  const effort = fixedEffort || requestedEffort;
+  const effort = antigravityVariantEffort(model) || trimString(options.effort);
   if (effort) {
     args.push('--effort', effort);
   }

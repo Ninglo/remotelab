@@ -365,6 +365,10 @@ Multi-line form:
 
 Inside an existing task thread or private conversation, use these commands:
 
+For Antigravity, use the model name from `/model` and set its thinking level
+with `/effort`. An existing model ID that includes a thinking level, such as
+`gemini-4-hydrogen-high`, still selects that level.
+
 | Command | Behavior |
 | --- | --- |
 | `/status` | Show the Harness, model and effort in the current scope. |

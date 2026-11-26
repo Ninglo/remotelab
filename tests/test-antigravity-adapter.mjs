@@ -5,15 +5,20 @@ import { parseAntigravityModels } from '../chat/antigravity-models.mjs';
 
 const args = buildAntigravityArgs('Ping', {
   conversationId: 'conversation-1',
-  model: 'gemini-test-high',
+  model: 'gemini-test',
   effort: 'high',
 });
 assert.deepEqual(args.slice(0, 4), ['-p', 'Ping', '--output-format', 'stream-json']);
 assert.deepEqual(args.slice(4), [
   '--conversation', 'conversation-1',
-  '--model', 'gemini-test-high',
+  '--model', 'gemini-test',
   '--effort', 'high',
 ]);
+
+assert.deepEqual(buildAntigravityArgs('Ping', {
+  model: 'gemini-test-medium',
+  effort: 'high',
+}).slice(4), ['--model', 'gemini-test-medium', '--effort', 'medium']);
 
 const streamArgs = buildAntigravityArgs('', { streamInput: true, sandbox: true });
 assert.deepEqual(streamArgs, [
@@ -21,11 +26,6 @@ assert.deepEqual(streamArgs, [
   '--output-format', 'stream-json',
   '--sandbox',
 ]);
-const correctedArgs = buildAntigravityArgs('Ping', {
-  model: 'gemini-4-hydrogen-high',
-  effort: 'medium',
-});
-assert.equal(correctedArgs.at(-1), 'high', 'model-specific effort must override stale UI effort');
 
 let adapter = createAntigravityAdapter();
 const parsed = [];
@@ -80,23 +80,28 @@ const fallback = createAntigravityAdapter().parseLine(JSON.stringify({
 assert.equal(fallback.find((event) => event.type === 'message')?.content, 'partial response');
 assert.match(fallback.find((event) => event.type === 'status')?.content || '', /authentication required/);
 
-assert.deepEqual(
-  parseAntigravityModels([
-    'Fetching available models...',
-    '\u001b[32mgemini-test-high\u001b[0m     Gemini Test (High)',
-    'gemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)',
-    '',
-  ].join('\n')).map((model) => [model.id, model.label]),
-  [
-    ['gemini-test-high', 'Gemini Test (High)'],
-    ['gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen (Medium)'],
-  ],
-);
-const parsedModel = parseAntigravityModels('gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)')[0];
-assert.deepEqual(
-  { defaultEffort: parsedModel.defaultEffort, levels: parsedModel.reasoning.levels },
-  { defaultEffort: 'high', levels: ['high'] },
-);
-
+const catalog = parseAntigravityModels([
+  'Fetching available models...',
+  '\u001b[32mgemini-4-hydrogen-high\u001b[0m     Gemini 4 Hydrogen (High)',
+  'gemini-4-hydrogen-xhigh\tGemini 4 Hydrogen (XHigh)',
+  'gemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)',
+  'gemini-4-hydrogen-low\tGemini 4 Hydrogen (Low)',
+  'gemini-4-hydrogen-low\tGemini 4 Hydrogen (Low)',
+  'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)',
+  'gemini-3.8-flash-high\tGemini 3.8 Flash (High)',
+  'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+  'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)',
+  '',
+].join('\n'));
+assert.deepEqual(catalog.map(({ id, label, reasoning }) => [id, label, reasoning.levels]), [
+  ['gemini-4-hydrogen', 'Gemini 4 Hydrogen', ['low', 'medium', 'high', 'xhigh']],
+  ['gemini-3.8-flash', 'Gemini 3.8 Flash', ['low', 'high']],
+  ['claude-sonnet-4-6', 'Claude Sonnet 4.6 (Thinking)', undefined],
+  ['gpt-oss-120b-medium', 'GPT-OSS 120B (Medium)', ['medium']],
+]);
+assert.equal(catalog[0].defaultEffort, 'medium');
+assert.equal(catalog[0].effortVariants.xhigh, 'gemini-4-hydrogen-xhigh');
+assert.equal(catalog[1].defaultEffort, 'low');
+assert.equal(catalog[3].defaultEffort, 'medium');
 
 console.log('test-antigravity-adapter: ok');

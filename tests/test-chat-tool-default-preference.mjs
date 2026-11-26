@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import vm from 'vm';
+import { parseAntigravityModels } from '../chat/antigravity-models.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -271,5 +272,58 @@ assert.equal(switching.selectedModel, null);
 switching.selectedTool = 'pi';
 finishCatalog({});
 await pending;
+
+function makePicker() {
+  return {
+    style: {},
+    value: '',
+    options: [],
+    set innerHTML(value) { this.options = []; },
+    appendChild(option) { this.options.push(option); },
+    removeAttribute() {},
+  };
+}
+
+const antigravityModels = parseAntigravityModels([
+  'gemini-4-hydrogen-medium\tGemini 4 Hydrogen (Medium)',
+  'gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)',
+  'gemini-4-hydrogen-xhigh\tGemini 4 Hydrogen (XHigh)',
+  'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+].join('\n'));
+let attachedPreferences = { hasModel: true, model: 'gemini-4-hydrogen-high', hasEffort: true, effort: 'medium' };
+const antigravityPicker = {
+  ...switching,
+  currentSessionId: 'antigravity-session',
+  selectedTool: 'antigravity',
+  modelPickerTool: 'antigravity',
+  inlineModelSelect: makePicker(),
+  inlineProviderSelect: makePicker(),
+  effortSelect: makePicker(),
+  localStorage: { getItem: () => null },
+  getAttachedSessionToolPreferences: () => attachedPreferences,
+  fetchModelResponse: async () => ({ models: antigravityModels, reasoning: { kind: 'none' } }),
+  syncRuntimePresetUi() {},
+};
+const loadAntigravityPicker = vm.runInNewContext([
+  ...[
+    'cloneReasoningState', 'findCurrentToolModelRecord', 'resolveActiveReasoningState',
+    'applyCurrentModelReasoningUi', 'renderInlineModelOptions', 'resolveAntigravityPickerVariant',
+    'resetCurrentModelPickerUi',
+  ].map(name => extractFunctionSource(pickerSource, name)),
+  'async ' + extractFunctionSource(pickerSource, 'loadModelsForCurrentTool'),
+  'loadModelsForCurrentTool;',
+].join('\n'), antigravityPicker);
+await loadAntigravityPicker();
+assert.deepEqual(antigravityPicker.inlineModelSelect.options.map(option => option.textContent), [
+  'tooling.defaultModel', 'Gemini 4 Hydrogen', 'Claude Sonnet 4.6 (Thinking)',
+]);
+assert.deepEqual(antigravityPicker.effortSelect.options.map(option => option.value), ['medium', 'high', 'xhigh']);
+assert.equal(antigravityPicker.selectedModel, 'gemini-4-hydrogen');
+assert.equal(antigravityPicker.selectedEffort, 'high');
+
+attachedPreferences = { hasModel: true, model: 'claude-sonnet-4-6' };
+await loadAntigravityPicker();
+assert.equal(antigravityPicker.selectedModel, 'claude-sonnet-4-6');
+assert.equal(antigravityPicker.effortSelect.style.display, 'none');
 
 console.log('test-chat-tool-default-preference: ok');

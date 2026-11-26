@@ -8,6 +8,7 @@ import { describeSessionProgressPolicy, FEISHU_PROGRESS_MODES, progressPolicyFor
 import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 import {
   completeRuntimeProfile,
+  findRuntimeModelChoice,
   reasoningForRuntimeProfile,
 } from '../../lib/runtime-profile.mjs';
 
@@ -273,7 +274,7 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
         notes.push(`当前 Model：${selection.model || 'Harness 默认'}\n${modelList(catalog)}`);
         continue;
       }
-      if (!catalog.models?.some(model => model.id === command.value)) {
+      if (!findRuntimeModelChoice(catalog, command.value)) {
         return { error: `当前 Harness 下模型不可用：${command.value}。`, text: `当前 Harness 下模型不可用：${command.value}。\n${modelList(catalog)}`, operations: [] };
       }
       selection = completeSelection({ ...selection, model: command.value,

@@ -21,6 +21,11 @@ const catalog = {
     { id: 'default-model', reasoning: { kind: 'enum', levels: ['low', 'high'], default: 'low' } },
     { id: 'strong-model', reasoning: { kind: 'enum', levels: ['high'], default: 'high' } },
     { id: 'plain-model', reasoning: { kind: 'none' } },
+    {
+      id: 'gemini-test',
+      effortVariants: { high: 'gemini-test-high', medium: 'gemini-test-medium' },
+      reasoning: { kind: 'enum', levels: ['medium', 'high'], default: 'medium' },
+    },
   ],
 };
 
@@ -92,5 +97,8 @@ assert.deepEqual(completeRuntimeProfile({ tool: 'fake', model: 'plain-model', ef
 assert.deepEqual(completeRuntimeProfile({ tool: 'fake', model: 'strong-model', effort: 'ultra' }, catalog), {
   tool: 'fake', model: 'strong-model', effort: 'high',
 }, 'unsupported effort values must resolve to the selected model default');
+assert.deepEqual(completeRuntimeProfile({
+  tool: 'antigravity', model: 'gemini-test-high', effort: 'medium',
+}, catalog), { tool: 'antigravity', model: 'gemini-test', effort: 'high' });
 
 console.log('runtime profile tests passed');
