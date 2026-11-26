@@ -43,18 +43,39 @@ export async function acceptInterviewScorecard(runtime, raw, inbox) {
 export async function processInterviewScorecard(runtime, summary) {
   if (!await permitted(runtime,summary)) return {blocked:true};
   const command=runtime.config.accessPolicy.roles.scorecardWorkflowCommand;
-  return new Promise((resolve,reject)=>{
+  const result = await new Promise((resolve,reject)=>{
     const child=spawn(command[0],command.slice(1),{stdio:['pipe','pipe','pipe'],shell:false});
     let out='',settled=false;
     const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?reject(error):resolve(value);};
     const timer=setTimeout(()=>{child.kill('SIGTERM');finish(new Error('Scorecard executor timed out'));},90000);
-    child.stdout.on('data',bytes=>{out+=bytes;if(out.length>16000){child.kill('SIGTERM');finish(new Error('Scorecard receipt too large'));}});
+    // At most three 30-KB cards: current round and two simulated siblings.
+    child.stdout.on('data',bytes=>{out+=bytes;if(out.length>128000){child.kill('SIGTERM');finish(new Error('Scorecard receipt too large'));}});
     child.stderr.resume();child.stdin.on('error',error=>finish(error));child.on('error',error=>finish(error));
     child.on('close',code=>{
       if(code!==0)return finish(new Error('Scorecard executor failed; durable receipt retained'));
       try{const result=JSON.parse(out);if(result?.handled!==true)throw new Error('Invalid scorecard receipt');finish(null,result);}
       catch(error){finish(error);}
     });
-    child.stdin.end(JSON.stringify({version:1,...summary}));
+    child.stdin.end(JSON.stringify({version:1,...summary,deferRepaint:true}));
   });
+  const repaints=result.repaints || [];
+  await repaintInterviewScorecards(runtime,repaints);
+  const {repaints:_cards,...receipt}=result;
+  return {...receipt,repainted:repaints.length};
 }
+
+// Reuse the authenticated connector client. The fixed business executor owns
+// state and recipient checks; the inbox retries failed repaints from that state.
+export async function repaintInterviewScorecards(runtime,repaints) {
+  if (!Array.isArray(repaints) || repaints.length>3) throw new Error('Invalid scorecard repaint batch');
+  for (const card of repaints) {
+    if (!/^om_[a-zA-Z0-9]+$/.test(card?.messageId || '') || typeof card.content!=='string'
+        || Buffer.byteLength(card.content)>30000 || JSON.parse(card.content)?.schema!=='2.0')
+      throw new Error('Invalid scorecard repaint');
+  }
+  for (const card of repaints) {
+    const result=await runtime.appClient.im.message.patch({path:{message_id:card.messageId},data:{content:card.content}});
+    if (result?.code!==0) throw new Error('Scorecard repaint failed; durable receipt retained');
+  }
+}
+

@@ -362,6 +362,16 @@ In-flight supplementary replies and native questions do not consume the final
 reply for an accepted input. A combined final can still cover those inputs;
 per-input reply reservations continue to prevent duplicate final publication.
 
+Interview scorecard callbacks use the existing durable inbox and a fixed business
+executor. The connector requests `deferRepaint: true`; after persisting the draft
+or submission, the executor can return up to three complete Card 2.0 repaint
+instructions. The connector validates message IDs and the provider's 30-KB limit,
+then applies them through its existing authenticated SDK client. This avoids a
+fresh CLI/auth/HTTP setup on every score click. Failed repaints retain the inbox
+receipt and retry from persisted business state; the durable receipt stores only
+the repaint count, not duplicated card bodies. Legacy executors that already
+repaint and return no instructions remain compatible.
+
 Feishu interactive-card actions must authorize the person who clicked using
 the callback's authenticated operator, tenant and the receiving app's configured
 app ID. The stored card target identifies where the card was sent; it is not a
