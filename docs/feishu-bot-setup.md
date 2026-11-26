@@ -485,6 +485,26 @@ or runtime commands, and cannot change an existing Quick Session. Unavailable
 Claude/model selections report an error before changing the Session or starting
 the task. Inbox retries reuse the saved runtime selection.
 
+A third-party Claude pilot is opt-in per Bot, group and requester. Ask the
+operator's agent to verify the sender's bound Feishu identity and the target
+chat, then configure `groups[chatId].claudeShortcutPilot` with `harness` (a
+separate native Claude tool ID) and `openId` (the verified sender). Register
+that tool in the instance's `tools.json` with `runtimeFamily: claude-stream-json`,
+`inputMode: native`, `promptMode: bare-user`, the executable
+`scripts/claude-topic-provider.mjs`, and the two pinned models with `high`
+reasoning. Put `chatId`, `sourceRouteId`, `creatorIdentityId`, `notBefore` (UTC
+pilot start), `baseUrl` (HTTPS) and `authToken` in the instance's private
+`provider-runtime-homes/claude-topic-pilot/profile.json` (mode 0600); do not put
+the key in the Bot config or send it in chat. The launcher checks the saved
+Session scope, uses a separate working directory, and disables Claude Code
+file/shell tools for the model-connectivity trial. Outside this pilot
+`/claude` still uses the built-in harness. Inside the pilot, the authorized
+sender starts a fresh topic with `/claude <task>` for Opus 5.5 or `/claude-x
+<task>` for Fable 5.2, both at `high`; existing sessions are not moved to the
+external provider. Validate with a task containing no sensitive data. To stop
+new admissions, remove the group pilot setting and reload the Bot; remove
+or revoke the credential to also stop future provider calls in pilot sessions.
+
 Claude Code and Codex in the same RemoteLab instance receive the same shared
 memory pointers (bootstrap, projects, tasks and system memory) and the verified
 Person/project context. They read those files on demand. Their native private

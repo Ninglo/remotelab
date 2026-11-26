@@ -41,7 +41,15 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'selfReview', 'participationMode', 'quickReactions', 'jevReactions', 'processingReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['reactionCandidates', 'responseMode', 'replyMode', 'systemPrompt', 'selfReview', 'participationMode', 'quickReactions', 'jevReactions', 'processingReactions', 'contextReactions', 'reactionFeedback', 'groupFeed', 'dailyReportMemory', 'participationControls', 'participationStatusMessageId', 'participationStatusCard', 'claudeShortcutPilot'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+    }
+    if (raw.claudeShortcutPilot !== undefined) {
+      const pilot = raw.claudeShortcutPilot;
+      if (!pilot || Object.keys(pilot).length !== 2 || typeof pilot.harness !== 'string'
+        || !/^[a-zA-Z0-9-]+$/.test(pilot.harness) || pilot.harness === 'claude'
+        || typeof pilot.openId !== 'string' || !/^ou_[a-zA-Z0-9]+$/.test(pilot.openId)) {
+        throw new Error('Invalid claudeShortcutPilot');
+      }
     }
     if (raw.selfReview !== undefined && typeof raw.selfReview !== 'boolean') throw new Error('Invalid selfReview');
     if (raw.participationControls !== undefined && typeof raw.participationControls !== 'boolean') throw new Error('Invalid participationControls');

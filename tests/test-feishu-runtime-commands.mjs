@@ -21,13 +21,15 @@ try {
       { id: 'claude-opus-5-5', reasoning: { kind: 'enum', levels: ['low', 'medium', 'high'], default: 'medium' } },
     ] },
   };
+  catalog['claude-pilot'] = { models: ['claude-opus-5-5', 'claude-fable-5-2'].map(id => ({ id,
+    reasoning: { kind: 'enum', levels: ['high'], default: 'high' } })) };
   const calls = [];
   let brokenCatalog = '';
   let claudeAvailable = true;
   const request = async (path, options = {}) => {
     calls.push({ path, ...options });
     let json;
-    if (path === '/api/tools') json = { tools: [{ id: 'codex', available: true }, { id: 'pi', available: true }, { id: 'claude', available: claudeAvailable }, { id: 'missing', available: false }] };
+    if (path === '/api/tools') json = { tools: [{ id: 'codex', available: true }, { id: 'pi', available: true }, { id: 'claude', available: claudeAvailable }, { id: 'claude-pilot', available: true }, { id: 'missing', available: false }] };
     else if (path.startsWith('/api/models?tool=')) {
       const tool = decodeURIComponent(path.split('=')[1]);
       if (tool === brokenCatalog) throw new Error('Current provider is unavailable');
@@ -362,6 +364,30 @@ try {
     requestRemoteLab: async () => { throw new Error('must reuse the saved runtime plan'); },
   });
   assert.deepEqual(sotaSummary.runtimeSelectionOverride, claudeSelection);
+
+  runtime.config.groups = { chat: { claudeShortcutPilot: { harness: 'claude-pilot', openId: 'ou_pilot' } } };
+  const pilotSender = { senderType: 'user', openId: 'ou_pilot' };
+  const beforePilot = structuredClone(session);
+  const newPilotTopic = { ...summary, chatType: 'topic', threadId: '', rootId: '', sender: pilotSender };
+  for (const [shortcut, model] of [['claude', 'claude-opus-5-5'], ['claude-x', 'claude-fable-5-2']]) {
+    await handleMessage(runtime, { ...newPilotTopic, messageId: `pilot-${shortcut}`, messageText: `/${shortcut} 测试` }, 'test', sotaHelpers);
+    assert.equal(sotaSummary.conversationKind, 'thread');
+    assert.equal(sotaSummary.messageText, '测试');
+    assert.deepEqual(sotaSummary.runtimeSelectionOverride, { tool: 'claude-pilot', model, effort: 'high', thinking: false });
+    assert.equal(sotaPlan.operations.length, 0);
+  }
+  const beforePilotDenials = sotaSubmissions;
+  await handleMessage(runtime, { ...summary, sender: pilotSender, messageId: 'pilot-existing', messageText: '/claude-x 测试' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /新开一个话题/);
+  await handleMessage(runtime, { ...newPilotTopic, sender: summary.sender, messageId: 'pilot-other-person', messageText: '/claude-x 测试' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /未开通/);
+  await handleMessage(runtime, { ...newPilotTopic, chatId: 'other', messageId: 'pilot-other-chat', messageText: '/claude-x 测试' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /未开通/);
+  await handleMessage(runtime, { ...newPilotTopic, messageId: 'pilot-conflict', messageText: '/claude-x --effort low 测试' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /单独使用/);
+  assert.equal(sotaSubmissions, beforePilotDenials);
+  assert.deepEqual(session, beforePilot);
+  delete runtime.config.groups;
 
   let commandBlockSummary;
   let commandBlockPlan;
