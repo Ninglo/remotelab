@@ -27,9 +27,7 @@ export function summarizeFeishuDocumentCommentEvent(data = {}) {
   const commentId = trimString(data?.comment_id);
   const replyId = trimString(data?.reply_id);
   const noticeType = trimString(noticeMeta?.notice_type);
-  const mentionedBot = data?.is_mentioned === true
-    || noticeMeta?.is_mentioned === true
-    || data?.is_mention === true;
+  const mentionedBot = (data?.is_mentioned ?? noticeMeta?.is_mentioned ?? data?.is_mention) === true;
 
   return {
     sourceKind: 'document_comment',
@@ -129,14 +127,14 @@ function mergeCommentReplies(...groups) {
   return replies;
 }
 
-async function listAllCommentReplies(runtime, summary) {
+async function listAllCommentReplies(runtime, summary, request) {
   const list = runtime?.appClient?.drive?.v1?.fileCommentReply?.list;
   if (typeof list !== 'function') return [];
 
-  const replies = [];
+  const replies = [], seenTokens = new Set();
   let pageToken = '';
   for (let page = 0; page < MAX_COMMENT_REPLY_PAGES; page += 1) {
-    const response = await list({
+    const response = await request(() => list({
       params: {
         file_type: summary.fileType,
         user_id_type: 'open_id',
@@ -147,29 +145,33 @@ async function listAllCommentReplies(runtime, summary) {
         file_token: summary.fileToken,
         comment_id: summary.commentId,
       },
-    });
+    }));
     if (response.code !== undefined && response.code !== 0) {
-      throw new Error(response.msg || `Failed to list Feishu document comment replies (${response.code})`);
+      throw Object.assign(new Error(response.msg || `Failed to list Feishu document comment replies (${response.code})`), { code: response.code });
     }
     replies.push(...(Array.isArray(response.data?.items) ? response.data.items : []));
-    if (response.data?.has_more !== true) break;
-    pageToken = trimString(response.data?.page_token);
-    if (!pageToken) break;
+    if (response.data?.has_more !== true) return replies;
+    const next = trimString(response.data?.page_token);
+    if (!next || seenTokens.has(next)) throw new Error('Incomplete Feishu comment pagination');
+    seenTokens.add(next);
+    pageToken = next;
   }
-  return replies;
+  throw new Error('Feishu comment reply pagination limit exceeded');
 }
 
-export async function hydrateFeishuDocumentCommentSummary(runtime, summary) {
-  if (!isFeishuDocumentCommentSummary(summary)) return summary;
+export async function readFeishuCommentThread(runtime, summary, request = task => task()) {
   if (!summary.fileToken || !summary.fileType || !summary.commentId) {
     throw new Error('Feishu document comment event is missing file_token, file_type, or comment_id');
+  }
+  if (summary.noticeType === 'add_reply' && !summary.replyId) {
+    throw Object.assign(new Error('Feishu reply notice is missing reply_id'), { retryable: false });
   }
   const queryComments = runtime?.appClient?.drive?.v1?.fileComment?.batchQuery;
   if (typeof queryComments !== 'function') {
     throw new Error('Feishu document comment read API is unavailable');
   }
 
-  const response = await queryComments({
+  const response = await request(() => queryComments({
     params: {
       file_type: summary.fileType,
       user_id_type: 'open_id',
@@ -181,9 +183,9 @@ export async function hydrateFeishuDocumentCommentSummary(runtime, summary) {
       comment_ids: [summary.commentId],
       need_reaction: false,
     },
-  });
+  }));
   if (response.code !== undefined && response.code !== 0) {
-    throw new Error(response.msg || `Failed to load Feishu document comment (${response.code})`);
+    throw Object.assign(new Error(response.msg || `Failed to load Feishu document comment (${response.code})`), { code: response.code });
   }
   const comment = response.data?.items?.find(item => item.comment_id === summary.commentId);
   if (!comment) {
@@ -191,19 +193,27 @@ export async function hydrateFeishuDocumentCommentSummary(runtime, summary) {
   }
 
   const embeddedReplies = comment.reply_list?.replies;
-  const listedReplies = await listAllCommentReplies(runtime, summary);
-  const replies = mergeCommentReplies(embeddedReplies, listedReplies)
-    .map((reply) => normalizeCommentReply(reply, summary));
-  const currentReply = summary.replyId
-    ? replies.find((reply) => reply.replyId === summary.replyId)
-    : replies[0];
-  if (!currentReply) {
+  const listedReplies = await listAllCommentReplies(runtime, summary, request);
+  const replies = mergeCommentReplies(embeddedReplies, listedReplies);
+  const currentReply = summary.replyId ? replies.find(reply => reply.reply_id === summary.replyId) : replies[0];
+  if (!currentReply?.reply_id) {
     throw new Error(summary.replyId
       ? `Feishu document comment reply ${summary.replyId} was not found`
       : 'Feishu document comment has no readable content');
   }
 
-  const currentIndex = replies.indexOf(currentReply);
+  if (summary.sender?.openId && currentReply.user_id && currentReply.user_id !== summary.sender.openId) {
+    throw Object.assign(new Error('Feishu comment notice sender does not match the reply author'), { retryable: false });
+  }
+  return { ...comment, replies, currentReplyId: currentReply.reply_id };
+}
+
+export async function hydrateFeishuDocumentCommentSummary(runtime, summary, request) {
+  if (!isFeishuDocumentCommentSummary(summary)) return summary;
+  const comment = await readFeishuCommentThread(runtime, summary, request);
+  const replies = comment.replies.map(reply => normalizeCommentReply(reply, summary));
+  const currentIndex = replies.findIndex(reply => reply.replyId === comment.currentReplyId);
+  const currentReply = replies[currentIndex];
   const commentThread = replies.map((reply, index) => ({
     text: reply.text || '[空评论]',
     isCurrent: index === currentIndex,

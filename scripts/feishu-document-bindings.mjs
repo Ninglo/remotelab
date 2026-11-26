@@ -15,7 +15,7 @@ for (let i = 0; i < args.length; i += 2) {
   options[args[i].slice(2)] = args[i + 1];
 }
 if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !/^[a-zA-Z0-9_-]+$/.test(options['file-token'] || '')) {
-  console.log('Usage: node scripts/feishu-document-bindings.mjs bind|status|unbind --config <connector-config> --file-token <docx-token> [--session <id> --url <url> --base-url <instance-url> --reply-mode comment|conversation --intake all|mention]');
+  console.log('Usage: node scripts/feishu-document-bindings.mjs bind|status|unbind --config <connector-config> --file-token <docx-token> [--session <id> --url <url> --base-url <instance-url> --reply-mode comment|conversation --intake mention]');
   process.exitCode = 1;
 } else {
   const config = JSON.parse(await readFile(options.config, 'utf8'));
@@ -41,7 +41,7 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !/^[a-
         throw new Error('--reply-mode must be comment or conversation');
       }
       const client = createRemoteLabHttpClient({ baseUrl: options['base-url'] || config.chatBaseUrl });
-      if (options.intake && !['all', 'mention'].includes(options.intake)) throw new Error('--intake must be all or mention');
+      if (options.intake && options.intake !== 'mention') throw new Error('Document comments require an @mention; --intake all is no longer supported');
       if (options.intake === 'mention' && options['reply-mode'] === 'conversation') throw new Error('Mention-only bindings reply in the original comment');
       const result = await client.request(`/api/sessions/${encodeURIComponent(options.session)}`);
       const session = result.json?.session;
@@ -51,7 +51,6 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !/^[a-
       if (!result.response.ok || !session?.id || session.archived) throw new Error('Target Session is unavailable or archived');
       if (existing) {
         if (existing.sessionId !== session.id || existing.sourceRouteId !== route) throw new Error('Document already has a fixed Session');
-        if (options.intake && (options.intake === 'mention') !== Boolean(existing.mentionOnly)) throw new Error('Existing intake mode cannot be changed');
         if (existing.mentionOnly && options['reply-mode'] === 'conversation') throw new Error('Mention-only bindings reply in the original comment');
         // Resuming the same target does not reset the cursor or its generation.
         const binding = { ...existing, enabled: true, ...(options['reply-mode'] ? { replyMode: options['reply-mode'] } : {}) };

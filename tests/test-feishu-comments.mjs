@@ -241,7 +241,7 @@ assert.deepEqual(reactionPayloads[0], {
   params: { file_type: 'docx' },
   data: { action: 'add', reply_id: 'reply_current_1', reaction_type: 'THINKING' },
 });
-const rootHydrated = await hydrateFeishuDocumentCommentSummary(runtime, { ...summary, replyId: '' });
+const rootHydrated = await hydrateFeishuDocumentCommentSummary(runtime, { ...summary, replyId: '', noticeType: 'add_comment' });
 assert.equal(rootHydrated.replyId, 'reply_root_1');
 
 let generatedPrompt = '';
@@ -262,7 +262,7 @@ assert.deepEqual(reactionPayloads[1], {
 assert.equal(commentCreatePayloads.length, 1, 'admission must not publish the answer itself');
 
 const submit = async () => ({ sessionId: 'session_comment_1', requestId: 'root-request', queued: true });
-const root = { ...summary, replyId: '' };
+const root = { ...summary, replyId: '', noticeType: 'add_comment' };
 await handleMessage(runtime, root, rawEvent.event_type, { submitRemoteLabRequest: submit });
 assert.equal(reactionPayloads.at(-1).data.reply_id, 'reply_root_1', 'acknowledge a root comment after resolving its reply ID');
 
@@ -308,7 +308,9 @@ const unmentioned = summarizeFeishuDocumentCommentEvent({
   event_id: 'evt_comment_2',
   reply_id: 'reply_unmentioned_1',
   is_mentioned: false,
+  is_mention: true,
 });
+assert.equal(unmentioned.mentionedBot, false, 'the authoritative false flag overrides legacy aliases');
 let unmentionedGenerated = false;
 await handleMessage(runtime, unmentioned, 'drive.notice.comment_add_v1', {
   wasMessageHandled: async () => false,

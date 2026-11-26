@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createFeishuReadPacer } from '../lib/feishu-read-pacer.mjs';
-import { readDocumentComments } from '../connectors/feishu/document-bindings.mjs';
+import { readFeishuCommentThread } from '../connectors/feishu/comment-flow.mjs';
 
 let clock = 0;
 const starts = [], waits = [];
@@ -20,10 +20,10 @@ assert.equal(waits.at(-1), 5000, 'business-error responses share the same cooldo
 clock = 0; const pages = [];
 const read = createFeishuReadPacer({ now: () => clock, wait: async ms => { clock += ms; } });
 const runtime = { appClient: { drive: { v1: {
-  fileComment: { list: async ({ params }) => { pages.push(['comments', clock]); return { data: params.page_token
-    ? { items: [{ comment_id: 'c' }] } : { items: [], has_more: true, page_token: 'next' } }; } },
-  fileCommentReply: { list: async () => { pages.push(['replies', clock]); return { data: { items: [] } }; } },
+  fileComment: { batchQuery: async () => { pages.push(['comment', clock]); return { data: { items: [{ comment_id: 'c' }] } }; } },
+  fileCommentReply: { list: async ({ params }) => { pages.push(['replies', clock]); return { data: params.page_token
+    ? { items: [{ reply_id: 'r' }] } : { items: [], has_more: true, page_token: 'next' } }; } },
 } } } };
-await readDocumentComments(runtime, { fileToken: 'doc', fileType: 'docx' }, read);
-assert.deepEqual(pages, [['comments', 0], ['comments', 400], ['replies', 800]], 'comment pagination and reply reads use one shared pacer');
+await readFeishuCommentThread(runtime, { fileToken: 'doc', fileType: 'docx', commentId: 'c', replyId: 'r' }, read);
+assert.deepEqual(pages, [['comment', 0], ['replies', 400], ['replies', 800]], 'scoped comment read and reply pagination use one shared pacer');
 console.log('Feishu document read pacing: concurrent starts, shared pagination, rate-limit cooldown and adaptive interval pass');

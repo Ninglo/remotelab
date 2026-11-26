@@ -6,7 +6,7 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
 import { submitConnectorMessage } from '../../lib/connector-turn-flow.mjs';
-import { addFeishuCommentProcessingReaction, hydrateFeishuDocumentCommentSummary, renderFeishuCommentContent } from './comment-flow.mjs';
+import { addFeishuCommentProcessingReaction, hydrateFeishuDocumentCommentSummary, readFeishuCommentThread, renderFeishuCommentContent } from './comment-flow.mjs';
 import { buildMessageSourceContext, buildRequestId } from './index.mjs';
 import { ensureDocumentBinding } from './created-document-bindings.mjs';
 
@@ -29,36 +29,6 @@ const readPacers = new WeakMap();
 function readPacer(runtime) {
   if (!readPacers.has(runtime)) readPacers.set(runtime, createFeishuReadPacer());
   return readPacers.get(runtime);
-}
-
-async function pages(request, method, params, path) {
-  const items = [], tokens = new Set();
-  let token = '';
-  for (let page = 0; page < 1000; page += 1) {
-    const response = await request(() => method({ params: { ...params, page_size: 100, ...(token ? { page_token: token } : {}) }, path }));
-    if (response.code && response.code !== 0) throw Object.assign(
-      new Error(`Feishu comment read ${response.code}: ${response.msg}`), { code: response.code });
-    if (!response.data) throw new Error('Feishu comment response has no data');
-    items.push(...(response.data.items || []));
-    if (!response.data.has_more) return items;
-    token = response.data.page_token;
-    if (!token || tokens.has(token)) throw new Error('Incomplete Feishu comment pagination');
-    tokens.add(token);
-  }
-  throw new Error('Feishu comment pagination limit exceeded');
-}
-
-export async function readDocumentComments(runtime, binding, request = readPacer(runtime)) {
-  const drive = runtime.appClient.drive.v1;
-  const params = { file_type: binding.fileType, user_id_type: 'open_id' };
-  const path = { file_token: binding.fileToken };
-  const comments = await pages(request, args => drive.fileComment.list(args), {
-    ...params, ...(binding.fileType === 'docx' ? { need_relation: true } : {}),
-  }, path);
-  for (const comment of comments) {
-    comment.replies = await pages(request, args => drive.fileCommentReply.list(args), params, { ...path, comment_id: comment.comment_id });
-  }
-  return comments;
 }
 
 function commentReplyText(reply) {
@@ -133,63 +103,58 @@ export async function resolveCommentAuthorNames(runtime, comments, botIdentity) 
   }
 }
 
-export function commentCandidates(binding, comments, state, botIdentity, authorNames = {}) {
+export function commentCandidates(binding, comment, state, botIdentity, authorNames = {}) {
   const ownIds = new Set(Object.values(botIdentity || {}).filter(value => typeof value === 'string' && value));
   if (!ownIds.size) throw new Error('Bot identity unavailable; refusing possible self-reply loop');
-  const candidates = [];
-  for (const comment of comments) {
-    for (const reply of comment.replies || []) {
-      if (!comment.comment_id || !reply.reply_id) throw new Error('Comment/reply identity missing');
-      const key = `${comment.comment_id}:${reply.reply_id}`;
-      const revision = hash([reply.content, reply.update_time || reply.create_time, reply.is_deleted]);
-      if (state.seen[key] === revision) continue;
-      const timestamp = Number(reply.update_time || reply.create_time) * 1000;
-      if (!Number.isFinite(timestamp) || timestamp <= 0) throw new Error('Comment timestamp missing');
-      if (ownIds.has(reply.user_id) || reply.is_deleted || timestamp < Date.parse(binding.since)) {
-        state.seen[key] = revision;
-        continue;
-      }
-      const metaId = `feishu-comment:${hash([binding.fileToken, key, revision]).slice(0, 24)}`;
-      const requestId = metaId;
-      const thread = (comment.replies || []).map(item => ({
-        replyId: item.reply_id,
-        authorId: item.user_id,
-        authorName: ownIds.has(item.user_id) ? '日报 Bot' : (authorNames[item.user_id] || ''),
-        text: commentReplyText(item),
-        current: item.reply_id === reply.reply_id,
-        content: item.content,
-        images: item.extra?.image_list || [],
-      }));
-      const sourceContext = {
-        connector: 'feishu', sourceRouteId: binding.sourceRouteId,
-        conversationKind: 'document_comment', documentBinding: true,
-        ...(binding.createdDocument ? { documentCreationBinding: true } : {}),
-        fileToken: binding.fileToken, fileType: binding.fileType,
-        commentId: comment.comment_id, replyId: reply.reply_id,
-        sender: { openId: reply.user_id }, messageId: key, messageRevision: revision,
-        commentMetaId: metaId, documentUrl: binding.documentUrl,
-        commentQuote: comment.quote || '', relation: comment.relation || null,
-        parentType: comment.parent_type || null, parentToken: comment.parent_token || null,
-        isSolved: comment.is_solved === true, commentThread: thread,
-        ...(binding.replyMode === 'comment' ? { documentReplyMode: 'comment' } : {}),
-      };
-      const text = renderDocumentCommentPrompt({
-        binding, comment, reply, edited: Boolean(state.seen[key]), metaId, authorNames, ownIds,
-      });
-      const sourceDelivery = binding.replyMode === 'comment' ? {
-        connector: 'feishu', sourceRouteId: binding.sourceRouteId,
-        target: { conversationKind: 'document_comment', fileToken: binding.fileToken,
-          fileType: binding.fileType, commentId: comment.comment_id, replyId: reply.reply_id },
-      } : null;
-      candidates.push({ key, revision, timestamp, payload: { requestId, text, sourceContext,
-        ...(sourceDelivery ? { sourceDelivery } : {}),
-      } });
-    }
+  const reply = comment.replies?.find(item => item.reply_id === comment.currentReplyId);
+  if (!comment.comment_id || !reply?.reply_id) throw new Error('Comment/reply identity missing');
+  const key = `${comment.comment_id}:${reply.reply_id}`;
+  const revision = hash([reply.content, reply.update_time || reply.create_time, reply.is_deleted]);
+  if (state.seen[key] === revision) return [];
+  const timestamp = Number(reply.update_time || reply.create_time) * 1000;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) throw new Error('Comment timestamp missing');
+  if (ownIds.has(reply.user_id) || reply.is_deleted || (binding.since && timestamp < Date.parse(binding.since))) {
+    state.seen[key] = revision;
+    return [];
   }
-  return candidates.sort((a, b) => a.timestamp - b.timestamp || a.key.localeCompare(b.key));
+  const metaId = `feishu-comment:${hash([binding.fileToken, key, revision]).slice(0, 24)}`;
+  const thread = comment.replies.map(item => ({
+    replyId: item.reply_id,
+    authorId: item.user_id,
+    authorName: ownIds.has(item.user_id) ? '日报 Bot' : (authorNames[item.user_id] || ''),
+    text: commentReplyText(item),
+    current: item.reply_id === reply.reply_id,
+    content: item.content,
+    images: item.extra?.image_list || [],
+  }));
+  const sourceContext = {
+    connector: 'feishu', sourceRouteId: binding.sourceRouteId,
+    conversationKind: 'document_comment', documentBinding: true,
+    ...(binding.createdDocument ? { documentCreationBinding: true } : {}),
+    fileToken: binding.fileToken, fileType: binding.fileType,
+    commentId: comment.comment_id, replyId: reply.reply_id,
+    sender: { openId: reply.user_id }, messageId: key, messageRevision: revision,
+    commentMetaId: metaId, documentUrl: binding.documentUrl,
+    commentQuote: comment.quote || '', relation: comment.relation || null,
+    parentType: comment.parent_type || null, parentToken: comment.parent_token || null,
+    isSolved: comment.is_solved === true, commentThread: thread,
+    ...(binding.replyMode === 'comment' ? { documentReplyMode: 'comment' } : {}),
+  };
+  const text = renderDocumentCommentPrompt({
+    binding, comment, reply, edited: Boolean(state.seen[key]), metaId, authorNames, ownIds,
+  });
+  const sourceDelivery = binding.replyMode === 'comment' ? {
+    connector: 'feishu', sourceRouteId: binding.sourceRouteId,
+    target: { conversationKind: 'document_comment', fileToken: binding.fileToken,
+      fileType: binding.fileType, commentId: comment.comment_id, replyId: reply.reply_id },
+  } : null;
+  return [{ key, revision, timestamp, mentionedBot: true, payload: { requestId: metaId, text, sourceContext,
+    ...(sourceDelivery ? { sourceDelivery } : {}),
+  } }];
 }
 
-export async function reconcileDocumentBinding(runtime, binding) {
+export async function reconcileDocumentBinding(runtime, binding, summary) {
+  if (summary?.mentionedBot !== true) return;
   const statePath = join(bindingsDirectory(runtime.config.storageDir), `${bindingKey(binding.fileToken)}.state.json`);
   const state = await readBindingJson(statePath, { seen: {}, pending: [], generation: binding.generation });
   if (state.generation !== binding.generation) throw Object.assign(new Error('Binding generation mismatch'), { retryable: false });
@@ -224,24 +189,20 @@ export async function reconcileDocumentBinding(runtime, binding) {
         }
         await submitConnectorMessage(runtime.requestRemoteLab, binding.sessionId, item.payload);
         // A failed acknowledgement must never block or replay accepted work.
-        void addFeishuCommentProcessingReaction(runtime, item.payload.sourceContext)
+        void addFeishuCommentProcessingReaction(runtime, item.payload.sourceContext, 'Get')
           .catch(error => console.warn(`[feishu-comment-reaction] ${error.message}`));
         state.seen[item.key] = item.revision;
         state.pending.shift();
         await writeBindingJson(statePath, state);
       }
     };
+    // Legacy scans queued entire documents without proving a mention. Never
+    // drain those payloads; a new explicit mention can still be submitted.
+    state.pending = state.pending.filter(item => item.mentionedBot === true);
     await drain();
-    const comments = await readDocumentComments(runtime, binding);
-    if (!binding.since && !state.since) {
-      const first = comments.find(comment => comment.comment_id === binding.firstCommentId);
-      const reply = binding.firstReplyId ? first?.replies?.find(item => item.reply_id === binding.firstReplyId) : first?.replies?.[0];
-      const timestamp = Number(reply?.update_time || reply?.create_time) * 1000;
-      if (!Number.isFinite(timestamp) || timestamp <= 0) throw new Error('Initial document comment timestamp unavailable');
-      state.since = new Date(timestamp).toISOString();
-    }
-    const authorNames = await resolveCommentAuthorNames(runtime, comments, runtime.botIdentity);
-    state.pending = commentCandidates({ ...binding, since: state.since || binding.since }, comments, state, runtime.botIdentity, authorNames);
+    const comment = await readFeishuCommentThread(runtime, summary, readPacer(runtime));
+    const authorNames = await resolveCommentAuthorNames(runtime, [comment], runtime.botIdentity);
+    state.pending = commentCandidates({ ...binding, since: state.since || binding.since }, comment, state, runtime.botIdentity, authorNames);
     await writeBindingJson(statePath, state);
     await drain();
     state.lastSuccessAt = new Date().toISOString();
@@ -264,7 +225,7 @@ async function submitDocumentMention(runtime, binding, entry, save) {
   if (!entry.summary?.mentionedBot) return { ignored: 'mention_required' };
   let payload = entry.mentionPayload;
   if (!payload) {
-    const current = await hydrateFeishuDocumentCommentSummary(runtime, entry.summary);
+    const current = await hydrateFeishuDocumentCommentSummary(runtime, entry.summary, readPacer(runtime));
     const sourceContext = {
       ...buildMessageSourceContext({ ...current, sourceRouteId: binding.sourceRouteId }),
       appId: current.appId, tenantKey: current.tenantKey, sender: current.sender,
@@ -295,51 +256,39 @@ export async function startDocumentBindingEvents(runtime) {
     maxConcurrency: 2, retryPolicy: feishuReadRetryPolicy, archiveRetentionDays: 90,
     conversationKey: entry => entry.fileToken,
     process: async (entry, save) => {
-      if (!entry.id.startsWith('comment:')) return { ignored: 'automatic_scan_disabled' };
-      const path = documentBindingPath(runtime.config.storageDir, entry.fileToken);
-      let binding = await readBindingJson(path);
-      if (entry.summary?.mentionedBot && (!binding || binding.mentionOnly)
-          && runtime.allowDocumentMention && !await runtime.allowDocumentMention(entry.summary)) {
+      if (entry.summary?.mentionedBot !== true) return { ignored: 'mention_required' };
+      if (runtime.allowDocumentMention && !await runtime.allowDocumentMention(entry.summary)) {
         return { ignored: 'sender_not_allowed' };
       }
-      if (entry.summary && (!binding || binding.createdDocument)) binding = await ensureDocumentBinding(runtime, entry.summary);
+      const path = documentBindingPath(runtime.config.storageDir, entry.fileToken);
+      let binding = await readBindingJson(path);
+      if (!binding || binding.createdDocument) binding = await ensureDocumentBinding(runtime, entry.summary);
       if (!binding?.enabled || binding.sourceRouteId !== runtime.config.sourceRouteId) {
         return { ignored: 'not_owned_or_disabled' };
       }
       if (binding.mentionOnly) return submitDocumentMention(runtime, binding, entry, save);
-      await reconcileDocumentBinding(runtime, binding);
+      await reconcileDocumentBinding(runtime, binding, entry.summary);
       return { reconciled: true };
     },
     onError: error => console.error(`[feishu-document-event] ${error.message}`),
   });
-  const enqueue = (fileToken, eventId) => inbox.accept(eventId, { fileToken });
-  // Retire queued scans from older versions locally, including delayed retries.
-  // Only actual received comment events may resume after a process restart.
+  // Retire delayed legacy scans and notices with no evidence of an @mention.
   for (const entry of await inbox.store.active()) {
-    if (entry.complete || entry.id.startsWith('comment:')) continue;
+    if (entry.complete || entry.summary?.mentionedBot === true) continue;
     await inbox.store.mutate(entry.key, current => ({ ...current, complete: true,
-      receipt: { ignored: 'automatic_scan_disabled' } }));
+      receipt: { ignored: 'mention_required' } }));
     await inbox.store.archive(entry.key);
   }
   inbox.start();
   return {
     async accept(summary) {
+      if (summary.mentionedBot !== true) return true;
       const ownIds = new Set(Object.values(runtime.botIdentity || {}).filter(Boolean));
       if (Object.values(summary.sender || {}).some(id => ownIds.has(id))) return true;
-      const binding = await readBindingJson(documentBindingPath(runtime.config.storageDir, summary.fileToken));
-      if (binding) {
-        // Never fall through to mention intake when explicitly disabled or
-        // bound to another Bot; that would create a second competing Session.
-        if (binding.enabled && binding.sourceRouteId === runtime.config.sourceRouteId) {
-          if (binding.mentionOnly && !summary.mentionedBot) return true;
-          if (binding.mentionOnly || binding.createdDocument) await inbox.accept(`comment:${summary.eventId || summary.messageId}`,
-            { fileToken: summary.fileToken, summary });
-          else await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
-        }
-        return true;
-      }
       if (summary.fileType !== 'docx' || !summary.commentId || !runtime.config.appId) return false;
-      await inbox.accept(`comment:${summary.eventId || summary.messageId}`, { fileToken: summary.fileToken, summary });
+      // Legacy bound scans kept only the document token. Use a separate ID
+      // namespace for the exact notice; request-level IDs remain unchanged.
+      await inbox.accept(`mention:${summary.eventId || summary.messageId}`, { fileToken: summary.fileToken, summary });
       return true;
     },
     async idle() { await inbox.tick(); await inbox.idle(); },

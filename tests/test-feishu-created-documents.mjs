@@ -30,12 +30,9 @@ const runtime = {
       doc_token: doc.doc_token, owner_id: foreign.has(doc.doc_token) ? 'somebody-else' : 'bot-id', title: 'Document',
     })) } }) },
     fileComment: {
-      list: async () => ({ data: { items: [{ comment_id: 'c', replies: [] }] } }),
-      batchQuery: async ({ data }) => ({ data: { items: data.comment_ids.map(comment_id => ({
-        comment_id, reply_list: { replies: [reply('r')] },
-      })) } }),
+      batchQuery: async ({ data }) => ({ data: { items: data.comment_ids.map(comment_id => ({ comment_id })) } }),
     },
-    fileCommentReply: { list: async ({ path }) => ({ data: { items: replies.get(path.file_token) || [] } }) },
+    fileCommentReply: { list: async ({ path }) => ({ data: { items: replies.get(path.file_token) || [reply('r')] } }) },
   }, v2: { commentReaction: { updateReaction: async () => ({ code: 0 }) } } } },
   requestRemoteLab: async (path, options) => {
     if (path === '/api/sessions') {
@@ -57,7 +54,7 @@ const runtime = {
   },
 };
 const event = (token, id = token, commentId = 'c') => ({ fileToken: token, fileType: 'docx', commentId,
-  replyId: 'r', eventId: id, messageId: id, sender: { openId: 'human' }, mentionedBot: false });
+  replyId: 'r', eventId: id, messageId: id, sender: { openId: 'human' }, mentionedBot: true });
 const reply = (id, author = 'human') => ({ reply_id: id, user_id: author,
   create_time: Math.floor(Date.now() / 1000) + 1,
   content: { elements: [{ type: 'text_run', text_run: { text: '请回复这条评论' } }] } });
@@ -74,9 +71,13 @@ try {
   await controller.accept({ ...event('self-mention'), sender: { openId: 'bot-id' }, mentionedBot: true });
   await controller.idle();
   assert.equal(sessionPayloads.length, 0, 'Bot self-mentions cannot enter the legacy mention path');
-  assert.equal(await controller.accept(event('unknown')), true);
+  for (const token of ['unknown', 'doc', 'never-bound']) {
+    assert.equal(await controller.accept({ ...event(token), mentionedBot: false }), true);
+  }
   await controller.idle();
-  assert.equal(submissions.length, 0, 'non-owned documents do not create work');
+  assert.equal(submissions.length, 0, 'unmentioned comments do not create work, even in Bot-owned docs');
+  assert.equal(await readBindingJson(bindingPath('doc')), null);
+  assert.equal(sessionPayloads.length, 0);
   assert.equal(await controller.accept(event('doc')), true);
   await controller.idle();
   assert.equal(submissions.length, 1);
@@ -94,7 +95,7 @@ try {
   assert.equal(sessionPayloads.length, 1);
   const orphanId = submissions.at(-1).id;
   replies.get('orphan').push(reply('second'));
-  await controller.accept(event('orphan', 'another-event'));
+  await controller.accept({ ...event('orphan', 'another-event'), replyId: 'second' });
   await controller.idle();
   assert.equal(sessionPayloads.length, 1, 'later comments reuse the same document Session');
   assert.equal(submissions.at(-1).id, orphanId);
@@ -129,7 +130,7 @@ try {
     'Bot-owned historical documents start at the triggering comment, not old history');
   foreign.add('legacy');
   replies.get('legacy').push(reply('after-transfer'));
-  await controller.accept(event('legacy', 'transferred'));
+  await controller.accept({ ...event('legacy', 'transferred'), replyId: 'after-transfer' });
   await controller.idle();
   assert.equal(submissions.filter(s => s.payload.sourceContext.fileToken === 'legacy').length, 1,
     'automatic intake stops when the Bot no longer owns the document');

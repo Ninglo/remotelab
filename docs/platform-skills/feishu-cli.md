@@ -234,8 +234,8 @@ same CLI arguments. Keep normal JSON output. Unless the user explicitly specifie
 another target, inherit `REMOTELAB_SESSION_ID`; an explicit alternative uses
 `REMOTELAB_DOCUMENT_SESSION_ID=<session-id>` and an explicitly unbound document uses
 `REMOTELAB_DOCUMENT_SESSION_ID=none`. Do not add a scheduled scanner or an extra
-manual comment reply. The existing connector handles received comments and sends
-the final answer to the original comment. See [document comment routing](../feishu-document-bindings.md)
+manual comment reply. The existing connector only acts on a comment or reply
+that explicitly @mentions this Bot and sends the final answer to that thread. See [document comment routing](../feishu-document-bindings.md)
 for supported receipts, direct SDK registration, explicit bindings and failures.
 
 ### Recruiting intern role

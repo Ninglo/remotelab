@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { commentCandidates, reconcileDocumentBinding, readBindingJson, writeBindingJson, bindingKey, bindingsDirectory, readDocumentComments, resolveCommentAuthorNames } from '../connectors/feishu/document-bindings.mjs';
+import { commentCandidates, reconcileDocumentBinding, readBindingJson, writeBindingJson, bindingKey, bindingsDirectory, resolveCommentAuthorNames } from '../connectors/feishu/document-bindings.mjs';
 import { canForwardNativeRequest } from '../chat/native-request-dispatch.mjs';
 import { normalizeScheduledSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 
@@ -12,11 +12,11 @@ const binding = { generation: 'g', fileToken: 'doc', fileType: 'docx', documentU
   conversation: { connector: 'feishu', sourceRouteId: 'bot', target: { chatId: 'chat', threadId: 'topic' } } };
 const reply = (id, text, user = 'human', time = 1789690000) => ({ reply_id: id, user_id: user,
   create_time: time, update_time: time, content: { elements: [{ type: 'text_run', text_run: { text } }] } });
-const comments = [{ comment_id: 'c', quote: 'anchor text', relation: { content_deleted: false }, replies: [
+const comments = [{ comment_id: 'c', currentReplyId: 'new', quote: 'anchor text', relation: { content_deleted: false }, replies: [
   reply('old', 'history', 'human', 1), reply('new', 'first'), reply('own', 'assistant reply', 'bot'),
 ] }];
 const state = { seen: {} };
-const candidates = commentCandidates(binding, comments, state, { openId: 'bot' }, { human: '张三' });
+const candidates = commentCandidates(binding, comments[0], state, { openId: 'bot' }, { human: '张三' });
 assert.equal(candidates.length, 1);
 assert.match(candidates[0].payload.text, /文档原文：\nanchor text/);
 assert.match(candidates[0].payload.text, /张三（本轮）：first/);
@@ -25,7 +25,7 @@ assert.match(candidates[0].payload.text, /Meta ID：feishu-comment:[a-f0-9]{24}/
 assert.doesNotMatch(candidates[0].payload.text, /commentId|replyId|fileToken|\"relation\"|human|bot/);
 assert.equal(candidates[0].payload.requestId, candidates[0].payload.sourceContext.commentMetaId);
 assert.equal(candidates[0].payload.sourceContext.commentId, 'c');
-const automatic = commentCandidates({ ...binding, replyMode: 'comment' }, comments, { seen: {} }, { openId: 'bot' });
+const automatic = commentCandidates({ ...binding, replyMode: 'comment' }, comments[0], { seen: {} }, { openId: 'bot' });
 assert.equal(automatic.length, 1);
 assert.deepEqual(automatic[0].payload.sourceDelivery, {
   connector: 'feishu', sourceRouteId: 'bot', target: {
@@ -37,9 +37,11 @@ assert.match(automatic[0].payload.text, /文档：https:\/\/example.feishu.cn\/d
 assert.match(automatic[0].payload.text, /不要另行调用评论回复 API/);
 assert.match(automatic[0].payload.text, /保留评论锚点/);
 assert.equal(candidates[0].payload.sourceDelivery, undefined, 'legacy manual-reply bindings retain their route');
-assert.ok(state.seen['c:old']);
-assert.ok(state.seen['c:own']);
-assert.throws(() => commentCandidates(binding, comments, state, {}), /identity/);
+for (const id of ['old', 'own']) {
+  assert.equal(commentCandidates(binding, { ...comments[0], currentReplyId: id }, state, { openId: 'bot' }).length, 0);
+  assert.ok(state.seen[`c:${id}`]);
+}
+assert.throws(() => commentCandidates(binding, comments[0], state, {}), /identity/);
 await writeBindingJson(join(storageDir, 'lark-cli', 'bot-profile', 'config.json'), {
   apps: [{ appId: 'app', users: [{ userOpenId: 'human', userName: '张三' }] }],
 });
@@ -54,7 +56,7 @@ const runtime = { config: { storageDir }, botIdentity: { openId: 'bot' },
     reactions.push(payload);
     throw new Error('reaction unavailable');
   } } }, v1: {
-    fileComment: { list: async () => ({ data: { items: comments } }) },
+    fileComment: { batchQuery: async () => ({ data: { items: comments } }) },
     fileCommentReply: { list: async () => ({ data: { items: comments[0].replies } }) },
   } } },
   requestRemoteLab: async (path, options) => {
@@ -65,22 +67,27 @@ const runtime = { config: { storageDir }, botIdentity: { openId: 'bot' },
     return { response: { status: 202 }, json: { queued: true } };
   },
 };
+const reconcile = (replyId = 'new') => reconcileDocumentBinding(runtime, binding, {
+  ...binding, commentId: 'c', replyId, mentionedBot: true,
+});
 try {
   await writeBindingJson(join(bindingsDirectory(storageDir), `${bindingKey('doc')}.binding.json`), { ...binding, enabled: true });
-  await assert.rejects(reconcileDocumentBinding(runtime, binding), /lost acknowledgement/);
+  await assert.rejects(reconcile(), /lost acknowledgement/);
   assert.equal(reactions.length, 0, 'uncertain admission must not acknowledge');
   // A concurrent comment arrives while the first admission has an uncertain receipt.
   comments[0].replies.push(reply('second', 'second'));
-  await reconcileDocumentBinding(runtime, binding);
+  await reconcile();
   assert.deepEqual(payloads[0], payloads[1], 'retry must use persisted exact payload');
+  assert.equal(accepted.size, 1, 'an unrelated later reply is only context');
+  await reconcile('second');
   assert.equal(accepted.size, 2);
   assert.equal(reactions.length, 2, 'accepted comments acknowledged despite reaction failures');
-  await reconcileDocumentBinding(runtime, binding);
+  await reconcile();
   assert.equal(payloads.length, 3, 'unchanged comments must not repeat');
   comments[0].replies[1].content.elements[0].text_run.text = 'edited';
   comments[0].replies[1].update_time += 1;
-  await reconcileDocumentBinding(runtime, binding);
-  assert.equal(accepted.size, 3, 'edit is a distinct revision');
+  await reconcile();
+  assert.equal(accepted.size, 3, 'a notified edit is a distinct revision');
   const saved = await readBindingJson(join(bindingsDirectory(storageDir), `${bindingKey('doc')}.state.json`));
   assert.equal(saved.pending.length, 0);
   assert.equal(saved.lastError, '');
@@ -89,24 +96,14 @@ try {
     collaboratorOpenIds: ['collaborator'], interviewerOpenIds: ['interviewer'] } };
   for (const user of ['hr', 'collaborator', 'interviewer', 'unknown']) comments[0].replies.push(reply(`role-${user}`, 'role check', user));
   const beforeRoleCheck = payloads.length;
-  await reconcileDocumentBinding(runtime, binding);
+  for (const user of ['hr', 'collaborator', 'interviewer', 'unknown']) await reconcile(`role-${user}`);
   assert.deepEqual(payloads.slice(beforeRoleCheck).map(p => p.sourceContext.sender.openId).sort(), ['collaborator', 'hr']);
   runtime.config.accessPolicy.roles.collaboratorOpenIds = [];
   comments[0].replies.push(reply('revoked-collaborator', 'must not enter', 'collaborator'));
-  await reconcileDocumentBinding(runtime, binding);
+  await reconcile('revoked-collaborator');
   assert.equal(payloads.length, beforeRoleCheck + 2);
-  let calls = 0;
-  runtime.appClient.drive.v1.fileComment.list = async ({ params }) => {
-    calls++;
-    assert.equal(params.need_relation, true);
-    return { data: params.page_token ? { items: comments } : { items: [], has_more: true, page_token: 'next' } };
-  };
-  assert.equal((await readDocumentComments(runtime, binding)).length, 1);
-  assert.equal(calls, 2);
-  runtime.appClient.drive.v1.fileComment.list = async () => ({ data: { items: [], has_more: true } });
-  await assert.rejects(readDocumentComments(runtime, binding), /pagination/);
   runtime.requestRemoteLab = async () => ({ response: { ok: false, status: 404 }, json: {} });
-  await assert.rejects(reconcileDocumentBinding(runtime, binding), /Session read failed \(404\)/);
+  await assert.rejects(reconcile(), /Session read failed \(404\)/);
   const head = { key: 'h', options: {}, runtimeSelection: {} };
   assert.equal(canForwardNativeRequest({ key: 'n', options: { sourceContext: { documentBinding: true } }, runtimeSelection: {} }, head), false);
   const template = normalizeScheduledSessionTemplate({ folder: '/tmp', tool: 'codex', reuse: 'calendar_day', reuseTimezone: 'Asia/Shanghai' });
