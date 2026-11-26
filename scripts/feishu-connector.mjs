@@ -404,6 +404,11 @@ async function loadConfig(pathname) {
   if (parsed.jevReactions !== undefined && typeof parsed.jevReactions !== 'boolean') {
     throw new Error('jevReactions must be boolean');
   }
+  const claudeShortcutHarness = parsed.claudeShortcutHarness;
+  if (claudeShortcutHarness !== undefined && (typeof claudeShortcutHarness !== 'string'
+    || !/^[a-zA-Z0-9-]+$/.test(claudeShortcutHarness) || claudeShortcutHarness === 'claude')) {
+    throw new Error('claudeShortcutHarness must be a separate tool ID');
+  }
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
       throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy, responsePolicy and replyPolicy`);
@@ -425,6 +430,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
+    ...(claudeShortcutHarness ? { claudeShortcutHarness } : {}),
     defaultGroupParticipation: defaultFeishuGroupParticipation(parsed),
     jevReactions: parsed.jevReactions !== false,
     groupReactionCandidates: normalizeFeishuReactionCandidates(parsed.groupReactionCandidates),

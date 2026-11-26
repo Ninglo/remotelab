@@ -142,11 +142,11 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const inputCommands = normalizeCommands(rawCommands);
   const validationError = validateCommandSet(inputCommands);
   if (validationError) return { error: validationError, text: validationError, operations: [] };
-  const pilot = runtime.config?.groups?.[summary?.chatId]?.claudeShortcutPilot;
-  const isPilotSender = !!pilot && summary?.sender?.openId === pilot.openId;
+  const claudeShortcutHarness = runtime.config?.claudeShortcutHarness;
   const claudeShortcut = inputCommands.find(command => Object.hasOwn(CLAUDE_SHORTCUT_MODELS, command.name));
-  const pilotRequested = !!claudeShortcut && isPilotSender;
-  const baseHelp = isPilotSender ? `${HELP}\n/claude-x 正文 — 在新话题使用试用供应商的 Fable 5.2、high；/claude 使用同一供应商的 Opus 5.5、high。` : HELP;
+  const baseHelp = claudeShortcutHarness
+    ? `${HELP}\n/claude-x 正文 — 使用第三方 Claude Code、Fable 5.2、high；/claude 使用同一供应商的 Opus 5.5、high。`
+    : HELP;
   const help = usesOctober7GroupMessaging({ conversation: { connector: 'feishu', target: summary } })
     ? baseHelp.replace('/progress [expanded|collapsed] — 查看或设置本轮工作过程默认展开或折叠',
       '/progress [messages|card|default] — 查看或设置当前会话的进展提示') : baseHelp;
@@ -173,15 +173,15 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
       changeId: `command:${summary.messageId}`,
     }] : [], text: `${describeSessionProgressPolicy(session)}\n作用范围：本轮任务；可直接在卡片中展开或折叠工作过程。\n/progress expanded：默认展开\n/progress collapsed：默认折叠\n普通进展在卡片内更新；需要你回复的问题和最终结果仍单独发消息。` };
   }
-  if (claudeShortcut?.name === 'claude-x' && !pilotRequested) {
-    const text = '当前发起人或会话未开通 /claude-x 试用。';
+  if (claudeShortcut?.name === 'claude-x' && !claudeShortcutHarness) {
+    const text = '当前机器人未配置 /claude-x 的模型提供商。';
     return { error: text, text, operations: [] };
   }
   // Shortcuts reuse ordinary runtime validation, persistence and inbox retry.
   const commands = inputCommands.flatMap(command => {
     if (command.name === 'sota') return [{ name: 'tier', value: 'sota' }];
     if (command === claudeShortcut) return [
-      { name: 'harness', value: pilotRequested ? pilot.harness : 'claude' },
+      { name: 'harness', value: claudeShortcutHarness || 'claude' },
       { name: 'model', value: CLAUDE_SHORTCUT_MODELS[command.name] },
       { name: 'effort', value: 'high' },
     ];
@@ -197,10 +197,6 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const defaults = await resolveDefault();
   const session = summary?.startThread ? null : await findCommandSession(runtime, summary, request);
   let selection = sessionSelection(session, defaults) || { ...defaults };
-  if (pilotRequested && (!isFeishuThreadConversation(summary) || (session && selection.tool !== pilot.harness))) {
-    const text = '三方 Claude 试用请新开一个话题，第一条消息直接发送 /claude 或 /claude-x 加测试正文。不会把已有会话切到三方供应商。';
-    return { error: text, text, operations: [] };
-  }
   let catalog = null;
   const operations = [];
   const notes = [];

@@ -1114,6 +1114,8 @@ const candidateConfigPath = join(tempConfigDir, 'candidate-config.json');
 assert.equal(loadedConfig.jevReactions, true, 'existing connector defaults remain unchanged');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', jevReactions: false }));
 assert.equal((await loadConfig(candidateConfigPath)).jevReactions, false);
+await writeFile(candidateConfigPath, JSON.stringify({ ...JSON.parse(await readFile(tempConfigPath, 'utf8')), claudeShortcutHarness: 'claude-provider' }));
+assert.equal((await loadConfig(candidateConfigPath)).claudeShortcutHarness, 'claude-provider');
 await writeFile(candidateConfigPath, JSON.stringify({ appId: 'test', appSecret: 'test', jevReactions: 'false' }));
 await assert.rejects(loadConfig(candidateConfigPath), /jevReactions must be boolean/);
 assert.equal(loadedConfig.personalSettings.enabled, false, 'personal settings full rollout is explicit');
