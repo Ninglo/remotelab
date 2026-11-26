@@ -165,6 +165,8 @@ Runs use `storageVersion: 2`. Their files have separate writers:
 | `recovery.json`, `recovery-result.json` | Controller inference from confirmed process loss or a legacy adapter completion marker; a real terminal execution/result takes precedence |
 | `spool.jsonl` | Append-only execution output; a partial final line is retained for the next read rather than consumed |
 
+Dispatch is recorded before waiting for the sidecar's one-time `launch.json` claim. A scheduler tick or controller restart must not spawn again merely because a recorded dispatch has not claimed yet. Before the claim, liveness uses the dispatched PID and its process birth identity (or the recorded systemd unit); a bare PID is not proof of life. After the claim, the claimed runner owns execution. Missing-result reconciliation checks again for a live owner after collecting diagnostics. This does not replay previously settled requests.
+
 Writers persist only their changed fields. Reads combine the files and preserve
 controller-owned cancellation and projection checkpoints. An explicit controller
 validation failure (for example, a structured runtime exiting without output)

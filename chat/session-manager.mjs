@@ -169,6 +169,7 @@ import {
   writeRunResult,
 } from './runs.mjs';
 import { spawnDetachedRunner } from './run-launcher.mjs';
+import { readProcessIdentity } from '../lib/process-identity.mjs';
 import { createRunProjectionService } from './run-projection.mjs';
 import { createDetachedRunReconciler } from './run-reconciler.mjs';
 import {
@@ -3839,16 +3840,27 @@ async function launchAutomationRun(runId, options = {}) {
     await writeRunResult(runId, result);
     await updateRun(runId, current => ({ ...current, state: 'cancelled', cancelRequested: true,
       automationLaunchDeferred: true, failureReason: allowed.reason || 'Cancelled before launch', result }));
-    return {};
+    return;
   }
-  return spawnDetachedRunner(runId);
+  const spawned = await spawnDetachedRunner(runId);
+  const identity = await readProcessIdentity(spawned.pid);
+  await updateRun(runId, current => ({ ...current,
+    runnerSpawnIdentity: identity, runnerProcessId: spawned.pid || current.runnerProcessId,
+    runnerUnitName: spawned.unitName, runnerUnitScope: spawned.unitScope, runnerLaunchMode: spawned.launchMode,
+  }));
+}
+
+// A dispatched attempt is not an unstarted attempt. The sidecar can still be
+// loading modules or syncing its one-time claim across a controller restart.
+function dispatchRecorded(run) {
+  return Boolean(run?.runnerProcessId || run?.runnerUnitName);
 }
 
 const preparedInProcess = new Set();
 async function prepareRequestRun(record) {
   if (record.preparedAt && preparedInProcess.has(record.runId)) {
     const [run, launch] = await Promise.all([getRun(record.runId), readRecord(joinRequestPath(runDir(record.runId), 'launch.json'))]);
-    if (run && (isTerminalRunState(run.state) || launch)) return;
+    if (run && (isTerminalRunState(run.state) || launch || dispatchRecorded(run))) return;
   }
   await prepareRequestRunOnce(record);
   preparedInProcess.add(record.runId);
@@ -3903,7 +3915,7 @@ async function prepareRequestRunOnce(record) {
   Object.assign(options, record.runtimeSelection || await resolveSessionRuntimeSelection(session, options), { workDecisionContext });
   let existingRun = await getRun(record.runId);
   const launchReceipt = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
-  if (record.cancelRequestedAt && !launchReceipt) {
+  if (record.cancelRequestedAt && !launchReceipt && !dispatchRecorded(existingRun)) {
     if (!existingRun) existingRun = await createRun({
       status: { id: record.runId, sessionId, requestId, responseId, state: 'accepted', tool: options.tool || session.tool },
       manifest: { sessionId, requestId, responseId, folder: session.folder, tool: options.tool || session.tool, runtimeFamily: (await getToolDefinitionAsync(options.tool || session.tool))?.runtimeFamily, options: {} },
@@ -3918,9 +3930,8 @@ async function prepareRequestRunOnce(record) {
     if (!record.preparedAt) await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso() }));
     await requestRuntime.refresh(record.key);
     const launch = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
-    if (existingRun.state === 'accepted' && !launch) {
-      const spawned = await launchAutomationRun(record.runId, record.options);
-      await updateRun(record.runId, current => ({ ...current, runnerProcessId: spawned.pid, runnerUnitName: spawned.unitName, runnerUnitScope: spawned.unitScope, runnerLaunchMode: spawned.launchMode }));
+    if (existingRun.state === 'accepted' && !launch && !dispatchRecorded(existingRun)) {
+      await launchAutomationRun(record.runId, record.options);
     } else if (launch && !existingRun.runnerProcessId) {
       await updateRun(record.runId, current => ({ ...current, runnerProcessId: launch.pid }));
     }
@@ -4176,14 +4187,7 @@ async function prepareRequestRunOnce(record) {
   await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs }));
   await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
-  const spawned = await launchAutomationRun(run.id, options);
-  await updateRun(run.id, (current) => ({
-    ...current,
-    runnerProcessId: spawned?.pid || current.runnerProcessId || null,
-    runnerUnitName: spawned?.unitName || current.runnerUnitName || null,
-    runnerUnitScope: spawned?.unitScope || current.runnerUnitScope || null,
-    runnerLaunchMode: spawned?.launchMode || current.runnerLaunchMode || null,
-  }));
+  await launchAutomationRun(run.id, options);
 
   broadcastSessionInvalidation(sessionId);
 }

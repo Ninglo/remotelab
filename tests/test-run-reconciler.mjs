@@ -51,6 +51,29 @@ try {
   assert.match((await runs.getRunResult(recovered.id)).error, /Detached runner disappeared/,
     'a real disappearance must still fail after the grace period');
 
+  // During pre-claim startup the process is real even before a single tool
+  // event. A reused PID or a live losing launcher must not hide owner loss.
+  const identity = await readProcessIdentity(process.pid);
+  const starting = await makeRun();
+  const preclaim = await runs.updateRun(starting.id, { state: 'accepted', runnerProcessId: process.pid,
+    runnerSpawnIdentity: identity, missingResultDetectedAt: old });
+  await reconcile()(starting.id, preclaim);
+  assert.equal(await runs.getRunResult(starting.id), null);
+  assert.equal((await runs.getRun(starting.id)).missingResultDetectedAt, null);
+  const reused = { ...identity, birth: 'different-process' };
+  const claimedPath = join(runs.runDir(starting.id), 'launch.json');
+  await writeFile(claimedPath, JSON.stringify({ identity: reused }));
+  await reconcile()(starting.id, await runs.updateRun(starting.id, { missingResultDetectedAt: old }));
+  assert.match((await runs.getRunResult(starting.id)).error, /Detached runner disappeared/);
+
+  const lateClaim = await makeRun();
+  await reconcile({ collectRunOutputPreview: async () => {
+    await writeFile(join(runs.runDir(lateClaim.id), 'launch.json'), JSON.stringify({ identity }));
+    return '';
+  } })(lateClaim.id, await runs.updateRun(lateClaim.id, { missingResultDetectedAt: old }));
+  assert.equal(await runs.getRunResult(lateClaim.id), null);
+  assert.equal((await runs.getRun(lateClaim.id)).missingResultDetectedAt, null);
+
   // A result may arrive during slow diagnostic work, after the fresh read.
   const late = await makeRun();
   const lateSnapshot = await runs.updateRun(late.id, { missingResultDetectedAt: old });

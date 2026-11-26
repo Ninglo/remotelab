@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs';
+import { chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -75,6 +75,16 @@ function setupTempHome() {
   const localBin = join(home, '.local', 'bin');
   mkdirSync(configDir, { recursive: true });
   mkdirSync(localBin, { recursive: true });
+  // Only the local fake executable runs; never depend on a machine account.
+  const accountDir = join(configDir, 'codex-accounts');
+  mkdirSync(accountDir, { recursive: true });
+  mkdirSync(join(home, '.codex'), { recursive: true });
+  writeFileSync(join(home, '.codex', 'auth.json'), '{"tokens":{}}');
+  copyFileSync(join(__dirname, 'fixtures', 'codex-account.cjs'), join(localBin, 'codex'));
+  chmodSync(join(localBin, 'codex'), 0o755);
+  writeFileSync(join(accountDir, 'accounts.json'), JSON.stringify({ version: 1, activeId: 'default', autoSwitch: false,
+    accounts: [{ id: 'default', home: join(home, '.codex'), account: { type: 'chatgpt', email: 'fixture@example.invalid' } }],
+  }));
 
   writeFileSync(
     join(configDir, 'auth.json'),
@@ -167,8 +177,12 @@ async function startServer({ home, port, delayMs = 700, envOverrides = {} }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
-      ...process.env,
       HOME: home,
+      PATH: `${join(home, '.local', 'bin')}:${dirname(process.execPath)}:/usr/bin:/bin`,
+      SHELL: '/bin/sh',
+      REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1',
+      REMOTELAB_MEMORY_WRITEBACK: 'off',
+      REMOTELAB_MACHINE_CODEX_HOME: join(home, '.codex'),
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
       FAKE_CODEX_DELAY_MS: String(delayMs),
@@ -504,7 +518,8 @@ async function phase5RestartSurvival() {
     const runDir = join(configDir, 'chat-runs', submit.json.run.id);
     const persistedStatus = JSON.parse(readFileSync(join(runDir, 'status.json'), 'utf8'));
     const persistedResult = JSON.parse(readFileSync(join(runDir, 'result.json'), 'utf8'));
-    assert.equal(persistedStatus.state, 'completed', 'persisted run state should converge to completed after restart');
+    const execution = JSON.parse(readFileSync(join(runDir, 'execution.json'), 'utf8'));
+    assert.equal(execution.state, 'completed', 'runner should persist actual completion after restart');
     assert.equal(persistedResult.exitCode, 0, 'persisted terminal result should retain the successful tool exit');
     if (persistedStatus.runnerLaunchMode === 'systemd-transient-service') {
       assert.ok(persistedStatus.runnerUnitName, 'systemd-backed detached runs should persist their transient unit name');
@@ -641,7 +656,7 @@ async function phase8CancelRecovery() {
 
     const retry = await submitMessage(port, session.id, 'req-cancel-retry', 'retry after cancel');
     const finalRun = await waitForRunTerminal(port, retry.json.run.id);
-    assert.equal(finalRun.state, 'completed', 'session should accept a new run after cancel');
+    assert.equal(finalRun.state, 'completed', `session should accept a new run after cancel: ${finalRun.failureReason}`);
     console.log('phase8-cancel-recovery: ok');
   } finally {
     await stopServer(server);
@@ -1300,7 +1315,7 @@ async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
     });
     const submit = await submitMessage(port, session.id, 'req-finalization-metrics-warning');
     const completedRun = await waitForRunTerminal(port, submit.json.run.id);
-    assert.equal(completedRun.state, 'completed', 'finalization metrics failure should not flip a successful run to failed');
+    assert.equal(completedRun.state, 'completed', `finalization warning should preserve success: ${completedRun.failureReason}`);
     assert.equal(completedRun.result?.exitCode, 0, 'successful tool exit should remain recorded');
     assert.equal(completedRun.failureReason || null, null, 'warning-only finalization should not leave a failure reason');
 
@@ -1406,6 +1421,50 @@ async function phase19CodexMissingRolloutRecoversSameTurn() {
   }
 }
 
+// Hold only the detached child before it can publish launch.json. Drive an
+// actual controller restart inside that window, not a mocked process exit.
+async function phase20DelayedLaunchReceipt() {
+  const { home, configDir } = setupTempHome();
+  const port = await availablePort();
+  const gate = join(home, 'wait-for-controller');
+  const starts = join(home, 'spawned-pids');
+  const preload = join(home, 'hold-runner.cjs');
+  writeFileSync(gate, 'hold');
+  writeFileSync(preload, `if (process.argv[1]?.endsWith('/runner-sidecar.mjs')) {
+    const fs = require('node:fs'); fs.appendFileSync(${JSON.stringify(starts)}, process.pid + '\\n');
+    const deadline = Date.now() + 45000;
+    while (fs.existsSync(${JSON.stringify(gate)}) && Date.now() < deadline)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+  }`);
+  const options = { home, port, envOverrides: { NODE_OPTIONS: `--require=${preload}` } };
+  let server;
+  try {
+    server = await startServer(options);
+    const session = await createSession(port, { name: 'Delayed launch receipt' });
+    const submit = await submitMessage(port, session.id, 'req-delayed-claim');
+    const runId = submit.json.run?.id || (await waitForAcceptedRun(port, session.id, 'req-delayed-claim')).id;
+    const dir = join(configDir, 'chat-runs', runId);
+    await waitFor(() => existsSync(starts) && JSON.parse(readFileSync(join(dir, 'status.json'))).runnerProcessId, 'controller spawn record');
+    await stopServer(server);
+    server = await startServer(options);
+    // Drive reconciliation past the genuine-loss grace period with no claim.
+    const until = Date.now() + 2200;
+    do { await request(port, 'GET', `/api/runs/${runId}`); await sleep(100); } while (Date.now() < until);
+    assert.equal(existsSync(join(dir, 'launch.json')), false);
+    assert.equal(readFileSync(starts, 'utf8').trim().split('\n').length, 1, 'recovery must not launch another runner');
+    assert.equal(existsSync(join(dir, 'recovery-result.json')), false, 'live pre-claim runner must not be failed');
+    rmSync(gate);
+    const terminal = await waitForRunTerminal(port, runId);
+    assert.equal(terminal.state, 'completed', terminal.failureReason || JSON.stringify(terminal.result));
+    assert.equal(existsSync(join(dir, 'recovery-result.json')), false);
+    console.log('phase20-delayed-launch-receipt: ok');
+  } finally {
+    rmSync(gate, { force: true });
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -1429,6 +1488,7 @@ const phases = {
   phase17: phase17SidecarPreSpawnFailurePersistsRootCause,
   phase18: phase18FinalizationMetricsFailureDoesNotMaskSuccess,
   phase19: phase19CodexMissingRolloutRecoversSameTurn,
+  phase20: phase20DelayedLaunchReceipt,
 };
 
 if (phase === 'all') {

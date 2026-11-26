@@ -112,7 +112,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - [RemoteLab unified explanation project](architecture-atlas/README.md) — the [shared website entry](architecture-atlas/project.html) for system understanding, continuous self-improvement, and newcomer onboarding. Existing and future feature explanations join this project's catalog, assembled publication, and backup; focused implementation guides remain canonical references.
 
-- `project-architecture.md` — top-down map of the shipped system
+- `project-architecture.md` — top-down map of the shipped system; [execution ownership](project-architecture.md#execution-ownership-and-asynchronous-progress) covers dispatched runners awaiting a start receipt, genuine process loss, and restart recovery
 - [Frontend chat architecture](frontend-chat-architecture.md) — browser Session state and the bounded event snapshot cache used for immediate revisits before HTTP refresh
 - `cpolar-setup.md` — model-first cpolar setup for mainland-friendly direct access without a VPN
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state

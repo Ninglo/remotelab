@@ -50,6 +50,15 @@ export async function isRecordedRunnerUnitActive(unitName, unitScope, {
   }
 }
 
+async function hasLiveExecution(runId, run) {
+  const launch = await readRecord(join(CHAT_RUNS_DIR, runId, 'launch.json'));
+  // Once the sidecar claims the work only that owner counts. Before the claim,
+  // the spawn observation includes a birth identity, not just a reusable PID.
+  const runnerProcessAlive = await isProcessIdentityAlive(launch ? launch.identity : run.runnerSpawnIdentity);
+  return runnerProcessAlive || await isProcessIdentityAlive(run.toolProcessIdentity)
+    || await isRecordedRunnerUnitActive(run.runnerUnitName, run.runnerUnitScope);
+}
+
 export function createDetachedRunReconciler({
   appendRunSpoolRecord,
   collectRunOutputPreview,
@@ -72,19 +81,14 @@ export function createDetachedRunReconciler({
       return null;
     }
 
-    const launch = await readRecord(join(CHAT_RUNS_DIR, runId, 'launch.json'));
-    const runnerProcessAlive = await isProcessIdentityAlive(launch?.identity);
-    const runnerUnitActive = !runnerProcessAlive
-      ? await isRecordedRunnerUnitActive(run?.runnerUnitName, run?.runnerUnitScope)
-      : false;
-    const runnerAlive = runnerProcessAlive || runnerUnitActive;
-    const toolAlive = await isProcessIdentityAlive(run?.toolProcessIdentity);
-    if (runnerAlive || toolAlive) {
-      if (run?.missingResultDetectedAt) {
-        await updateRun(runId, (current) => ({ ...current, missingResultDetectedAt: null }));
+    const liveNow = async current => {
+      if (!await hasLiveExecution(runId, current)) return false;
+      if (current.missingResultDetectedAt) {
+        await updateRun(runId, latest => ({ ...latest, missingResultDetectedAt: null }));
       }
-      return null;
-    }
+      return true;
+    };
+    if (await liveNow(run)) return null;
 
     // The runner writes its result before exiting. It may have done so after
     // the controller's earlier read but before the liveness probes above.
@@ -93,9 +97,7 @@ export function createDetachedRunReconciler({
     if (isTerminalRunState(current.state) || await getRunResult(runId)) return current;
     run = current;
 
-    const completedAt = nowIso();
-    const cancelled = run?.cancelRequested === true;
-    if (!cancelled) {
+    if (!run.cancelRequested) {
       const missingResultDetectedAtMs = parseIsoTimestampMs(run?.missingResultDetectedAt);
       if (!Number.isFinite(missingResultDetectedAtMs)) {
         await updateRun(runId, (current) => ({
@@ -109,10 +111,16 @@ export function createDetachedRunReconciler({
       }
     }
 
+    const preview = await collectRunOutputPreview(runId);
+    // A startup claim (not only a final result) can arrive during diagnostics.
+    run = await getRun(runId);
+    if (!run || isTerminalRunState(run.state) || await getRunResult(runId)) return run;
+    if (await liveNow(run)) return null;
+    const completedAt = nowIso();
+    const cancelled = run.cancelRequested === true;
     const priorFailure = typeof run?.failureReason === 'string' && run.failureReason.trim()
       ? run.failureReason.trim()
       : '';
-    const preview = await collectRunOutputPreview(runId);
     const diagnostic = {
       sessionId: run?.sessionId || null,
       state: run?.state || null,
@@ -121,11 +129,11 @@ export function createDetachedRunReconciler({
       runnerUnitName: run?.runnerUnitName || null,
       runnerUnitScope: run?.runnerUnitScope || null,
       runnerLaunchMode: run?.runnerLaunchMode || null,
-      runnerProcessAlive,
-      runnerUnitActive,
+      runnerProcessAlive: false,
+      runnerUnitActive: false,
       toolProcessId: run?.toolProcessId ?? null,
-      runnerAlive,
-      toolAlive,
+      runnerAlive: false,
+      toolAlive: false,
       startedAt: run?.startedAt || null,
       updatedAt: run?.updatedAt || null,
       lastNormalizedAt: run?.lastNormalizedAt || null,
