@@ -228,7 +228,9 @@ export function buildAntigravityArgs(prompt, options = {}) {
   if (options.model) {
     args.push('--model', String(options.model));
   }
-  const effort = trimString(options.effort);
+  const requestedEffort = trimString(options.effort);
+  const fixedEffort = String(options.model || '').match(/-(low|medium|high|xhigh|max)$/i)?.[1] || '';
+  const effort = fixedEffort || requestedEffort;
   if (effort) {
     args.push('--effort', effort);
   }

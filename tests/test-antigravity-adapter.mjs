@@ -21,6 +21,11 @@ assert.deepEqual(streamArgs, [
   '--output-format', 'stream-json',
   '--sandbox',
 ]);
+const correctedArgs = buildAntigravityArgs('Ping', {
+  model: 'gemini-4-hydrogen-high',
+  effort: 'medium',
+});
+assert.equal(correctedArgs.at(-1), 'high', 'model-specific effort must override stale UI effort');
 
 let adapter = createAntigravityAdapter();
 const parsed = [];
@@ -87,5 +92,11 @@ assert.deepEqual(
     ['gemini-4-hydrogen-medium', 'Gemini 4 Hydrogen (Medium)'],
   ],
 );
+const parsedModel = parseAntigravityModels('gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)')[0];
+assert.deepEqual(
+  { defaultEffort: parsedModel.defaultEffort, levels: parsedModel.reasoning.levels },
+  { defaultEffort: 'high', levels: ['high'] },
+);
+
 
 console.log('test-antigravity-adapter: ok');

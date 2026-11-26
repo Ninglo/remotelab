@@ -4,6 +4,11 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const ANSI_ESCAPE_RE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const DEFAULT_EFFORT_LEVELS = ['low', 'medium', 'high'];
+const FIXED_EFFORT_RE = /-(low|medium|high|xhigh|max)$/i;
+
+function modelEffort(modelId) {
+  return String(modelId || '').match(FIXED_EFFORT_RE)?.[1].toLowerCase() || '';
+}
 
 export function parseAntigravityModels(output) {
   const seen = new Set();
@@ -14,16 +19,18 @@ export function parseAntigravityModels(output) {
     const match = line.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\t|\s{2,})(.+)$/);
     if (!match || seen.has(match[1])) continue;
     seen.add(match[1]);
+    const fixedEffort = modelEffort(match[1]);
+    const effortLevels = fixedEffort ? [fixedEffort] : [...DEFAULT_EFFORT_LEVELS];
     models.push({
       id: match[1],
       label: match[2].trim(),
-      defaultEffort: 'medium',
-      effortLevels: [...DEFAULT_EFFORT_LEVELS],
+      defaultEffort: fixedEffort || 'medium',
+      effortLevels,
       reasoning: {
         kind: 'enum',
         label: 'Thinking',
-        levels: [...DEFAULT_EFFORT_LEVELS],
-        default: 'medium',
+        levels: effortLevels,
+        default: fixedEffort || 'medium',
       },
     });
   }
