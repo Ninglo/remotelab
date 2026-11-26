@@ -502,12 +502,17 @@ credentials and native sessions remain separate from the built-in Claude Code
 login. Without `claudeShortcutHarness`, `/claude` uses the built-in tool and
 `/claude-x` reports that no provider is configured.
 
-Claude Code and Codex in the same RemoteLab instance receive the same shared
-memory pointers (bootstrap, projects, tasks and system memory) and the verified
-Person/project context. They read those files on demand. Their native private
-memory and provider conversation stores remain separate; switching Harnesses
-uses RemoteLab's Session continuation context, not the other provider's native
-thread.
+Claude Code and Codex in the same RemoteLab instance share one memory: the
+RemoteLab memory directory, reached through `~/AGENTS.md` and the shared memory
+pointers (bootstrap, projects, tasks and system memory) plus the verified
+Person/project context. Neither keeps a private native memory: the Claude
+launcher sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (operators also set
+`"autoMemoryEnabled": false` in each Claude config dir's `settings.json`), and
+the machine Codex `config.toml`, linked into every account home, sets
+`[memories] use_memories = false` and `generate_memories = false`. Existing
+`~/.codex/memories` files are history only. Switching Harnesses changes only
+the Harness and model; conversation continuity uses RemoteLab's Session
+continuation context, not the other provider's native thread.
 
 Only `/inline` and `/thread` accept `--harness <id>`, `--model <id>`, and
 `--effort <level>` before the task text. Use a standalone `--` before task text

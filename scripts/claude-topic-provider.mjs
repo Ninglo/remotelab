@@ -25,6 +25,8 @@ async function main() {
     CLAUDE_CODE_DISABLE_TERMINAL_TITLE: '1',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     CLAUDE_CODE_AUTO_MODE_SERVER: '0',
+    // Memory is shared through RemoteLab (~/AGENTS.md), not Claude's private auto memory.
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
   });
 }
 
