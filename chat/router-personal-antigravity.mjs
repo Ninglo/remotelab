@@ -1,10 +1,8 @@
 import { open, readFile } from 'node:fs/promises';
 import { readBody } from '../lib/utils.mjs';
 import { join } from 'node:path';
-import { personalWorkspace } from './feishu-personal-workspace.mjs';
 import { requests } from './requests.mjs';
 import { createPersonalAntigravityContextLookup, indexContextKinds } from './personal-antigravity-context.mjs';
-import { rankIndexReferences } from './session-log-search.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import {
   PERSONAL_ANTIGRAVITY_API, PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled,
@@ -29,12 +27,12 @@ export async function handlePersonalAntigravityDeviceRoutes({ req, res, pathname
   try {
     const action = pathname.slice(relayPath.length);
     if (action === 'redeem') {
-      const { code } = await body(req);
+      const { code, dailyMode } = await body(req);
       if (!credential.test(code || '')) {
         writeJson(res, 403, { error: '连接码无效。' });
         return true;
       }
-      writeJson(res, 200, relay.redeem(code));
+      writeJson(res, 200, relay.redeem(code, dailyMode === true));
       return true;
     }
     const token = /^Bearer ([A-Za-z0-9_-]{32})$/.exec(req.headers.authorization || '')?.[1];
@@ -115,6 +113,9 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
       const response = await relay.run(manifest.viewPersonId, manifest.personalAntigravityDeviceId, {
         prompt: manifest.prompt, session: manifest.sessionId,
         indexContextAvailable: Boolean(lookup),
+        dailyModeEligible: Boolean(lookup) && record.options.usageSurface === 'web'
+          && record.options.usageActorKind === 'human' && !record.options.sourceContext
+          && !record.deliveryPlan && !record.options.sourceDelivery,
         fresh: manifest.personalAntigravityFreshThread === true, model: manifest.options?.model || '', effort: manifest.options?.effort || '',
       }, signal, lookup);
       if (!res.destroyed) writeJson(res, 200, { response });
@@ -125,17 +126,7 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
       writeJson(res, 403, { error: '请使用本人的 Index 账号登录。' });
       return true;
     }
-    if (action === 'context' && req.method === 'GET') {
-      const params = new URL(req.url, 'http://localhost').searchParams;
-      const kind = params.get('kind');
-      const query = params.get('q')?.trim();
-      if (!['project-memory', 'work-summary'].includes(kind) || !query || query.length > 1000) {
-        writeJson(res, 400, { error: '请选择来源并输入搜索关键词。' });
-        return true;
-      }
-      const { records, incomplete } = await personalWorkspace.referenceSources(authSession, kind);
-      writeJson(res, 200, { references: rankIndexReferences(records, query), incomplete });
-    } else if (action === 'status' && req.method === 'GET') {
+    if (action === 'status' && req.method === 'GET') {
       writeJson(res, 200, relay.status(personId));
     } else if ((action === 'pair' || action === 'disconnect') && req.method === 'POST'
         && req.headers['content-type']?.startsWith('application/json')) {

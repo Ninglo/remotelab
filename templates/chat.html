@@ -331,22 +331,28 @@
             <section class="settings-group" id="settings-personal-antigravity" data-settings-section hidden>
               <div class="settings-group-header">
                 <h3>我的 Antigravity</h3>
-                <p>在你自己的电脑上登录 Google，用本人的额度回答 Index 消息。</p>
+                <p>在 Index 对话中选用「Antigravity · 个人 Google」时，本次请求使用你自己的 Google Antigravity 额度。</p>
               </div>
               <div class="settings-group-body personal-codex">
                 <p id="personalAntigravityStatus" role="status">未连接</p>
                 <div class="settings-app-actions">
-                  <a href="api/personal-antigravity/worker" download class="settings-app-btn">下载连接程序</a>
-                  <button id="personalAntigravityPair" type="button" class="settings-app-btn">生成连接码</button>
-                  <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">刷新状态</button>
-                  <button id="personalAntigravityDisconnect" type="button" class="settings-app-btn" hidden>断开</button>
+                  <button id="personalAntigravitySetup" type="button" class="settings-app-btn personal-codex-primary" aria-expanded="false" aria-controls="personalAntigravityLogin">连接个人 Gemini</button>
+                  <button id="personalAntigravityDisconnect" type="button" class="settings-app-btn" hidden>断开连接</button>
                 </div>
-                <div id="personalAntigravityLogin" hidden>
-                  <p>在装有 Node.js 和 Antigravity CLI 的电脑上执行登录命令，用你的 Google 账号登录，退出 Antigravity 后执行连接命令。</p>
-                  <p><code>node personal-antigravity-device.mjs --login</code></p>
-                  <p><code id="personalAntigravityConnectCommand"></code></p>
-                  <p>在终端输入连接码 <code id="personalAntigravityCode"></code>，5 分钟内有效。</p>
-                  <p>回到 Index，选择「Antigravity · 个人 Google」发送文本消息，再在本机终端确认。</p>
+                <div id="personalAntigravityLogin" class="personal-codex-device" hidden>
+                  <ol>
+                    <li><a href="api/personal-antigravity/worker" download>下载连接程序</a>。电脑需要 Node.js 22 或更新版本和 Antigravity CLI。</li>
+                    <li>进入下载连接程序的目录，在终端运行下方命令并用自己的 Google 账号登录，然后退出 Antigravity。已有登录可跳过这步。
+                      <p><code>node personal-antigravity-device.mjs --login</code></p>
+                    </li>
+                    <li>运行连接命令，再生成连接码并粘贴到终端。连接码 5 分钟内有效。
+                      <p><code id="personalAntigravityConnectCommand"></code></p>
+                      <button id="personalAntigravityPair" type="button" class="settings-app-btn">生成连接码</button>
+                      <code id="personalAntigravityCode"></code>
+                    </li>
+                    <li>在终端选择日常模式或逐条确认，保持连接程序运行。开启日常模式后，你在 Index 网页私人会话中选用个人 Gemini 时，可以直接发送消息。</li>
+                  </ol>
+                  <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">检查连接</button>
                 </div>
               </div>
             </section>
@@ -773,7 +779,6 @@
                   <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
                 </button>
               </div>
-              <button class="modal-btn" id="personalAntigravityHistoryButton" type="button" hidden>引用 Index 上下文</button>
             </div>
             <div class="voice-review-panel" id="voiceReviewPanel" role="status" aria-live="polite" hidden>
               <span class="voice-review-body" id="voiceReviewBody"></span>
@@ -901,27 +906,6 @@
     </div>
   </div>
 </div>
-
-<dialog class="modal index-history-dialog" id="personalAntigravityHistory" aria-labelledby="indexHistoryTitle">
-  <header class="modal-header">
-    <h2 class="modal-title" id="indexHistoryTitle">引用 Index 上下文</h2>
-    <form method="dialog"><button class="modal-close" aria-label="关闭">×</button></form>
-  </header>
-  <div class="modal-body">
-    <form id="indexHistorySearch">
-      <select class="settings-inline-input" id="indexHistoryKind" aria-label="选择资料来源">
-        <option value="history">以前的对话</option>
-        <option value="project-memory">项目记忆</option>
-        <option value="work-summary">工作摘要</option>
-      </select>
-      <input class="settings-inline-input" id="indexHistoryQuery" type="search" maxlength="1000" required placeholder="输入项目名或关键词" aria-label="搜索会话历史">
-      <button class="modal-btn" type="submit">搜索</button>
-    </form>
-    <p class="index-history-note">直接提问会自动匹配相关资料。也可以在这里预览并手动引用。</p>
-    <span id="indexHistoryStatus" role="status"></span>
-    <div id="indexHistoryResults"></div>
-  </div>
-</dialog>
 
 {{BOOTSTRAP_SCRIPT_TAGS}}
 {{EXTRA_BOOTSTRAP_SCRIPTS}}

@@ -142,8 +142,14 @@ async function main() {
   try {
     const code = (await tty.question('粘贴 Index 页面显示的一次性连接码：', { signal: stop.signal })).trim();
     if (!/^[A-Za-z0-9_-]{32}$/.test(code)) throw new Error('连接码格式无效。');
-    ({ token } = await call('redeem', { code }));
-    console.log('已连接 Index。每条请求须在本机确认。按 Ctrl+C 断开。');
+    const mode = await tty.question(
+      '输入 y 开启本次连接的日常模式。你在 Index 网页私人会话主动选用「Antigravity · 个人 Google」时，本机将直接用你的 Google 额度执行，并可按需把你有权查看的 Index 摘录发送给 Google。直接回车则逐条确认：',
+      { signal: stop.signal });
+    const dailyMode = mode.trim().toLowerCase() === 'y';
+    ({ token } = await call('redeem', { code, dailyMode }));
+    console.log(dailyMode
+      ? '已连接 Index，日常模式已开启。按 Ctrl+C 断开。'
+      : '已连接 Index。每条请求须在本机确认。按 Ctrl+C 断开。');
     while (!stop.signal.aborted) {
       const { job } = await call('next');
       if (!job) continue;
@@ -152,9 +158,10 @@ async function main() {
       const confirm = job.indexContextAvailable
         ? '允许本次用本机 Google 账号执行，并按需查询有权查看的 Index 摘录？输入 y 确认：'
         : '用本机 Google 账号执行？输入 y 确认：';
-      const answer = await tty.question(confirm, { signal: stop.signal });
+      const approved = (dailyMode && job.skipConfirmation === true)
+        || (await tty.question(confirm, { signal: stop.signal })).trim().toLowerCase() === 'y';
       let result = { error: '本机用户未确认这次请求。' };
-      if (answer.trim().toLowerCase() === 'y') {
+      if (approved) {
         let contextConfig;
         try {
           const { contextToken } = await call('start', { id: job.id });

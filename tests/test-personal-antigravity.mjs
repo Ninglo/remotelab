@@ -46,10 +46,10 @@ const cookies = new Map();
 
 async function request(path, method, payload, headers = {}) {
   const result = await fetch(base + path, {
-    method, signal: AbortSignal.timeout(12_000), redirect: 'manual',
+    method, signal: AbortSignal.timeout(30_000), redirect: 'manual',
     headers: { ...headers, ...(payload ? { 'Content-Type': 'application/json' } : {}) },
     ...(payload ? { body: JSON.stringify(payload) } : {}),
-  });
+  }).catch(error => { throw new Error(method + ' ' + path + ' failed in fixture', { cause: error }); });
   const text = await result.text();
   return { status: result.status, data: result.headers.get('content-type')?.includes('application/json') ? JSON.parse(text) : text };
 }
@@ -58,11 +58,11 @@ const device = (token, path, payload = {}) => request('/api/personal-antigravity
 const route = '/api/personal-antigravity/';
 const tool = 'antigravity-personal';
 
-async function enroll(who) {
+async function enroll(who, dailyMode) {
   const paired = await call(who, route + 'pair', 'POST', {});
   assert.equal(paired.status, 200, JSON.stringify(paired));
   const { code } = paired.data;
-  const redeemed = await device('', 'redeem', { code });
+  const redeemed = await device('', 'redeem', { code, dailyMode });
   assert.equal(redeemed.status, 200, JSON.stringify(redeemed));
   assert.equal((await device('', 'redeem', { code })).status, 403);
   return redeemed.data.token;
@@ -134,13 +134,6 @@ try {
     projects: [{ id: 'orchid' }, { id: 'private-b' }],
     sessionBindings: [{ sessionId: oldA, projectIds: ['orchid'] }, { sessionId: b, projectIds: ['private-b'] }],
   }));
-  assert.equal((await request(route + 'context?kind=project-memory&q=orchid-bridge', 'GET', undefined,
-    { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
-  const reference = (who, kind) => call(who, route + 'context?kind=' + kind + '&q=orchid-bridge');
-  assert.deepEqual((await reference('a', 'project-memory')).data.references.map(r => r.excerpt), ['orchid-bridge approved decision']);
-  assert.deepEqual((await reference('b', 'project-memory')).data.references.map(r => r.excerpt), ['orchid-bridge other-person project memory']);
-  assert.deepEqual((await reference('a', 'work-summary')).data.references.map(r => r.excerpt), ['orchid-bridge migration summary\nVerified on both clients']);
-  assert.deepEqual((await reference('b', 'work-summary')).data.references.map(r => r.excerpt), ['orchid-bridge other-person summary']);
   const historyRoute = '/api/sessions/search?scope=personal-context&q=orchid-bridge';
   assert.equal((await request(historyRoute, 'GET', undefined, { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
   const hitsA = await call('a', historyRoute);
@@ -163,12 +156,25 @@ try {
   process.env.REMOTELAB_REQUEST_ACCESS_GUARD = policyPath;
   await appendEvents(oldA, [{ type: 'message', role: 'assistant', phase: 'final_answer',
     content: 'orchid-bridge confidential-marker synthetic restricted history' }]);
-  const [tokenA, tokenB] = await Promise.all([enroll('a'), enroll('b')]);
+  const tokenA = await enroll('a', true);
+  assert.deepEqual((await call('a', route + 'status')).data, { connected: true, dailyMode: true });
   let acceptA;
   if (process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE) {
     const { chromium } = await import(process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE);
     const browser = await chromium.launch({ executablePath: process.env.REMOTELAB_TEST_CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
     try {
+      const setupPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      const [setupName, setupValue] = cookies.get('b').split('=');
+      await setupPage.context().addCookies([{ name: setupName, value: setupValue, url: base }]);
+      await setupPage.goto(base + '/?tab=settings');
+      await setupPage.locator('#personalAntigravityNav').click();
+      assert.equal(await setupPage.locator('#personalAntigravityPair').isVisible(), false);
+      await setupPage.getByRole('button', { name: '连接个人 Gemini' }).click();
+      await setupPage.getByRole('link', { name: '下载连接程序' }).waitFor();
+      assert.match(await setupPage.locator('#personalAntigravityConnectCommand').innerText(), /node personal-antigravity-device.mjs/);
+      await setupPage.locator('#personalAntigravityPair').click();
+      await setupPage.waitForFunction(() => document.querySelector('#personalAntigravityCode').textContent.length === 32);
+      await setupPage.close();
       const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
       page.setDefaultTimeout(7000);
       const [name, value] = cookies.get('a').split('=');
@@ -177,31 +183,8 @@ try {
       const picker = page.locator('#inlineToolSelect');
       if (await page.locator('#customModeBtn').isVisible()) await page.locator('#customModeBtn').click();
       await picker.selectOption(tool);
-      await page.locator('#msgInput').fill('请根据以前的回复说明修了什么');
-      await page.locator('#personalAntigravityHistoryButton').click();
-      await page.locator('#indexHistoryQuery').fill('orchid-bridge');
-      await page.getByRole('button', { name: '搜索', exact: true }).click();
-      const result = page.locator('#indexHistoryResults article').filter({ hasText: source.excerpt });
-      await result.waitFor();
-      assert.equal(await page.locator('#indexHistoryResults').getByText('orchid-bridge other-person response').count(), 0);
-      assert.match(await result.getByRole('link').getAttribute('href'), new RegExp(oldA));
-      await result.getByRole('button', { name: '加入草稿' }).click();
-      for (const [kind, expectedText] of [['project-memory', 'orchid-bridge approved decision'], ['work-summary', 'orchid-bridge migration summary']]) {
-        await page.locator('#personalAntigravityHistoryButton').click();
-        await page.locator('#indexHistoryKind').selectOption(kind);
-        await page.locator('#indexHistoryQuery').fill('orchid-bridge');
-        await page.getByRole('button', { name: '搜索', exact: true }).click();
-        const card = page.locator('#indexHistoryResults article').filter({ hasText: expectedText });
-        await card.getByRole('button', { name: '加入草稿' }).click();
-      }
-      const draft = await page.locator('#msgInput').inputValue();
-      assert.match(draft, /请根据以前的回复说明修了什么/);
-      assert.match(draft, /orchid-bridge fix confirmed/);
-      assert.match(draft, /orchid-bridge approved decision/);
-      assert.match(draft, /orchid-bridge migration summary/);
-      assert.match(draft, new RegExp(oldA));
-      assert.doesNotMatch(draft, /hidden-context|other-person response/);
-      assert.equal((await call('a', '/api/sessions/' + a + '/events')).data.latestSeq || 0, 0, 'adding an excerpt does not send');
+      assert.equal(await page.getByRole('button', { name: '引用 Index 上下文' }).count(), 0);
+      assert.equal(await page.locator('#personalAntigravityHistory').count(), 0);
       await page.locator('#msgInput').fill(question);
       const submitted = page.waitForResponse(response => response.request().method() === 'POST'
         && response.url().endsWith('/api/sessions/' + a + '/messages'));
@@ -209,11 +192,13 @@ try {
       const resultResponse = await submitted;
       assert.equal(resultResponse.request().postDataJSON().text, question);
       acceptA = { status: resultResponse.status(), data: await resultResponse.json() };
-      console.log('Browser: manual preview still works and an ordinary question is sent unchanged.');
+      console.log('Browser: guided setup works, the manual context control is absent, and the question is sent unchanged.');
     } finally { await browser.close(); }
   }
   assert.equal((await submit('b', a, 'send as A', 'impersonation-0001')).status, 403);
   acceptA ||= await submit('a', a, question, 'personal-request-0001');
+  const tokenB = await enroll('b');
+  assert.deepEqual((await call('b', route + 'status')).data, { connected: true, dailyMode: false });
   const acceptB = await submit('b', b, question, 'personal-request-0002');
   assert.equal(acceptA.status, 202, JSON.stringify(acceptA));
   assert.equal(acceptB.status, 202, JSON.stringify(acceptB));
@@ -222,6 +207,8 @@ try {
     assert.equal(job.prompt, question, 'the relay sends no retrieved context before a tool call');
     assert.equal(job.indexContextAvailable, true);
   }
+  assert.equal(jobA.data.job.skipConfirmation, true, 'opted-in private web requests skip confirmation');
+  assert.equal(jobB.data.job.skipConfirmation, false, 'existing device programs default to per-request confirmation');
   const jobIdA = jobA.data.job.id;
   const jobIdB = jobB.data.job.id;
   const searchInput = { id: jobIdA, kind: 'history', query: 'orchid-bridge' };
@@ -287,6 +274,12 @@ try {
   assert.equal(otherHistory.status, 200);
   assert.match(JSON.stringify(otherHistory.data), /orchid-bridge other-person response/);
   assert.doesNotMatch(JSON.stringify(otherHistory.data), /fix confirmed|from Gemini/);
+  for (const [kind, expected] of [['project-memory', 'orchid-bridge other-person project memory'],
+    ['work-summary', 'orchid-bridge other-person summary']]) {
+    const { status, data } = await device(contextB, 'context', { ...searchInput, id: jobIdB, kind });
+    assert.equal(status, 200);
+    assert.deepEqual(data.references.map(item => item.excerpt), [expected]);
+  }
   for (const [token, id, answer] of [[tokenA, jobIdA, 'reply from A'], [tokenB, jobIdB, 'reply from B']]) {
     assert.equal((await device(token, 'result', { id, response: answer })).status, 200);
     assert.equal((await device(token, 'result', { id, response: answer })).status, 404);

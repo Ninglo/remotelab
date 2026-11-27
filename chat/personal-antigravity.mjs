@@ -53,12 +53,12 @@ export function createPersonalAntigravityRelay() {
     device.timer.unref();
   }
 
-  function redeem(code) {
+  function redeem(code, dailyMode = false) {
     const pair = codes.get(hash(code));
     if (!pair) throw fail('连接码无效或已过期。', 403);
     disconnect(pair.personId);
     const token = secret();
-    const device = { id: secret(), key: hash(token), personId: pair.personId, jobs: new Map() };
+    const device = { id: secret(), key: hash(token), personId: pair.personId, dailyMode, jobs: new Map() };
     devices.set(device.personId, device);
     tokens.set(device.key, device);
     refresh(device);
@@ -73,7 +73,8 @@ export function createPersonalAntigravityRelay() {
   }
 
   function status(personId) {
-    return { connected: devices.has(personId) };
+    const device = devices.get(personId);
+    return device ? { connected: true, dailyMode: device.dailyMode } : { connected: false };
   }
 
   function requireDevice(personId) {
@@ -127,7 +128,8 @@ export function createPersonalAntigravityRelay() {
     if (!job) return null;
     // A claimed request is never redelivered, even if the response was lost.
     job.claimed = true;
-    return { id: job.id, ...job.input };
+    const { dailyModeEligible, ...input } = job.input;
+    return { id: job.id, ...input, skipConfirmation: device.dailyMode && dailyModeEligible === true };
   }
 
   function start(device, id) {
