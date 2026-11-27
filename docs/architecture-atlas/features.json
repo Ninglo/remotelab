@@ -1191,7 +1191,7 @@
           "name": "近期报错",
           "purpose": "统一记录已接入的系统报错，同类 24 小时内独立发生第 3 次通知原监控群并附 Agent 原因分析和修改建议。",
           "entry": "监管中心 → 总览 → 效果下方的「近期报错」，展开直接看每次的北京时间和脱敏报错首行。",
-          "condition": "实例维护者显式启用，按原管理员范围读取；同一请求重试不重复计算升级次数。未覆盖来源单列；群通知只共享技术诊断，不转发私有原文。分析 Agent 不执行命令或自动修复。",
+          "condition": "实例维护者显式启用，按原管理员范围读取；同一请求重试不重复计算升级次数。未覆盖来源单列；证据不足不推群，能共享的实际报错和对应会话跳转随告警提供，原会话照常鉴权。分析 Agent 不执行命令或自动修复。",
           "example": "连续三次独立投递失败，监控群收到报错和修改建议；总览可展开核对每条时间和原文。",
           "sources": [
             "docs/monitoring.md",
@@ -1199,6 +1199,7 @@
             "chat/recent-error-alerts.mjs",
             "chat/prompt-review-model.mjs",
             "chat/router-recent-errors.mjs",
+            "chat/session-access.mjs",
             "chat/recurring-schedules.mjs",
             "chat/source-deliveries.mjs",
             "chat/triggers.mjs",

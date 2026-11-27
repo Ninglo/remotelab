@@ -4,12 +4,26 @@ import { getRun } from './runs.mjs';
 import { canAccessSession, isSessionAdministrator, hrBrowserRestricted } from './session-access.mjs';
 
 const endpoint = '/api/monitoring/recent-errors';
+const sourcePath = '/monitoring/recent-error-source';
 const fingerprint = /^[a-f0-9]{64}$/;
 
 export async function handleRecentErrors({ req, res, pathname, authSession, writeJson, monitor = recentErrors,
   enabled = recentErrorsEnabled, canRead = canAccessSession, loadRun = getRun }) {
-  if (pathname !== endpoint && pathname !== `${endpoint}/repair`) return false;
+  if (![endpoint, `${endpoint}/repair`, sourcePath].includes(pathname)) return false;
   const reply = (status, body) => { writeJson(res, status, body); return true; };
+  if (pathname === sourcePath) {
+    if (req.method !== 'GET') return reply(405, { error: 'Method not allowed' });
+    const missing = () => reply(404, { error: '原会话不可查看或记录已过期' });
+    if (authSession?.authKind === 'service' || !authSession?.personId || !getSessionToken(req) || req._bearerAuthSession) return missing();
+    const id = new URL(req.url, 'http://local').searchParams.get('id');
+    if (!fingerprint.test(id || '')) return missing();
+    try {
+      const sessionId = await enabled() ? await monitor.sourceSession(id) : null;
+      if (!sessionId || !await canRead(authSession, sessionId)) return missing();
+      res.writeHead(302, { Location: `/?tab=sessions&session=${encodeURIComponent(sessionId)}`, 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' });
+      res.end(); return true;
+    } catch { return reply(503, { error: '原会话暂不可用' }); }
+  }
   if (!isSessionAdministrator(authSession) || hrBrowserRestricted(authSession)) return reply(403, { error: 'Administrator access required' });
   try {
     if (!await enabled()) return reply(404, { error: 'Recent errors is not enabled' });

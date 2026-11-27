@@ -1,14 +1,14 @@
-import './isolate-test-environment.mjs';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRecentErrorMonitor } from '../lib/recent-errors.mjs';
-import { dispatchRecentErrorAlerts, groupErrorLine } from '../chat/recent-error-alerts.mjs';
-import { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery } from '../chat/source-deliveries.mjs';
-
 const tmp = await mkdtemp(join(tmpdir(),'recent-error-alert-test-'));
+setIsolatedTestHome(tmp);
 try {
+  const { createRecentErrorMonitor } = await import('../lib/recent-errors.mjs');
+  const { dispatchRecentErrorAlerts, groupErrorLine } = await import('../chat/recent-error-alerts.mjs');
+  const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
   let now=Date.parse('2026-11-27T06:00:00Z');
   const since=now, monitor=createRecentErrorMonitor({file:join(tmp,'alerts'),now:()=>now});
   const config={ enabled:true, chatId:'oc_fixture', profile:'bot-2' };
@@ -34,7 +34,8 @@ try {
   const queued=await run(); assert.equal(analyses,1); assert.equal(sends,1);
   const { delivery, leaseId }=await claimSourceDelivery({connector:'feishu',sourceRouteId:'bot-2'});
   assert.equal(delivery.id,queued.queued); assert.equal(delivery.target.chatId,'oc_fixture');
-  assert.match(delivery.text,/同类报错 · 3 次/); assert.equal(delivery.text.split(line).length-1,3);
+  assert.match(delivery.text,/同类报错 · 3 次/);
+  assert.equal(delivery.text.split('\n').filter(row=>row.includes('北京时间') && row.endsWith(line)).length,3);
   assert.match(delivery.text,/北京时间/); assert.match(delivery.text,/可能原因：可能是执行进程异常终止/); assert.match(delivery.text,/修改建议：对照/);
   await completeSourceDelivery(delivery.id,leaseId,{messageId:'om_fixture'});
   await run(); assert.equal(sends,1); assert.equal(analyses,1);
@@ -43,9 +44,27 @@ try {
   await run(); assert.equal(sends,1);
   now+=86400_000+1; for(const id of ['g','h','i'])await record(id);
   config.chatId='oc_changed'; await run(); config.chatId='oc_fixture'; assert.equal(sends,1,'changed target is not authorized');
-  await run({analyze:async()=>{throw Error('model offline');}}); assert.equal(sends,2);
-  const fallback=await claimSourceDelivery({connector:'feishu',sourceRouteId:'bot-2'});
-  assert.match(fallback.delivery.text,/本次 Agent 未返回可用分析/);
+  await run({analyze:async()=>{throw Error('model offline');}}); assert.equal(sends,1,'no generic analysis alerts');
+  for(const id of ['gate-a','gate-b','gate-c']) await monitor.record('schedule-gate',{
+    operation:id, error:'Gate timed out after 30s', sessionId:'private_fixture_session', reference:'private_task',
+  });
+  await run({publicBase:'https://index.example/',analyze:async evidence=>{
+    assert.match(evidence.confirmedCause,/30 秒/);
+    assert(!JSON.stringify(evidence).includes('private_fixture_session'));
+    throw Error('model offline');
+  }});
+  const gate=await claimSourceDelivery({connector:'feishu',sourceRouteId:'bot-2'});
+  assert.match(gate.delivery.text,/已确认：前置检查脚本在 30 秒内没有返回/);
+  assert.equal(gate.delivery.text.split('Gate timed out after 30s').length-1,3);
+  const link=gate.delivery.text.match(/https:\/\/index\.example\/monitoring\/recent-error-source\?id=([a-f0-9]{64})/);
+  assert(link); assert.equal(await monitor.sourceSession(link[1]),'private_fixture_session');
+  assert(!gate.delivery.text.includes('private_fixture_session'));
+  assert(!gate.delivery.text.includes('private_task'));
+  for(const id of ['private-a','private-b','private-c']) await monitor.record('feishu-inbox',{
+    operation:id, error:'Private text not suitable for publishing', sessionId:'private_fixture_session',
+  });
+  assert.equal((await run({analyze:async()=>assert.fail('no Agent for unshareable error')})).skipped,'insufficient-evidence');
+  assert.equal(sends,2);
   assert.equal(groupErrorLine('ETIMEDOUT token=not-shareable'),'ETIMEDOUT');
   assert.equal(groupErrorLine('Customer-provided contents that must not leave the session'),'');
   console.log('recent error alerts: third independent error + Agent advice, target and mute checks, original outbox, receipts, cooldown, privacy and fallback passed');

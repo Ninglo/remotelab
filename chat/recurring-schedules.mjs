@@ -748,7 +748,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
           skipped += 1;
         } else if (gateError) {
           await observeRecentError('schedule-gate', { operation: [current.id, occurrences.latestAt], error: gateError,
-            at: now, sessionId: current.sourceSessionId });
+            at: now, sessionId: current.sourceSessionId, reference: current.id });
           current.checkCount += 1;
           current.gateErrorCount += 1;
           current.lastCheckAt = occurrences.latestAt;
@@ -819,7 +819,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
     } catch (error) {
       failed += 1;
       await observeRecentError('schedule-gate', { operation: [candidate.id, occurrenceAt], attempt: 'materialize',
-        error, at: now, sessionId: candidate.sourceSessionId });
+        error, at: now, sessionId: candidate.sourceSessionId, reference: candidate.id });
       await withScheduleMutation(async (schedules, save) => {
         const current = schedules.find((entry) => entry.id === candidate.id);
         if (!current) return;
