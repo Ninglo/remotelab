@@ -1314,6 +1314,7 @@ function switchTab(tab, { syncState = true } = {}) {
   if (showingTasks) void window.RemoteLabTaskCenter?.onTabShown?.();
   if (showingSettings) window.restoreMonitoringSettingsPosition?.();
   if (showingSettings) window.remotelabPersonalCodex?.shown();
+  if (showingSettings) window.remotelabPersonalAntigravity?.shown();
   if (!showingSessions && typeof isDesktop === "boolean" && !isDesktop && typeof closeSidebarFn === "function") {
     closeSidebarFn();
   }

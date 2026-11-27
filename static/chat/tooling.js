@@ -114,7 +114,7 @@ function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
 
 function findCurrentToolModelRecord(modelId = selectedModel) {
   if (!Array.isArray(currentToolModels) || currentToolModels.length === 0) return null;
-  if ((selectedTool === "claude" || selectedTool === "antigravity") && !modelId) return null;
+  if ((selectedTool === "claude" || ["antigravity", "antigravity-personal"].includes(selectedTool)) && !modelId) return null;
   if (modelId) {
     const matched = currentToolModels.find((model) => model.id === modelId);
     if (matched) return matched;
@@ -147,7 +147,7 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
       ? reasoning.levels || []
       : null;
   if (currentToolReasoningKind === "enum") {
-    const fixedAntigravityEffort = selectedTool === "antigravity" && currentToolEffortLevels.length === 1;
+    const fixedAntigravityEffort = ["antigravity", "antigravity-personal"].includes(selectedTool) && currentToolEffortLevels.length === 1;
     effortSelect.style.display = fixedAntigravityEffort ? "none" : "";
     effortSelect.innerHTML = "";
     for (const level of currentToolEffortLevels) {
@@ -974,7 +974,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     const requestedModel = concreteCodex && attachedModel === "auto"
       ? defaultModel
       : attachedModel || (!currentSessionId ? defaultModel : savedModel);
-    const antigravityVariant = toolId === "antigravity"
+    const antigravityVariant = ["antigravity", "antigravity-personal"].includes(toolId)
       ? resolveAntigravityPickerVariant(requestedModel)
       : null;
 
@@ -1007,7 +1007,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       selectedModelProvider = "";
       inlineProviderSelect.innerHTML = "";
       inlineProviderSelect.style.display = "none";
-      const nativeModelDefault = (toolId === "claude" || toolId === "antigravity")
+      const nativeModelDefault = (toolId === "claude" || ["antigravity", "antigravity-personal"].includes(toolId))
         && sessionPreferences?.hasModel
         && sessionPreferences.model === "";
       selectedModel = nativeModelDefault ? "" : (antigravityVariant?.model || requestedModel);

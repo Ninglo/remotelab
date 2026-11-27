@@ -342,6 +342,35 @@
           ]
         },
         {
+          "id": "personal-antigravity",
+          "name": "个人 Google 账号调用 Antigravity",
+          "purpose": "员工在本机登录自己的 Google 账号，用本人的 Antigravity 额度回答 Index 会话。",
+          "entry": "设置 → 我的 Antigravity下载程序并配对。在会话中选择「Antigravity · 个人 Google」。",
+          "condition": "由实例开关启用。保持本机终端在线，每条文本请求在本机确认。Google 凭据留在本机，按请求发起人路由，断开后重新配对。",
+          "example": "两名员工各自配对设备后，同时在各自会话发消息，回复分别回到各自会话。",
+          "sources": [
+            "docs/personal-antigravity.md",
+            "chat/personal-antigravity.mjs",
+            "chat/router-personal-antigravity.mjs",
+            "chat/runner-personal-antigravity.mjs",
+            "chat/models.mjs",
+            "chat/process-runner.mjs",
+            "chat/router.mjs",
+            "chat/session-manager.mjs",
+            "chat/session-state-classifier.mjs",
+            "lib/tools.mjs",
+            "scripts/personal-antigravity-device.mjs",
+            "scripts/run-with-clean-instance-env.mjs",
+            "static/chat/bootstrap.js",
+            "static/chat/compose.js",
+            "static/chat/init.js",
+            "static/chat/personal-antigravity.js",
+            "static/chat/tooling.js",
+            "templates/chat.html",
+            "tests/test-personal-antigravity.mjs"
+          ]
+        },
+        {
           "id": "accounts",
           "name": "个人 Codex 绑定、公共账号优先级与并发配置",
           "purpose": "个人账号供本人优先使用，确认耗尽后提醒并转公共池；公共池按管理员设置的优先级和并发上限分配，满载时顺延或等待。",

@@ -1,3 +1,4 @@
+import { PERSONAL_ANTIGRAVITY_TOOL } from './personal-antigravity.mjs';
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { readLastTurnEvents } from './history.mjs';
@@ -278,6 +279,7 @@ function formatWorkSummaryForPrompt(workSummary) {
 }
 
 export function triggerSessionStateSuggestion(sessionMeta, options = {}) {
+  if (sessionMeta.tool === PERSONAL_ANTIGRAVITY_TOOL) return Promise.resolve({ ok: false, skipped: true });
   console.log(`[session-state] triggerSessionStateSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
   return runSessionStateSuggestion(sessionMeta, options).catch((err) => {
     console.error(`[session-state] Session state suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);

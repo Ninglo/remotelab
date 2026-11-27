@@ -91,6 +91,8 @@ import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleUsageRoutes } from './router-usage-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
+import { handlePersonalAntigravityRoutes, handlePersonalAntigravityDeviceRoutes } from './router-personal-antigravity.mjs';
+import { personalAntigravityEnabled } from './personal-antigravity.mjs';
 import { handlePersonalCodexRoutes } from './router-personal-codex-routes.mjs';
 import { isPersonalCodexAvailable } from './personal-codex-access.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
@@ -666,7 +668,11 @@ function isSessionVisibleToAuthSession(authSession, session) {
 function buildAuthInfo(authSession) {
   if (!authSession) return null;
   const info = {
-    features: { personalCodexBinding: isPersonalCodexAvailable(authSession) },
+    features: {
+      personalCodexBinding: isPersonalCodexAvailable(authSession),
+      personalAntigravityBinding: personalAntigravityEnabled && authSession.authKind !== 'service'
+        && Boolean(authSession.personId && authSession.personId !== 'person_system'),
+    },
     person: {
       id: authSession.personId,
       name: authSession.personName,
@@ -1467,6 +1473,7 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (await handlePersonalAntigravityDeviceRoutes({ req, res, pathname, writeJson })) return;
   if (await handleLocalBridgePublicRoutes({
     req,
     res,
@@ -1490,6 +1497,7 @@ export async function handleRequest(req, res) {
   if (!await requireAuth(req, res, pathname)) return;
   const authSession = getAuthSession(req);
   if (await handleHrAccessRoutes({req,res,pathname,authSession,writeJson})) return;
+  if (await handlePersonalAntigravityRoutes({ req, res, pathname, authSession, writeJson })) return;
   if (await handlePersonalCodexRoutes({ req, res, pathname, authSession, writeJson })) return;
   res.setHeader('Cache-Control', 'private, no-store');
   if ((!isSessionAdministrator(authSession) || hrBrowserRestricted(authSession)) && !memberRouteAllowed(req.method, pathname, authSession?.personId)) {

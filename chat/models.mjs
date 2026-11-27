@@ -358,7 +358,7 @@ async function getUnrestrictedModelsForTool(toolId, options = {}) {
   if (toolId === 'pi') {
     return discoverPiModels({ refresh: options.refresh === true });
   }
-  if (toolId === 'antigravity') {
+  if (toolId === 'antigravity' || toolId === 'antigravity-personal') {
     return discoverAntigravityModels();
   }
 

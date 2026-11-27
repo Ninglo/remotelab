@@ -1,6 +1,8 @@
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { createPiAdapter, buildPiArgs } from './adapters/pi.mjs';
+import { fileURLToPath } from 'node:url';
+import { PERSONAL_ANTIGRAVITY_TOOL, personalAntigravityEnabled } from './personal-antigravity.mjs';
 import { createAntigravityAdapter, buildAntigravityArgs } from './adapters/antigravity.mjs';
 import { resolvePiModelRoute } from './pi-models.mjs';
 import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
@@ -116,6 +118,16 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
 }
 
 export async function createToolInvocation(toolId, prompt, options = {}) {
+  if (toolId === PERSONAL_ANTIGRAVITY_TOOL) {
+    if (!personalAntigravityEnabled) throw new Error('个人 Antigravity 尚未启用。');
+    return {
+      ...buildRuntimeInvocation('antigravity-stream-json', '', {}, toolId),
+      command: process.execPath,
+      inputMode: 'batch',
+      envOverrides: {},
+      args: [fileURLToPath(new URL('./runner-personal-antigravity.mjs', import.meta.url))],
+    };
+  }
   const tool = await getToolDefinitionAsync(toolId);
   const command = tool?.command || await getToolCommandAsync(toolId);
   const envOverrides = buildToolProcessEnvOverrides(tool || { id: toolId });

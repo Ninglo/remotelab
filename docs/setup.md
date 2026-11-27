@@ -259,3 +259,7 @@ The AI should do the rest inside the conversation:
 ## Repair rule
 
 If validation fails, the AI should stay in the conversation, inspect logs, retry or repair the machine, and make exhausted failures explicit. Keep manual instructions only for inaccessible browser/credential actions, hard authorization, or unscoped irreversible high-impact steps, and preserve a direct resume path instead of restarting the whole questioning flow.
+
+### Personal Google login for Antigravity
+
+[Enable personal Antigravity](personal-antigravity.md) to let each Index user connect a locally signed-in Antigravity CLI and answer with their own Google account.

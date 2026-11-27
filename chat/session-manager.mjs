@@ -1,3 +1,5 @@
+import { findIdentity, loadAuthDocument } from '../lib/auth-config.mjs';
+import { PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled } from './personal-antigravity.mjs';
 import { refreshRuntimeHrPolicy, runtimeHrPolicy, resolveHrActor, hrActorNotice } from '../lib/hr-policy.mjs';
 import { evaluateRequestAccess } from './request-access-guard.mjs';
 import { observeRecentError } from '../lib/recent-errors.mjs';
@@ -1492,6 +1494,9 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
   }
 
   const tool = typeof toolId === 'string' ? toolId.trim() : '';
+  if (tool === PERSONAL_ANTIGRAVITY_TOOL) {
+    return { hasResume: false, claudeSessionId: null, codexThreadId: null, antigravityConversationId: null };
+  }
   const family = typeof runtimeFamily === 'string' && runtimeFamily.trim()
     ? runtimeFamily.trim()
     : (typeof options.runtimeFamily === 'string' ? options.runtimeFamily.trim() : '');
@@ -3710,6 +3715,22 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   )) {
     options.codexAccountPolicy = null;
   }
+  if (runtimeSelection.tool === PERSONAL_ANTIGRAVITY_TOOL) {
+    if (!personalAntigravityEnabled) throw new Error('个人 Antigravity 尚未启用。');
+    if (priorRequest) options.personalAntigravityDeviceId = priorRequest.options.personalAntigravityDeviceId;
+    else {
+      const auth = await loadAuthDocument({ persistMigration: false });
+      const requester = findIdentity(auth, options.initiatedByIdentityId)?.person;
+      if (!requester || requester.id === SYSTEM_PERSON_ID || requester.id !== options.viewPersonId || options.internalOperation
+          || options.scheduleId || options.triggerId || options.recordUserMessage === false
+          || options.automationAttribution || options.workReference || options.confirmedHandoff) {
+        throw new Error('请用本人的 Index 会话发起个人 Antigravity 调用。');
+      }
+      if (savedImages.length) throw new Error('个人 Antigravity 当前支持文本消息。');
+      options.personalAntigravityDeviceId = personalAntigravity.requireDevice(requester.id);
+    }
+    options.skipSessionContinuation = true;
+  }
   const workboardPeople = await loadWorkboardOptIns();
   const workboardEnabled = messageReplyPolicy ? session.groupFeed !== true
     && (messageReplyPolicy.checklist || replyProgressUsesCard(messageReplyPolicy))
@@ -4110,6 +4131,9 @@ async function prepareRequestRunOnce(record) {
       modelContextSlots: promptPackage.modelContextSlots,
       internalOperation: options.internalOperation || null,
       viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
+      ...(effectiveTool === PERSONAL_ANTIGRAVITY_TOOL
+        ? { personalAntigravityDeviceId: options.personalAntigravityDeviceId,
+          personalAntigravityFreshThread: options.freshThread === true } : {}),
       codexAccountPolicy: options.codexAccountPolicy || null,
       ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
       ...(options.autoRoutingReceipt ? { autoRoutingReceipt: options.autoRoutingReceipt } : {}),

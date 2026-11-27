@@ -316,6 +316,7 @@
             <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
           </header>
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
+            <a class="settings-toc-link" href="#settings-personal-antigravity" data-settings-target="settings-personal-antigravity" id="personalAntigravityNav" hidden>我的 Antigravity</a>
             <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title data-personal-codex-access hidden>我的 Codex</a>
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
@@ -327,6 +328,28 @@
           </nav>
 
           <div class="settings-content">
+            <section class="settings-group" id="settings-personal-antigravity" data-settings-section hidden>
+              <div class="settings-group-header">
+                <h3>我的 Antigravity</h3>
+                <p>在你自己的电脑上登录 Google，用本人的额度回答 Index 消息。</p>
+              </div>
+              <div class="settings-group-body personal-codex">
+                <p id="personalAntigravityStatus" role="status">未连接</p>
+                <div class="settings-app-actions">
+                  <a href="api/personal-antigravity/worker" download class="settings-app-btn">下载连接程序</a>
+                  <button id="personalAntigravityPair" type="button" class="settings-app-btn">生成连接码</button>
+                  <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">刷新状态</button>
+                  <button id="personalAntigravityDisconnect" type="button" class="settings-app-btn" hidden>断开</button>
+                </div>
+                <div id="personalAntigravityLogin" hidden>
+                  <p>在装有 Node.js 和 Antigravity CLI 的电脑上执行登录命令，用你的 Google 账号登录，退出 Antigravity 后执行连接命令。</p>
+                  <p><code>node personal-antigravity-device.mjs --login</code></p>
+                  <p><code id="personalAntigravityConnectCommand"></code></p>
+                  <p>在终端输入连接码 <code id="personalAntigravityCode"></code>，5 分钟内有效。</p>
+                  <p>回到 Index，选择「Antigravity · 个人 Google」发送文本消息，再在本机终端确认。</p>
+                </div>
+              </div>
+            </section>
             <section class="settings-group" id="settings-personal-codex" data-settings-section data-personal-codex-access hidden>
               <header class="settings-group-header">
                 <h3 data-personal-codex-title>我的 Codex</h3>
@@ -916,6 +939,7 @@
 <script src="chat/voice-shortcut.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/personal-codex.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/personal-antigravity.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/message-reply-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/personal-memory-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

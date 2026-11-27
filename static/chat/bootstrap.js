@@ -22,7 +22,10 @@ function normalizeBootstrapAuthInfo(raw) {
   if (!personId || !identityId) return null;
   const preferredLanguage = normalizeBootstrapText(raw.preferredLanguage);
   const info = {
-    features: { personalCodexBinding: raw.features?.personalCodexBinding === true },
+    features: {
+      personalCodexBinding: raw.features?.personalCodexBinding === true,
+      personalAntigravityBinding: raw.features?.personalAntigravityBinding === true,
+    },
     person: {
       id: personId,
       name: normalizeBootstrapText(person.name) || personId,

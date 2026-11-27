@@ -366,6 +366,7 @@ async function initApp() {
   const authInfo = await resolveInitialAuthInfo();
   currentPerson = authInfo?.person ? { ...authInfo.person } : currentPerson;
   window.remotelabPersonalCodex?.init(authInfo);
+  window.remotelabPersonalAntigravity?.init(authInfo);
   const addPersonButton = document.getElementById('settingsPersonCreateToggle');
   if (addPersonButton) addPersonButton.hidden = !currentPerson?.administrator;
   const administratorLink = document.getElementById('administratorManagementLink');
