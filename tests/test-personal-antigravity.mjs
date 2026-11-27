@@ -58,23 +58,23 @@ const device = (token, path, payload = {}) => request('/api/personal-antigravity
 const route = '/api/personal-antigravity/';
 const tool = 'antigravity-personal';
 
-async function enroll(who, dailyMode) {
+async function enroll(who, dailyMode, modelList) {
   const paired = await call(who, route + 'pair', 'POST', {});
   assert.equal(paired.status, 200, JSON.stringify(paired));
   const { code } = paired.data;
-  const redeemed = await device('', 'redeem', { code, dailyMode });
+  const redeemed = await device('', 'redeem', { code, dailyMode, modelList });
   assert.equal(redeemed.status, 200, JSON.stringify(redeemed));
   assert.equal((await device('', 'redeem', { code })).status, 403);
   return redeemed.data.token;
 }
-async function submit(who, session, text, requestId) {
-  return call(who, '/api/sessions/' + session + '/messages', 'POST', { text, tool, requestId });
+async function submit(who, session, text, requestId, options = {}) {
+  return call(who, '/api/sessions/' + session + '/messages', 'POST', { text, tool, requestId, ...options });
 }
-async function completed(who, runId) {
+async function completed(who, runId, { finalized = false } = {}) {
   const deadline = Date.now() + 6_000;
   while (Date.now() < deadline) {
     const { data } = await call(who, '/api/runs/' + runId);
-    if (['completed', 'failed', 'cancelled'].includes(data?.run?.state)) return data.run;
+    if (['completed', 'failed', 'cancelled'].includes(data?.run?.state) && (!finalized || data.run.finalizedAt)) return data.run;
     await delay(100);
   }
   throw new Error('run did not finish');
@@ -92,7 +92,9 @@ try {
   assert.equal((await call('a', '/api/auth/me')).data.features.personalAntigravityBinding, true);
   assert.equal((await call('a', '/')).data.includes('我的 Antigravity'), true);
   assert.equal((await call('a', route + 'worker')).status, 200);
-  assert.match(JSON.stringify((await call('a', '/api/models?tool=' + tool)).data), /gemini-fixture-high/);
+  const modelRoute = '/api/models?tool=' + tool;
+  assert.deepEqual((await call('a', modelRoute)).data.models, []);
+  assert.match(JSON.stringify((await call('a', '/api/models?tool=antigravity')).data), /gemini-fixture-high/);
   assert.equal((await request(route + 'pair', 'POST', {}, { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
   const [a, b] = await Promise.all(people.map(async person => {
     const { status, data } = await call(person.id, '/api/sessions', 'POST', { tool, folder: home, name: 'Personal' });
@@ -156,7 +158,11 @@ try {
   process.env.REMOTELAB_REQUEST_ACCESS_GUARD = policyPath;
   await appendEvents(oldA, [{ type: 'message', role: 'assistant', phase: 'final_answer',
     content: 'orchid-bridge confidential-marker synthetic restricted history' }]);
-  const tokenA = await enroll('a', true);
+  const tokenA = await enroll('a', true, [
+    'gemini-neon-medium\tGemini Neon (Medium)',
+    'gemini-neon-high\tGemini Neon (High)',
+  ].join('\n'));
+  assert.deepEqual((await call('a', modelRoute)).data.models.map(model => model.id), ['gemini-neon']);
   assert.deepEqual((await call('a', route + 'status')).data, { connected: true, dailyMode: true });
   let acceptA;
   if (process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE) {
@@ -183,6 +189,8 @@ try {
       const picker = page.locator('#inlineToolSelect');
       if (await page.locator('#customModeBtn').isVisible()) await page.locator('#customModeBtn').click();
       await picker.selectOption(tool);
+      await page.locator('#inlineModelSelect option[value="gemini-neon"]').waitFor({ state: 'attached' });
+      assert.equal(await page.locator('#inlineModelSelect option[value="gemini-fixture-high"]').count(), 0);
       assert.equal(await page.getByRole('button', { name: '引用 Index 上下文' }).count(), 0);
       assert.equal(await page.locator('#personalAntigravityHistory').count(), 0);
       await page.locator('#msgInput').fill(question);
@@ -198,6 +206,10 @@ try {
   assert.equal((await submit('b', a, 'send as A', 'impersonation-0001')).status, 403);
   acceptA ||= await submit('a', a, question, 'personal-request-0001');
   const tokenB = await enroll('b');
+  assert.deepEqual((await call('b', modelRoute)).data.models, [], 'old devices cannot inherit another account catalog');
+  assert.deepEqual((await request(modelRoute, 'GET', undefined, {
+    Authorization: 'Bearer ' + 'f'.repeat(64),
+  })).data.models, []);
   assert.deepEqual((await call('b', route + 'status')).data, { connected: true, dailyMode: false });
   const acceptB = await submit('b', b, question, 'personal-request-0002');
   assert.equal(acceptA.status, 202, JSON.stringify(acceptA));
@@ -294,6 +306,20 @@ try {
   assert.doesNotMatch(JSON.stringify(eventsA.data), /orchid-bridge migration summary/, 'tool results do not change the stored user message');
   assert.match(JSON.stringify(eventsB.data), /reply from B/);
   assert.doesNotMatch(JSON.stringify(eventsA.data), /reply from B/);
+  const failure = await submit('a', a, 'simulated local CLI rejection', 'personal-request-terminal-error', {
+    model: 'gemini-neon',
+    effort: 'high',
+  });
+  assert.equal(failure.status, 202);
+  const failedJob = (await device(tokenA, 'next')).data.job;
+  assert.equal(failedJob.model, 'gemini-neon-high');
+  assert.equal((await device(tokenA, 'start', { id: failedJob.id })).status, 200);
+  const localError = 'Fixture: the personal CLI returned a model or quota error';
+  assert.equal((await device(tokenA, 'result', { id: failedJob.id, error: localError })).status, 200);
+  const failedRun = await completed('a', failure.data.runId || failure.data.run.id, { finalized: true });
+  assert.equal(failedRun.state, 'failed');
+  const visibleFailure = await call('a', '/api/sessions/' + a + '/events?filter=visible');
+  assert.ok(JSON.stringify(visibleFailure.data).includes(localError));
   const stopped = await submit('a', a, 'stop during local execution', 'personal-request-stop-01');
   assert.equal(stopped.status, 202, JSON.stringify(stopped));
   const stoppedJob = (await device(tokenA, 'next')).data.job;
@@ -306,6 +332,7 @@ try {
   assert.equal((await device(tokenA, 'result', { id: stoppedJob.id, response: 'late response' })).status, 404);
   assert.equal((await completed('a', stopped.data.run.id)).state, 'cancelled');
   assert.equal((await call('a', route + 'disconnect', 'POST', {})).status, 200);
+  assert.deepEqual((await call('a', modelRoute)).data.models, []);
   assert.equal((await device(tokenA, 'next')).status, 403);
   assert.equal((await call('b', route + 'status')).data.connected, true);
   console.log('Personal Antigravity: on-demand MCP context, device routing, cancellation and account isolation passed.');

@@ -43,6 +43,7 @@ import {
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
+import { PERSONAL_ANTIGRAVITY_TOOL } from './personal-antigravity.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { getAutomationResourceSnapshot } from './automation-resources.mjs';
 import { backfillBootstrapSessions } from './bootstrap-sessions.mjs';
@@ -1843,6 +1844,13 @@ export async function handleControlRoutes({
   if (pathname === '/api/models' && req.method === 'GET') {
     const toolId = parsedUrl.query ? parsedUrl.query.tool || '' : '';
     const refresh = ['1', 'true'].includes(String(parsedUrl.query?.refresh || '').toLowerCase());
+    if (toolId === PERSONAL_ANTIGRAVITY_TOOL) {
+      const personId = authSession?.authKind === 'service' ? undefined : authSession?.personId;
+      const result = await getModelsForTool(toolId, { personId });
+      res.setHeader('Cache-Control', 'private, no-store');
+      writeJson(res, 200, result);
+      return true;
+    }
     const result = await getModelsForTool(toolId, { refresh });
     writeJsonCached(req, res, result);
     return true;

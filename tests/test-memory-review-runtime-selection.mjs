@@ -27,6 +27,7 @@ try {
   assert.equal(memoryReviewRuntimeSelection('claude').model, undefined, 'do not force an OpenAI model on other harnesses');
   const manager = await readFile(new URL('../chat/session-manager.mjs', import.meta.url), 'utf8');
   const scheduling = manager.slice(manager.indexOf('function scheduleDetachedRunMemoryWriteback('), manager.indexOf('\nasync function syncDetachedRun('));
+  assert.ok(scheduling.includes('(finalizedRun.tool || session.tool) === PERSONAL_ANTIGRAVITY_TOOL'));
   assert.ok(scheduling.includes('...memoryReviewRuntimeSelection(finalizedRun.tool || session.tool)'));
   assert.ok(!scheduling.includes('PRODUCT_DEFAULT_CODEX_'), 'review must not follow foreground defaults');
   assert.ok(scheduling.includes("operation: 'memory_writeback_review'"));

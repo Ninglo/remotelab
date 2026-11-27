@@ -2059,7 +2059,8 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 
 
 async function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
-  if (manifest?.internalOperation || isInternalSession(session)) {
+  if (manifest?.internalOperation || isInternalSession(session)
+      || (finalizedRun.tool || session.tool) === PERSONAL_ANTIGRAVITY_TOOL) {
     return false;
   }
   // The completion system is already detached. Return the real promise so its

@@ -98,6 +98,24 @@ async function configureContextTool(profile, endpoint, job, contextToken) {
   return config;
 }
 
+function describeLocalFailure(error) {
+  if (error.code === 'EEXIST') return '本机 Index 专用 Antigravity 配置已被占用。请关闭其他连接终端后重试。';
+  if (error.code === 'ENOENT') return '本机找不到 agy。请检查 Antigravity CLI 的安装和 PATH。';
+  if (error.code === 'ABORT_ERR') return '本机 Antigravity 调用超时或被终止。';
+  // An exec error's message can contain the entire prompt. Send only a known diagnosis.
+  const output = [error.stdout, error.stderr, typeof error.code !== 'number' ? error.message : ''].join(' ');
+  if (/RESOURCE_EXHAUSTED|quota reached|rate limit/i.test(output)) {
+    return '本机 Google 账号达到 Antigravity 额度或频率限制。请查看本机的额度和恢复时间。';
+  }
+  if (/UNAUTHENTICATED|not logged in|sign in|authentication required/i.test(output)) {
+    return '本机 Antigravity 需要登录。请用 Index 设置页的登录命令重新登录 Google。';
+  }
+  if (/unknown model|invalid model|model.{0,60}(?:not found|not available|unsupported)/i.test(output)) {
+    return '这个模型在本机 Antigravity 中不可用。请选择一个本机账号支持的模型。';
+  }
+  return '本机 Antigravity 未返回回复。请检查本机 CLI、Google 登录和所选模型。';
+}
+
 async function main() {
   if (!process.stdin.isTTY) throw new Error('请在自己的电脑上打开终端运行此程序。');
   const profile = join(homedir(), '.remotelab', 'personal-antigravity');
@@ -146,7 +164,16 @@ async function main() {
       '输入 y 开启本次连接的日常模式。你在 Index 网页私人会话主动选用「Antigravity · 个人 Google」时，本机将直接用你的 Google 额度执行，并可按需把你有权查看的 Index 摘录发送给 Google。直接回车则逐条确认：',
       { signal: stop.signal });
     const dailyMode = mode.trim().toLowerCase() === 'y';
-    ({ token } = await call('redeem', { code, dailyMode }));
+    let modelList;
+    try {
+      ({ stdout: modelList } = await exec('agy', ['models'], {
+        cwd: work, env, timeout: 15_000, maxBuffer: 64 * 1024, signal: stop.signal,
+      }));
+    } catch {
+      if (stop.signal.aborted) return;
+      console.warn('未能读取本机 Antigravity 模型清单。连接后仍可使用本机默认模型。');
+    }
+    ({ token } = await call('redeem', { code, dailyMode, modelList }));
     console.log(dailyMode
       ? '已连接 Index，日常模式已开启。按 Ctrl+C 断开。'
       : '已连接 Index。每条请求须在本机确认。按 Ctrl+C 断开。');
@@ -195,8 +222,9 @@ async function main() {
             finished.abort();
             await monitor;
           }
-          const { status, response, conversation_id } = JSON.parse(stdout);
-          if (status !== 'SUCCESS' || typeof response !== 'string' || !response.trim()) throw new Error('Antigravity returned no answer');
+          const { status, response, conversation_id, error } = JSON.parse(stdout);
+          if (status !== 'SUCCESS') throw new Error(typeof error === 'string' ? error : 'Antigravity failed');
+          if (typeof response !== 'string' || !response.trim()) throw new Error('Antigravity returned no answer');
           if (typeof conversation_id === 'string' && conversation_id) conversations.set(job.session, conversation_id);
           result = { response };
         } catch (error) {
@@ -204,15 +232,14 @@ async function main() {
             console.log('这条请求已在 Index 结束。');
             continue;
           }
-          result = { error: error.code === 'EEXIST'
-            ? '本机 Index 专用 Antigravity 配置已被占用。请关闭其他连接终端后重试。'
-            : '本机 Antigravity 调用失败。请检查 Google 登录、所选模型和额度。' };
+          result = { error: describeLocalFailure(error) };
         } finally {
           if (contextConfig) await rm(contextConfig, { force: true });
         }
       }
       try {
         await call('result', { id: job.id, ...result });
+        console.log(result.error || '已将 Antigravity 回复传回 Index。');
       } catch (error) {
         if (error.status !== 404) throw error;
         console.log('这条请求已在 Index 结束。');

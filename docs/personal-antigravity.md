@@ -6,6 +6,10 @@ During pairing, press Enter to confirm each request in the terminal, or type **y
 
 Google credentials remain in the local Antigravity profile. Index retains the messages and responses in its usual Session history. Index routes a new request to the accepting person's connection and never falls back to a shared Antigravity login. A paired device cannot receive another person's requests. Follow-ups use that Session's local conversation while the connection is open. After a reconnect or Index restart, pair the device again. A stopped, disconnected or interrupted request is not automatically sent again.
 
+The model picker uses the list reported by `agy models` from the paired device's Index Google profile. Models such as Gemini 4 Neon appear when that profile can use them. The **Default** option uses the local CLI's default. If only **Default** is available, download the latest connection program, reconnect, and refresh the page. An older connection program can still run the local default model. When a local call fails, Index displays the reported failure in the conversation.
+
+Automatic memory review skips personal Antigravity turns. The access granted to a paired device applies to interactive requests from the account owner.
+
 ## Reference Index context
 
 With **Antigravity · 个人 Google** selected, type your question and send it normally. Gemini decides when it needs past information and can call a read-only tool to search the relevant Index source. By confirming a request or enabling daily mode for the connection, you permit eligible requests to send matching excerpts and source links to Google within your existing Index access. Index returns up to four excerpts per call and expires lookup access when the request ends. The tool is available in eligible private Sessions. If you already connected a device using an older program, download the updated program and reconnect to enable this tool. Your existing local Google login can be reused.

@@ -27,12 +27,12 @@ export async function handlePersonalAntigravityDeviceRoutes({ req, res, pathname
   try {
     const action = pathname.slice(relayPath.length);
     if (action === 'redeem') {
-      const { code, dailyMode } = await body(req);
+      const { code, dailyMode, modelList } = await body(req);
       if (!credential.test(code || '')) {
         writeJson(res, 403, { error: '连接码无效。' });
         return true;
       }
-      writeJson(res, 200, relay.redeem(code, dailyMode === true));
+      writeJson(res, 200, relay.redeem(code, dailyMode === true, modelList));
       return true;
     }
     const token = /^Bearer ([A-Za-z0-9_-]{32})$/.exec(req.headers.authorization || '')?.[1];

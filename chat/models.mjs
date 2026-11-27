@@ -4,6 +4,7 @@ import { resolveCodexHomeDir } from '../lib/codex-home.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
 import { discoverAntigravityModels } from './antigravity-models.mjs';
+import { PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity } from './personal-antigravity.mjs';
 import { CODEX_MODEL_CATALOG } from '../lib/codex-model-catalog.mjs';
 import {
   isStaleCodexModelId,
@@ -358,8 +359,16 @@ async function getUnrestrictedModelsForTool(toolId, options = {}) {
   if (toolId === 'pi') {
     return discoverPiModels({ refresh: options.refresh === true });
   }
-  if (toolId === 'antigravity' || toolId === 'antigravity-personal') {
+  if (toolId === 'antigravity') {
     return discoverAntigravityModels();
+  }
+  if (toolId === PERSONAL_ANTIGRAVITY_TOOL) {
+    return {
+      models: personalAntigravity.modelCatalog(options.personId),
+      effortLevels: null,
+      defaultModel: null,
+      reasoning: { kind: 'none', label: 'Thinking' },
+    };
   }
 
   const tool = await getToolDefinitionAsync(toolId);

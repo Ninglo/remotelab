@@ -749,6 +749,10 @@ async function fetchModelResponse(toolId, { refresh = false } = {}) {
     };
   }
 
+  if (toolId === "antigravity-personal") {
+    return fetchJsonOrRedirect("/api/models?tool=antigravity-personal", { revalidate: false, cache: "no-store" });
+  }
+
   if (!refresh && modelResponseCache.has(toolId)) {
     return modelResponseCache.get(toolId);
   }
@@ -1023,7 +1027,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       });
     }
 
-    inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
+    inlineModelSelect.style.display = (currentToolModels.length > 0 || ["codex", "antigravity-personal"].includes(toolId)) ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences: antigravityVariant || sessionPreferences });
     syncRuntimePresetUi();
     // Runtime controls belong to the attached Session or pending draft. The

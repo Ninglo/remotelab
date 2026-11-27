@@ -375,6 +375,7 @@
             "chat/router-session-main-routes.mjs",
             "chat/runner-personal-antigravity.mjs",
             "chat/models.mjs",
+            "chat/router-control-routes.mjs",
             "chat/process-runner.mjs",
             "chat/router.mjs",
             "chat/session-manager.mjs",

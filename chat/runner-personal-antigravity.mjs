@@ -10,6 +10,6 @@ try {
   if (!response.ok || typeof json?.response !== 'string') throw new Error(json?.error || '本机 Antigravity 没有返回结果。');
   console.log(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: json.response } }));
 } catch (error) {
-  console.error(error.message);
+  console.log(JSON.stringify({ event: 'result', result: { status: 'ERROR', error: error.message } }));
   process.exitCode = 1;
 }

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { parseAntigravityModels } from './antigravity-models.mjs';
 
 export const PERSONAL_ANTIGRAVITY_TOOL = 'antigravity-personal';
 export const PERSONAL_ANTIGRAVITY_API = '/api/personal-antigravity';
@@ -53,12 +54,15 @@ export function createPersonalAntigravityRelay() {
     device.timer.unref();
   }
 
-  function redeem(code, dailyMode = false) {
+  function redeem(code, dailyMode = false, modelList) {
     const pair = codes.get(hash(code));
     if (!pair) throw fail('连接码无效或已过期。', 403);
     disconnect(pair.personId);
     const token = secret();
-    const device = { id: secret(), key: hash(token), personId: pair.personId, dailyMode, jobs: new Map() };
+    const models = typeof modelList === 'string' && modelList.length <= 64 * 1024
+      ? parseAntigravityModels(modelList)
+      : [];
+    const device = { id: secret(), key: hash(token), personId: pair.personId, dailyMode, models, jobs: new Map() };
     devices.set(device.personId, device);
     tokens.set(device.key, device);
     refresh(device);
@@ -75,6 +79,10 @@ export function createPersonalAntigravityRelay() {
   function status(personId) {
     const device = devices.get(personId);
     return device ? { connected: true, dailyMode: device.dailyMode } : { connected: false };
+  }
+
+  function modelCatalog(personId) {
+    return devices.get(personId)?.models || [];
   }
 
   function requireDevice(personId) {
@@ -101,7 +109,11 @@ export function createPersonalAntigravityRelay() {
         if (error) reject(error);
         else resolve(response);
       }
-      device.jobs.set(id, { id, input, finish, lookup, claimed: false });
+      const selected = device.models.find(model => model.id === input.model);
+      const variant = selected?.effortVariants?.[input.effort || selected.defaultEffort];
+      device.jobs.set(id, {
+        id, input: typeof variant === 'string' ? { ...input, model: variant } : input, finish, lookup, claimed: false,
+      });
       signal?.addEventListener('abort', onAbort, { once: true });
       device.wake?.();
     });
@@ -182,7 +194,7 @@ export function createPersonalAntigravityRelay() {
     else throw fail('本机返回的结果无效。', 400);
   }
 
-  return { status, pair, redeem, disconnect, requireDevice, authenticate, run, next, start, lookupContext, watch, complete };
+  return { status, modelCatalog, pair, redeem, disconnect, requireDevice, authenticate, run, next, start, lookupContext, watch, complete };
 }
 
 export const personalAntigravity = createPersonalAntigravityRelay();
