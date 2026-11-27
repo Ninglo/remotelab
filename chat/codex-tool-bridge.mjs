@@ -23,6 +23,16 @@ const rootAndPathProperties = {
 
 export const CODEX_TOOL_DEFINITIONS = [
   {
+    name: 'remotelab_progress',
+    description: 'Publish one useful progress update to RemoteLab. Use only when the user needs to know a finding, changed direction, blocker, or next step.',
+    inputSchema: {
+      type: 'object',
+      properties: { text: stringProperty('The progress update to show the user.', MAX_TEXT_LENGTH) },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'remotelab_local_bridge_status',
     description: 'Show the linked local helper for this RemoteLab Session, including its allowed roots and connection state.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
@@ -167,6 +177,11 @@ function normalizeCommonArgs(raw, { requirePath = true, extraKeys = [] } = {}) {
 }
 
 function normalizeToolArguments(name, raw) {
+  if (name === 'remotelab_progress') {
+    const args = ensureObject(raw || {});
+    ensureAllowedKeys(args, new Set(['text']));
+    return { text: ensureString(args.text, 'text', { required: true, maxLength: MAX_TEXT_LENGTH }) };
+  }
   if (name === 'remotelab_local_bridge_status') {
     const args = ensureObject(raw || {});
     ensureAllowedKeys(args, new Set());
@@ -217,6 +232,7 @@ function timeoutArgs(args) {
 }
 
 function commandArgs(name, args) {
+  if (name === 'remotelab_progress') return [];
   if (name === 'remotelab_local_bridge_status') return ['status', '--json'];
   const command = {
     remotelab_local_bridge_list: 'list',
@@ -254,6 +270,7 @@ function captureStdout() {
 async function executeTool(name, rawArguments = {}, { runCommand = runLocalBridgeCommand } = {}) {
   if (!TOOL_BY_NAME.has(name)) throw error(`Unknown RemoteLab tool: ${name}`, 'UNKNOWN_TOOL');
   const args = normalizeToolArguments(name, rawArguments);
+  if (name === 'remotelab_progress') return { ok: true };
   const argv = commandArgs(name, args);
   const capture = captureStdout();
   const exitCode = await runCommand(argv, { stdout: capture.stdout });

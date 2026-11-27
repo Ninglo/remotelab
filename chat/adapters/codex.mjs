@@ -1,6 +1,6 @@
 import {
   artifactEvent, messageEvent, toolUseEvent, toolResultEvent,
-  fileChangeEvent, reasoningEvent, statusEvent, usageEvent,
+  fileChangeEvent, reasoningEvent, statusEvent, usageEvent, progressEvent,
 } from '../normalizer.mjs';
 import { readCodexSessionGeneratedArtifacts } from '../codex-session-artifacts.mjs';
 import {
@@ -247,6 +247,12 @@ function parseItem(item) {
 
     case 'mcp_tool_call': {
       const toolName = `${item.server}/${item.tool}`;
+      if (toolName === 'remotelab/remotelab_progress' || item.tool === 'remotelab_progress') {
+        const args = item.arguments && typeof item.arguments === 'object' ? item.arguments : {};
+        const progress = progressEvent(args.text, { toolCallId: item.id, providerToolName: toolName });
+        if (progress) events.push(progress);
+        break;
+      }
       events.push(toolUseEvent(toolName, JSON.stringify(item.arguments || {}), { toolCallId: item.id }));
       if (item.status === 'completed' || item.status === 'failed') {
         const output = item.error

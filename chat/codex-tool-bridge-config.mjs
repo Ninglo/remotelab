@@ -15,3 +15,9 @@ export function buildCodexToolBridgeOverrides({ nodePath = process.execPath, scr
     `mcp_servers.remotelab.args=[${JSON.stringify(scriptPath)}]`,
   ];
 }
+
+export function buildClaudeToolBridgeConfig({ nodePath = process.execPath, scriptPath = codexToolBridgeScriptPath() } = {}) {
+  if (typeof nodePath !== 'string' || !nodePath.trim()) throw new TypeError('Claude tool bridge requires a Node executable path');
+  if (typeof scriptPath !== 'string' || !scriptPath.trim()) throw new TypeError('Claude tool bridge requires a script path');
+  return JSON.stringify({ mcpServers: { remotelab: { command: nodePath, args: [scriptPath] } } });
+}

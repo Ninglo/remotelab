@@ -1,7 +1,9 @@
 import {
   messageEvent, toolUseEvent, toolResultEvent,
-  reasoningEvent, statusEvent, usageEvent,
+  reasoningEvent, statusEvent, usageEvent, fileChangeEvent, progressEvent,
 } from '../normalizer.mjs';
+import { buildClaudeToolBridgeConfig } from '../codex-tool-bridge-config.mjs';
+import { claudeRuleRecoverySettings } from '../claude-rule-recovery.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
 import { nativeQuestionEvent } from '../native-user-questions.mjs';
 
@@ -24,6 +26,72 @@ export function createClaudeAdapter() {
   let lastTurnInputTokens = 0;
   let thinkingMessageId = '';
   let streamedThinking = new Map();
+  let progressToolCallIds = new Set();
+
+  function parseInput(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    if (typeof value !== 'string') return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  }
+
+  function progressTool(name) {
+    return name === 'mcp__remotelab__remotelab_progress' || name === 'remotelab/remotelab_progress';
+  }
+
+  function progressText(input) {
+    const parsed = parseInput(input);
+    return typeof parsed.text === 'string' ? parsed.text.trim() : '';
+  }
+
+  function todoText(input) {
+    const parsed = parseInput(input);
+    const todos = Array.isArray(parsed.todos) ? parsed.todos : Array.isArray(parsed.items) ? parsed.items : [];
+    return todos.map(todo => {
+      const completed = todo?.status === 'completed' || todo?.completed === true || todo?.done === true;
+      const label = typeof todo?.content === 'string' ? todo.content : typeof todo?.text === 'string' ? todo.text : todo?.subject;
+      return label ? `${completed ? '[x]' : '[ ]'} ${label}` : '';
+    }).filter(Boolean).join('\n');
+  }
+
+  function filePaths(name, input) {
+    const parsed = parseInput(input);
+    const path = parsed.file_path || parsed.filePath || parsed.notebook_path || parsed.notebookPath || parsed.path;
+    const paths = [];
+    if (typeof path === 'string' && path.trim()) paths.push(path.trim());
+    if (name === 'MultiEdit' && Array.isArray(parsed.edits)) {
+      for (const edit of parsed.edits) {
+        const editPath = edit?.file_path || edit?.filePath || edit?.path;
+        if (typeof editPath === 'string' && editPath.trim()) paths.push(editPath.trim());
+      }
+    }
+    return [...new Set(paths)];
+  }
+
+  function parseToolUse(block) {
+    const name = typeof block?.name === 'string' ? block.name : '';
+    if (progressTool(name)) {
+      if (block.id) progressToolCallIds.add(block.id);
+      return progressEvent(progressText(block.input), { toolCallId: block.id, providerToolName: name });
+    }
+    if (name === 'TodoWrite') {
+      const text = todoText(block.input);
+      return text ? messageEvent('assistant', text, undefined, {
+        messageKind: 'todo_list', toolCallId: block.id, providerToolName: name,
+      }) : null;
+    }
+    if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name)) {
+      const changeType = name === 'Write' ? 'write' : 'edit';
+      return filePaths(name, block.input).map(filePath => fileChangeEvent(filePath, changeType, {
+        toolCallId: block.id, providerToolName: name, changeState: 'completed', diffSource: 'runtime',
+      }));
+    }
+    return toolUseEvent(name, typeof block.input === 'string' ? block.input : JSON.stringify(block.input, null, 2), {
+      toolCallId: block.id,
+    });
+  }
 
   return {
     parseLine(line) {
@@ -36,6 +104,10 @@ export function createClaudeAdapter() {
       } catch {
         return [];
       }
+
+      // Claude includes sub-agent traffic in the same stream-json output. It
+      // must never enter RemoteLab's main timeline or surface projections.
+      if (typeof obj.parent_tool_use_id === 'string' && obj.parent_tool_use_id.trim()) return [];
 
       const questionEvent = nativeQuestionEvent(obj);
       if (questionEvent) return [questionEvent];
@@ -70,14 +142,14 @@ export function createClaudeAdapter() {
                 if (unseen) events.push(reasoningEvent(unseen));
                 streamedThinking.delete(index);
               } else if (block.type === 'tool_use') {
-                events.push(toolUseEvent(
-                  block.name,
-                  typeof block.input === 'string'
-                    ? block.input
-                    : JSON.stringify(block.input, null, 2),
-                  { toolCallId: block.id },
-                ));
+                const parsed = parseToolUse(block);
+                if (Array.isArray(parsed)) events.push(...parsed.filter(Boolean));
+                else if (parsed) events.push(parsed);
               } else if (block.type === 'tool_result') {
+                if (progressToolCallIds.has(block.tool_use_id)) {
+                  progressToolCallIds.delete(block.tool_use_id);
+                  continue;
+                }
                 const output = typeof block.content === 'string'
                   ? block.content
                   : Array.isArray(block.content)
@@ -104,6 +176,10 @@ export function createClaudeAdapter() {
           if (Array.isArray(content)) {
             for (const block of content) {
               if (block.type === 'tool_result') {
+                if (progressToolCallIds.has(block.tool_use_id)) {
+                  progressToolCallIds.delete(block.tool_use_id);
+                  continue;
+                }
                 const output = typeof block.content === 'string'
                   ? block.content
                   : Array.isArray(block.content)
@@ -189,6 +265,8 @@ export function createClaudeAdapter() {
       thinkingMessageId = typeof state.thinkingMessageId === 'string' ? state.thinkingMessageId : '';
       streamedThinking = new Map(Array.isArray(state.streamedThinking)
         ? state.streamedThinking.filter((entry) => Array.isArray(entry) && Number.isInteger(entry[0]) && typeof entry[1] === 'string') : []);
+      progressToolCallIds = new Set(Array.isArray(state.progressToolCallIds)
+        ? state.progressToolCallIds.filter((entry) => typeof entry === 'string' && entry) : []);
     },
 
     getProjectionState() {
@@ -197,6 +275,7 @@ export function createClaudeAdapter() {
         lastTurnInputTokens,
         thinkingMessageId,
         streamedThinking: [...streamedThinking],
+        progressToolCallIds: [...progressToolCallIds],
       };
     },
 
@@ -232,6 +311,12 @@ export function buildClaudeArgs(prompt, options = {}) {
   if (options.dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
   }
+
+  args.push('--mcp-config', buildClaudeToolBridgeConfig());
+  const developerInstructions = typeof options.developerInstructions === 'string'
+    ? options.developerInstructions.trim() : '';
+  if (developerInstructions) args.push('--append-system-prompt', `RemoteLab developer instructions:\n${developerInstructions}`);
+  if (options.ruleRecoverySessionId) args.push('--settings', claudeRuleRecoverySettings(options.ruleRecoverySessionId));
 
   if (options.model) {
     args.push('--model', options.model);

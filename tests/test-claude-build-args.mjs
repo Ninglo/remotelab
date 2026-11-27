@@ -53,4 +53,12 @@ assert.deepEqual(
   'legacy none must not pass an unsupported effort value to Claude Code',
 );
 
+const aligned = buildClaudeArgs('hello world', {
+  developerInstructions: 'Quick sessions should be concise.',
+  ruleRecoverySessionId: 'session-1',
+});
+assert.match(aligned[aligned.indexOf('--append-system-prompt') + 1], /Quick sessions/);
+assert.ok(aligned.includes('--mcp-config'), 'Claude should receive the shared RemoteLab MCP bridge');
+assert.ok(aligned.includes('--settings'), 'Claude should receive the compact recovery hook settings');
+
 console.log('test-claude-build-args: ok');

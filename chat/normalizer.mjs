@@ -53,6 +53,17 @@ export function fileChangeEvent(filePath, changeType, extra = {}) {
   return createEvent('file_change', { role: 'system', filePath, changeType, ...extra });
 }
 
+export function progressEvent(content, extra = {}) {
+  const normalized = trimOptionalString(content);
+  if (!normalized) return null;
+  return messageEvent('assistant', `<progress>${normalized}</progress>`, undefined, {
+    messageKind: 'progress_message',
+    phase: 'commentary',
+    source: 'remotelab_progress',
+    ...extra,
+  });
+}
+
 export function reasoningEvent(content) {
   return createEvent('reasoning', { role: 'assistant', content });
 }

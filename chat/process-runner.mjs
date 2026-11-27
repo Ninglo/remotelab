@@ -59,6 +59,8 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       thinking: options.thinking,
       model: options.model,
       effort: options.effort,
+      developerInstructions: options.developerInstructions,
+      ruleRecoverySessionId: options.ruleRecoverySessionId,
     });
   } else if (normalizedRuntimeFamily === 'codex-json') {
     adapter = createCodexAdapter();
