@@ -2,6 +2,7 @@ import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs'
 import { readRunState } from '../lib/run-state.mjs';
 import { observeRunUsage } from './usage-event-projection.mjs';
 import { requests } from './requests.mjs';
+import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { randomBytes } from 'crypto';
 import { appendFile, open, readFile, readdir } from 'fs/promises';
 import { dirname, join } from 'path';
@@ -200,6 +201,10 @@ export async function createRun({ status, manifest }) {
   });
   return clone(run);
 }
+
+const scheduledAgentStartPath = runId => join(runDir(runId), 'automation-agent-start.json');
+export const readScheduledAgentStart = runId => readRecord(scheduledAgentStartPath(runId));
+export const markScheduledAgentStart = (runId, at) => writeDurableJson(scheduledAgentStartPath(runId), { at });
 
 export async function getRun(runId) {
   const run = await getRunUnlocked(runId);

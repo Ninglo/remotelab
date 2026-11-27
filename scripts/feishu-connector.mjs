@@ -1516,6 +1516,7 @@ function createSourceDeliveryWorker(runtime, helpers = {}) {
     return result.json.delivery;
   };
   const prepareAcknowledgement = async receipt => {
+    if (receipt.target?.privateOpenId) return; // Control DM: never bind the task Session to this chat.
     if (receipt.kind === 'reaction' && !receipt.processingState) {
       await outcomeReactionStore.clean(receipt.target?.messageId,
         (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
@@ -1550,7 +1551,7 @@ function createSourceDeliveryWorker(runtime, helpers = {}) {
   };
   // Known topics already have a routing address. Only publication that can
   // establish a new address needs to fence a reply arriving before its aliases.
-  const withPublicationFence = (kind, target, operation) => kind === 'reaction' ? operation()
+  const withPublicationFence = (kind, target, operation) => kind === 'reaction' || target?.privateOpenId ? operation()
     : target?.threadId || target?.topicId
       ? withFeishuKnownTopicPublication(runtime, target, operation)
       : withFeishuHandoffLock(runtime, target, operation);
@@ -1638,7 +1639,8 @@ async function deliverFeishuClaim(runtime, helpers, claim, {
       }
     }
   }
-  const summary = await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
+  const privateRenewal = delivery.automationControl?.surface === 'renewal' && Boolean(delivery.target.privateOpenId);
+  const summary = privateRenewal ? delivery.target : await (helpers.enrichSummaryWithChatMetadata || resolveFeishuGroupSource)(runtime, {
     chatType: 'group', ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice',
     ...(delivery.foldedDetails ? { foldedDetails: delivery.foldedDetails } : {}) });
   let publishedReceipt;
@@ -1730,13 +1732,14 @@ async function deliverFeishuClaim(runtime, helpers, claim, {
       if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to suppress stale question delivery');
       return resolved.json?.delivery;
     }
-    if (delivery.kind !== 'reaction') {
+    if (delivery.kind !== 'reaction' && !privateRenewal) {
       runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text,
         summary.conversationKind === 'main' ? '' : sent.thread_id);
     }
     const receipt = { deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
-      threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary,
+      threadId: sent.thread_id || '', sessionId: delivery.sessionId,
+      target: privateRenewal ? { ...summary, chatId: sent.chatId } : summary,
       kind: delivery.kind, ...(delivery.processingState ? { processingState: delivery.processingState } : {}),
       ...(delivery.kind === 'content' ? { text: delivery.text } : {}) };
     await receipts.record(receipt);

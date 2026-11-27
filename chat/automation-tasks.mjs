@@ -171,7 +171,7 @@ function oneTimeActions(trigger, execution) {
 
 function recurringActions(schedule) {
   if (schedule.status === 'active') return ['pause', 'cancel'];
-  if (schedule.status === 'paused') return ['resume', 'cancel'];
+  if (schedule.status === 'paused') return schedule.renewal?.awaitingAt ? ['cancel'] : ['resume', 'cancel'];
   return [];
 }
 
@@ -266,6 +266,8 @@ async function projectRecurringTask(schedule, occurrences) {
       skippedCount: schedule.skippedCount,
     },
     lifetime: schedule.lifetime,
+    ...(schedule.renewal ? { renewal: { batch: schedule.renewal.batch, awaiting: Boolean(schedule.renewal.awaitingAt),
+      delivered: Boolean(schedule.renewal.card) } } : {}),
     wakeOn: schedule.wakeOn || [],
     automationPolicy: schedule.automationPolicy ? { minIdleSeconds: schedule.automationPolicy.minIdleSeconds,
       beforeLaunch: !!schedule.automationPolicy.beforeLaunch, afterRun: !!schedule.automationPolicy.afterRun } : null,

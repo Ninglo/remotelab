@@ -110,7 +110,16 @@ export async function getSourceDelivery(id) {
 }
 
 export async function enqueueSourceDelivery(input = {}) {
-  const plan = normalizeSourceDeliveryPlan(input.sourceDelivery);
+  let plan = normalizeSourceDeliveryPlan(input.sourceDelivery);
+  if (input.automationControl?.surface === 'renewal') {
+    // This outbox address cannot become a Session conversation binding.
+    const { target, connector, sourceRouteId } = input.sourceDelivery || {};
+    if (connector !== 'feishu' || !sourceRouteId || target?.chatType !== 'p2p' || !target.tenantKey
+        || !target.privateOpenId || plan || input.attachments?.length || input.reaction !== undefined) {
+      throw new Error('A private renewal card requires an exclusive owner address');
+    }
+    plan = { connector, sourceRouteId, target: { chatType: 'p2p', tenantKey: target.tenantKey, privateOpenId: target.privateOpenId } };
+  }
   const reaction = input.reaction === null ? null : trimString(input.reaction);
   const hasReaction = reaction === null || Boolean(reaction);
   const reactionStage = input.reactionStage ?? 1;
@@ -161,7 +170,7 @@ const targetKeys = entry => {
   const aliases = t.commentId ? [t.commentId] : [t.rootId, t.topicId, t.threadId].filter(Boolean);
   if (!aliases.length) aliases.push((t.replyInThread ? t.messageId : '') || '');
   return [...new Set(aliases)].map(alias => JSON.stringify([
-    entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', alias,
+    entry.connector, entry.sourceRouteId, t.privateOpenId || t.chatId || t.fileToken || '', alias,
   ]));
 };
 
@@ -175,7 +184,7 @@ async function mutateDelivery(id, update, { priorReceipt, deferPublication = fal
     const entry = deliveries[index];
     if (entry.connector === 'feishu' && entry.kind !== 'delivery_notice' && !entry.responseId?.startsWith('plan-topic:')
       && ['unknown', 'delivery_failed'].includes(entry.state)
-      && !deliveries.some(part => part.kind === 'delivery_notice')) {
+      && !entry.target?.privateOpenId && !deliveries.some(part => part.kind === 'delivery_notice')) {
       next = { ...next, deliveries: appendDeliveries(next, [buildDeliveryNotice(entry)]) };
     }
     if (next.deliveries.filter(part => part.kind !== 'delivery_notice')
@@ -207,7 +216,7 @@ async function publishDeliveryMutation({ key, record, entry, priorReceipt }) {
       ...(updated.receiptRecovered ? { receiptRecovered: true } : {}),
       externalId: updated.externalId || '' }, { priorReceipt });
   }
-  await rememberFeishuThreadSurface(entry);
+  if (!entry.target?.privateOpenId) await rememberFeishuThreadSurface(entry);
   await requests.archiveFinished(key);
   broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
 }

@@ -93,6 +93,8 @@ recurringSchedules.startRecurringScheduleScheduler({
   createScheduledTrigger: triggers.createScheduledTrigger,
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
   getScheduleTriggerCounts: triggers.getScheduleTriggerCounts,
+  getScheduleRenewalBatch: triggers.getScheduleRenewalBatch,
+  publishScheduleRenewal: (await import('./chat/automation-confirmations.mjs')).publishScheduleRenewal,
   onMaterialized: () => triggers.processDueTriggersNow(),
   ensureEventResources: async (wakeCause, quietPeriods) => {
     await serverReady;

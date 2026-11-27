@@ -228,13 +228,21 @@ async function resolveDerivedSessionCreatorIdentity(authSession, sourceSession, 
   };
 }
 
+async function rejectUnmeteredContinuation(session) {
+  if (session?.automationTaskId?.startsWith('sch_') && (await getRecurringSchedule(session.automationTaskId))?.renewal) {
+    throw new Error('This task has a renewal budget; use its existing schedule instead of creating a continuation');
+  }
+}
+
 async function prepareScheduledTask(payload, { authSession = null } = {}) {
+  if (payload.scheduleId || payload.renewalBatch) throw new Error('Only the scheduler can create recurring occurrences');
   const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : String(payload.sourceSessionId || '').trim();
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
   if (!await canAccessSession(authSession, sourceSessionId)) throw Object.assign(new Error('Source session access denied'), { statusCode: 403 });
   if (authSession?.authKind !== 'service' && (payload.conversation || payload.sourceDelivery || payload.sessionTemplate?.conversation)) throw new Error('External delivery requires service authentication');
   if (sourceSession.archived) throw new Error('Source session is archived');
+  await rejectUnmeteredContinuation(sourceSession);
   let input = await applyScheduledRuntimeProfile(await withAutomationRuntimeDefault(payload), sourceSession, getAutoRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
       && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
@@ -247,7 +255,10 @@ async function prepareScheduledTask(payload, { authSession = null } = {}) {
     input = { ...input, conversation };
   }
   const template = buildScheduledSessionTemplate(input, sourceSession);
-  if (template?.sessionId && !await canAccessSession(authSession, template.sessionId)) throw Object.assign(new Error('Target session access denied'), { statusCode: 403 });
+  if (template?.sessionId) {
+    if (!await canAccessSession(authSession, template.sessionId)) throw Object.assign(new Error('Target session access denied'), { statusCode: 403 });
+    await rejectUnmeteredContinuation(await getSession(template.sessionId));
+  }
   return {
     ...input,
     sourceSessionId,
@@ -282,6 +293,7 @@ async function prepareAutomationTask(payload = {}, authSession = null) {
   const sourceSession = await getSession(sourceSessionId);
   if (!sourceSession) throw new Error('Target Session not found');
   if (!await canAccessSession(authSession, sourceSessionId)) throw Object.assign(new Error('Target Session access denied'), { statusCode: 403 });
+  await rejectUnmeteredContinuation(sourceSession);
   if (authSession?.authKind !== 'service' && payload.resultDelivery?.mode === 'conversation') throw new Error('External delivery requires service authentication');
   if (sourceSession.archived) throw new Error('Target Session is archived');
 
@@ -999,6 +1011,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/source-deliveries' && req.method === 'POST') {
     try {
       const payload = JSON.parse(await readBody(req, 1024 * 1024));
+      if (payload.automationControl?.surface === 'renewal') throw new Error('Schedule renewal delivery is internal');
       if (payload.reaction && authSession?.authKind !== 'service') {
         writeJson(res, 403, { error: 'Connector service authentication required for reactions' });
         return true;

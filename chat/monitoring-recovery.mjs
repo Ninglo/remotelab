@@ -106,7 +106,7 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
   for (const failure of failures) {
     const id = failure.id || failure.subject;
     const task = taskById.get(id);
-    if (failure.kind === 'automation' && (!task?.lastExecution?.runId || isStoppedAutomation(task, now)
+    if (failure.kind === 'automation' && (!task?.lastExecution?.runId || task.renewal || isStoppedAutomation(task, now)
       || config.automationIds && !config.automationIds.includes('*') && !config.automationIds.includes(id))) continue;
     const subjectKey = `${failure.kind}:${id}`;
     let generation = task?.lastExecution?.runId;
@@ -154,6 +154,10 @@ export async function processMonitoringRecovery({ config, snapshot, stateFile = 
       if (task && (isStoppedAutomation(task, now) || task.lastExecution?.runId && task.lastExecution.runId !== item.originRunId)) {
         touch(item, 'cancelled', '原任务已停止或已有更新执行；旧事故与回执保留，不补跑旧Run'); continue;
       }
+    }
+    if (item.kind === 'automation' && taskById.get(item.id)?.renewal
+      && !['running', 'resolved', 'cancelled'].includes(item.status)) {
+      touch(item, 'cancelled', '定时任务按续期额度运行，不另起自动补救 Run'); continue;
     }
     if (item.kind === 'service' && snapshot.services.some(s => s.unit === item.id && s.status === 'paused')
       && !['running', 'admitting', 'resolved', 'cancelled'].includes(item.status)) {

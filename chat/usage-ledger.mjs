@@ -803,6 +803,7 @@ export async function queryUsageLedger(options = {}) {
   const trendStartMs = Math.floor((endMs - dayOffset) / DAY_MS) * DAY_MS + dayOffset - 6 * DAY_MS;
   const scanStartMs = options.includeDailyTrend ? Math.min(startMs, trendStartMs) : startMs;
   const files = await listLedgerFiles(scanStartMs, endMs, ledgerDir);
+  const selectedRuns = Array.isArray(options.runIds) ? new Set(options.runIds) : null;
   const deduped = new Map();
   const sourceHashes = new Map();
   let recordsScanned = 0;
@@ -823,7 +824,7 @@ export async function queryUsageLedger(options = {}) {
         }
 
         const record = normalizeLedgerRecord(parsed);
-        if (!record) continue;
+        if (!record || (selectedRuns && !selectedRuns.has(record.runId))) continue;
         if (record.timestampMs < scanStartMs || record.timestampMs > endMs) continue;
 
         if (record.timestampMs >= startMs) recordsScanned += 1;

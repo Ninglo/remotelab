@@ -1,6 +1,6 @@
 import { readBody } from '../lib/utils.mjs';
 import { proposeAutomationConfirmation, readAutomationConfirmation, actOnAutomationConfirmation,
-  recordAutomationCardReceipt } from './automation-confirmations.mjs';
+  recordAutomationCardReceipt, readScheduleRenewal } from './automation-confirmations.mjs';
 
 export async function handleAutomationConfirmationRoutes({ req, res, pathname, authSession, writeJson }) {
   if (!pathname.startsWith('/api/automation-confirmations')) return false;
@@ -12,10 +12,11 @@ export async function handleAutomationConfirmationRoutes({ req, res, pathname, a
       writeJson(res, 201, { confirmation: await proposeAutomationConfirmation(input) });
       return true;
     }
-    const match = /^\/api\/automation-confirmations\/([a-f0-9]{24})(?:\/(action|receipt))?$/.exec(pathname);
+    const match = /^\/api\/automation-confirmations\/([a-f0-9]{24})(?:\/(action|receipt|renewal))?$/.exec(pathname);
     if (!match) { writeJson(res, 404, { error: 'Not found' }); return true; }
     if (req.method === 'GET' && !match[2]) writeJson(res, 200, { confirmation: await readAutomationConfirmation(match[1]) });
-    else if (req.method === 'POST' && match[2]) {
+    else if (req.method === 'GET' && match[2] === 'renewal') writeJson(res, 200, { renewal: await readScheduleRenewal(match[1]) });
+    else if (req.method === 'POST' && ['action', 'receipt'].includes(match[2])) {
       const input = JSON.parse(await readBody(req, 8192));
       const operation = match[2] === 'action' ? actOnAutomationConfirmation : recordAutomationCardReceipt;
       writeJson(res, 200, { confirmation: await operation(match[1], input) });

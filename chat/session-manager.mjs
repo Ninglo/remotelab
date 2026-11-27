@@ -4145,6 +4145,7 @@ async function prepareRequestRunOnce(record) {
       ...(options.automationPolicy ? { automationPolicy: options.automationPolicy } : {}),
       ...(trimString(options.triggerId) ? { triggerId: trimString(options.triggerId) } : {}),
       ...(trimString(options.scheduleId) ? { scheduleId: trimString(options.scheduleId) } : {}),
+      ...(options.renewalBatch ? { renewalBatch: options.renewalBatch } : {}),
       ...(trimString(options.occurrenceId) ? { occurrenceId: trimString(options.occurrenceId) } : {}),
       ...(typeof options.compactionTargetSessionId === 'string' && options.compactionTargetSessionId
         ? { compactionTargetSessionId: options.compactionTargetSessionId }

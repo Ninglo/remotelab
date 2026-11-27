@@ -8,8 +8,9 @@ import { requests } from './requests.mjs';
 import { createSession, getSession } from './session-manager.mjs';
 import { findSessionByExternalTriggerId } from './session-meta-store.mjs';
 import { updateSessionConversation } from './session-conversations.mjs';
-import { createTrigger, getTrigger, updateTrigger, cancelScheduleTriggers, stopTriggerExecution } from './triggers.mjs';
-import { createRecurringSchedule, getRecurringSchedule, updateRecurringSchedule, normalizeRecurringCadence } from './recurring-schedules.mjs';
+import { createTrigger, getTrigger, updateTrigger, cancelScheduleTriggers, stopTriggerExecution, getScheduleRenewalBatch } from './triggers.mjs';
+import { createRecurringSchedule, getRecurringSchedule, updateRecurringSchedule, normalizeRecurringCadence, applyScheduleRenewal, SCHEDULE_BATCH_SIZE } from './recurring-schedules.mjs';
+import { queryUsageLedger } from './usage-ledger.mjs';
 import { getAutomationTask } from './automation-tasks.mjs';
 import { enqueueSourceDelivery } from './source-deliveries.mjs';
 import { appendEvent } from './history.mjs';
@@ -122,6 +123,7 @@ export async function proposeAutomationConfirmation(input) {
         externalTriggerId, initiatedByIdentityId: record.identityId, viewPersonId: record.personId,
         model: runtime.model, effort: runtime.effort, thinking: runtime.thinking,
         group: '自动化任务', internalRole: 'scheduled_execution', sessionCollection: 'automations',
+        ...(definition.kind === 'recurring' ? { automationTaskId: record.taskId } : {}),
         description: `自动化 ${record.taskId}；来源 ${sourceSessionId}`,
         systemPrompt: `这条固定会话承接同一自动化的执行、纠正和故障修复。\n任务：${definition.title}\n${definition.text}\n输出：${definition.output}\n${definition.details}\n原交办：${automationTopicUrl(plan.target)}\n任务 ID：${record.taskId}\n来源会话：${sourceSessionId}；来源输入：${sourceRequestId}\n未来规则的纠正须写回任务定义或现行资料；不要只作口头承诺。上下文由 Harness 原生压缩，旧日志按需读取。`,
       });
@@ -134,7 +136,7 @@ export async function proposeAutomationConfirmation(input) {
       const create = definition.kind === 'recurring' ? createRecurringSchedule : createTrigger;
       const task = await create({ ...definition, ...record.runtimeDefault, sourceSessionId, createdByIdentityId: record.identityId,
         sessionTemplate: template, ...runtime },
-      { id: record.taskId, paused: true });
+      { id: record.taskId, paused: true, requireRenewal: definition.kind === 'recurring' });
       record.definitionHash = definitionHash(task);
       await save(record);
     } else if (!record.definitionHash) {
@@ -144,6 +146,66 @@ export async function proposeAutomationConfirmation(input) {
     await publish(record, 'source');
     return readAutomationConfirmation(key);
   });
+}
+
+async function verifyRenewalOwner(record) {
+  const owner = findIdentity(await loadAuthDocument({ persistMigration: false }), record.identityId);
+  if (owner?.person?.id !== record.personId || owner?.identity?.kind !== 'feishu'
+      || owner.identity.realm !== record.sourcePlan.sourceRouteId || owner.identity.subjectId !== record.ownerOpenId) {
+    throw Error('原交办人的飞书身份无法验证；任务保持暂停。');
+  }
+}
+
+export async function publishScheduleRenewal(schedule) {
+  const key = schedule.id.slice(4), record = await readRecord(pathFor(key));
+  if (!record || record.taskId !== schedule.id || record.identityId !== schedule.createdByIdentityId) throw Error('续期缺少原交办记录。');
+  await verifyRenewalOwner(record);
+  const { sourceRouteId, target } = record.sourcePlan;
+  return enqueueSourceDelivery({ sessionId: record.executionSessionId,
+    responseId: `automation-renewal:${key}:${schedule.renewal.version}`,
+    sourceDelivery: { connector: 'feishu', sourceRouteId,
+      target: { chatType: 'p2p', tenantKey: target.tenantKey, privateOpenId: record.ownerOpenId } },
+    text: '定时任务待续期', automationControl: { key, surface: 'renewal', version: schedule.renewal.version } });
+}
+
+export async function readScheduleRenewal(key) {
+  const record = await readRecord(pathFor(key));
+  const schedule = record?.taskId?.startsWith('sch_') ? await getRecurringSchedule(record.taskId) : null;
+  const renewal = schedule?.renewal;
+  if (schedule?.status !== 'paused' || !renewal?.awaitingAt) return null;
+  await verifyRenewalOwner(record);
+  const { executions, open, started } = await getScheduleRenewalBatch(schedule.id, renewal.batch);
+  if (open || started !== SCHEDULE_BATCH_SIZE) return null;
+  // Read exact Run IDs, not totals for the Session (which also has human inputs).
+  const ids = executions.map(item => item.runId);
+  const startMs = Math.min(...executions.map(item => Date.parse(item.startedAt)).filter(Number.isFinite));
+  const usage = await queryUsageLedger({ startMs, runIds: ids, top: SCHEDULE_BATCH_SIZE });
+  const measured = usage.topRuns.filter(run => Number.isSafeInteger(run.totalTokens));
+  const compact = value => trim(typeof value === 'string' ? value : value?.message).replace(/\s+/g, ' ').slice(0, 180);
+  const latest = executions.find(item => item.state === 'completed');
+  const failure = executions.find(item => item.state !== 'completed');
+  const time = item => item?.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '';
+  return { key, version: renewal.version, batch: renewal.batch, started, sourceRouteId: record.sourcePlan.sourceRouteId,
+    tenantKey: record.sourcePlan.target.tenantKey, openId: record.ownerOpenId, title: schedule.title || record.definition.title,
+    purpose: compact(record.definition.details || record.definition.text),
+    completed: executions.filter(item => item.state === 'completed').length,
+    failed: executions.filter(item => item.state === 'failed').length,
+    cancelled: executions.filter(item => item.state === 'cancelled').length,
+    latest: latest ? `${time(latest) || '本批'}（内容见任务话题）` : '',
+    failure: failure ? `${time(failure) || '本批'} · ${failure.state === 'cancelled' ? '执行取消' : '执行失败'}（详情见任务话题）` : '',
+    tokens: measured.reduce((sum, row) => sum + row.totalTokens, 0), tokenCoverage: measured.length,
+    entryUrl: automationTopicUrl(record.entryTarget || record.sourcePlan.target) };
+}
+
+async function applyRenewalCard(record, input, operation) {
+  await verifyRenewalOwner(record);
+  if (!record.taskId.startsWith('sch_') || record.sourcePlan.sourceRouteId !== input.sourceRouteId
+      || record.ownerOpenId !== input.openId || record.sourcePlan.target.tenantKey !== input.tenantKey
+      || !trim(input.chatId) || !trim(input.messageId)) throw Error('请由交办人在收到的私聊卡片上操作。');
+  const applied = await applyScheduleRenewal(record.taskId, input.version, operation, input);
+  if (!applied) throw Error('这张续期卡已失效或已经处理。');
+  if (operation === 'stop') await cancelScheduleTriggers(record.taskId, { includeActive: true });
+  return { status: applied.status, batch: applied.renewal.batch };
 }
 
 function requireCardActor(record, action) {
@@ -157,6 +219,9 @@ export async function actOnAutomationConfirmation(key, action) {
   return queue(key, async () => {
     const record = await readRecord(pathFor(key));
     if (!record) throw Error('找不到这条自动化。');
+    if (action.action === 'renew' || action.action === 'renewal_stop') {
+      return applyRenewalCard(record, action, action.action === 'renew' ? 'renew' : 'stop');
+    }
     requireCardActor(record, action);
     if (!['confirm', 'stop', 'refresh', 'details'].includes(action.action)) throw Error('未知操作。');
     let task = await rawTask(record);
@@ -202,6 +267,7 @@ export async function actOnAutomationConfirmation(key, action) {
 export async function recordAutomationCardReceipt(key, receipt) {
   return queue(key, async () => {
     const record = await readRecord(pathFor(key));
+    if (record && receipt.surface === 'renewal') return applyRenewalCard(record, receipt, 'receipt');
     if (!record || receipt.sourceRouteId !== record.sourcePlan.sourceRouteId
       || receipt.chatId !== record.sourcePlan.target.chatId || !trim(receipt.messageId)
       || !['source', 'entry'].includes(receipt.surface)) throw Error('卡片回执不匹配。');

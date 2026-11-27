@@ -8,9 +8,12 @@ import { normalizeAutomationPurpose } from '../lib/automation-purpose.mjs';
 export { runScheduleGate, parseGateOutput } from '../lib/automation-script.mjs';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
-import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
+import { createSerialTaskQueue, statOrNull } from './fs-utils.mjs';
+import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import { onAutomationWake, notifyAutomationWake } from '../lib/automation-events.mjs';
 
+export const SCHEDULE_BATCH_SIZE = 7;
+const renewalVersion = () => randomBytes(12).toString('hex');
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_MAX_OPEN_OCCURRENCES = 1;
@@ -326,7 +329,8 @@ function normalizeStoredSchedule(value) {
     alerts: normalizeAlerts(raw.alerts),
     misfirePolicy: 'latest_once',
     overlapPolicy: 'latest_once',
-    maxOpenOccurrences: Math.max(1, Number.parseInt(raw.maxOpenOccurrences, 10) || DEFAULT_MAX_OPEN_OCCURRENCES),
+    ...(raw.renewal ? { renewal: raw.renewal } : {}),
+    maxOpenOccurrences: raw.renewal ? 1 : Math.max(1, Number.parseInt(raw.maxOpenOccurrences, 10) || DEFAULT_MAX_OPEN_OCCURRENCES),
     ...scheduledRuntimeIntent(raw),
     nextRunAt: normalizeTimestamp(raw.nextRunAt),
     lastScheduledAt: normalizeTimestamp(raw.lastScheduledAt),
@@ -352,8 +356,15 @@ function normalizeStoredSchedule(value) {
 }
 
 async function saveSchedulesUnlocked(schedules) {
-  schedulesCache = Array.isArray(schedules) ? schedules : [];
-  await writeJsonAtomic(CHAT_RECURRING_SCHEDULES_FILE, schedulesCache);
+  // Only expose committed state to the next mutation. In particular a failed
+  // renewal write must not make the next tick see an in-memory approval.
+  try {
+    await writeDurableJson(CHAT_RECURRING_SCHEDULES_FILE, schedules);
+  } catch (error) {
+    schedulesCache = null;
+    throw error;
+  }
+  schedulesCache = schedules;
   const stat = await statOrNull(CHAT_RECURRING_SCHEDULES_FILE);
   schedulesCacheMtimeMs = stat?.mtimeMs || Date.now();
 }
@@ -362,7 +373,8 @@ async function loadSchedules() {
   const stat = await statOrNull(CHAT_RECURRING_SCHEDULES_FILE);
   const mtimeMs = stat?.mtimeMs || 0;
   if (schedulesCache && schedulesCacheMtimeMs === mtimeMs) return schedulesCache;
-  const raw = await readJson(CHAT_RECURRING_SCHEDULES_FILE, []);
+  const raw = await readRecord(CHAT_RECURRING_SCHEDULES_FILE) ?? [];
+  if (!Array.isArray(raw)) throw new Error('Invalid schedule registry');
   const schedules = [];
   let changed = !Array.isArray(raw);
   for (const entry of Array.isArray(raw) ? raw : []) {
@@ -456,6 +468,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     effort: input.effort,
     thinking: input.thinking,
     maxOpenOccurrences: input.maxOpenOccurrences,
+    ...(options.requireRenewal ? { renewal: { batch: 1, version: renewalVersion() } } : {}),
     nextRunAt: getNextScheduleOccurrence(seed, createdAt),
     createdAt,
     updatedAt: createdAt,
@@ -516,7 +529,10 @@ export async function updateRecurringSchedule(scheduleId, patch = {}, options = 
     const extendsBoundedTrial = current.status === 'completed' && current.lifetime?.mode === 'bounded'
       && patch.lifetime?.mode === 'bounded'
       && Number(patch.lifetime.maxExecutions) > Number(current.lifetime.maxExecutions || 0);
-    if (requestedStatus === 'active' && ['cancelled', 'completed'].includes(current.status) && !extendsBoundedTrial) {
+    if ((requestedStatus === 'active' || patch.enabled === true) && current.renewal?.awaitingAt) {
+      throw new Error('This schedule requires its owner to renew from the current Feishu card');
+    }
+    if ((requestedStatus === 'active' || patch.enabled === true) && ['cancelled', 'completed'].includes(current.status) && !extendsBoundedTrial) {
       throw new Error(`${current.status === 'completed' ? 'Completed' : 'Cancelled'} schedules cannot be resumed`);
     }
     const nextStatus = requestedStatus || (Object.prototype.hasOwnProperty.call(patch, 'enabled')
@@ -560,6 +576,9 @@ export async function updateRecurringSchedule(scheduleId, patch = {}, options = 
     const next = normalizeStoredSchedule({
       ...current,
       ...patch,
+      id: current.id,
+      renewal: current.renewal ? { batch: current.renewal.batch, version: renewalVersion(),
+        ...(current.renewal.awaitingAt ? { awaitingAt: current.renewal.awaitingAt } : {}) } : undefined,
       ...patchScheduledRuntime(current, patch),
       purpose: normalizeAutomationPurpose(patch.purpose === undefined ? current.purpose : patch.purpose, { strict: true }),
       sourceSessionId,
@@ -577,7 +596,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}, options = 
       status: nextStatus,
       cancelledAt: nextStatus === 'cancelled' ? (current.cancelledAt || updatedAt) : '',
       completedAt: nextStatus === 'completed' ? (current.completedAt || updatedAt) : '',
-      nextRunAt: enabled && (!current.enabled || cadenceChanged)
+      nextRunAt: (enabled && !current.enabled) || cadenceChanged
         ? getNextScheduleOccurrence({ cadence, cron, timezone }, updatedAt)
         : current.nextRunAt,
       updatedAt,
@@ -600,6 +619,45 @@ export async function deleteRecurringSchedule(scheduleId) {
     schedules.splice(index, 1);
     await save(schedules);
   });
+  return result;
+}
+
+// All card transitions are CAS operations in the same queue as schedule edits
+// and gate materialization. A delivery receipt alone never grants another run.
+export async function applyScheduleRenewal(scheduleId, version, operation, options = {}) {
+  const now = nowIso(options.now);
+  const result = await withScheduleMutation(async (rows, save) => {
+    const index = rows.findIndex(row => row.id === scheduleId);
+    const current = rows[index], renewal = current?.renewal;
+    if (!renewal || renewal.version !== version) return null;
+    const next = clone(current);
+    if (operation === 'pause') {
+      if (current.status !== 'active') return null;
+      next.status = 'paused'; next.enabled = false; next.renewal.awaitingAt = now;
+    } else {
+      if (current.status !== 'paused' || !renewal.awaitingAt) return null;
+      if (operation === 'publish') {
+        if (renewal.published) return clone(current);
+        next.renewal.published = true;
+      } else if (operation === 'receipt') {
+        next.renewal.card = { chatId: options.chatId, messageId: options.messageId };
+      } else if (operation === 'renew' || operation === 'stop') {
+        if (!renewal.card || renewal.card.chatId !== options.chatId || renewal.card.messageId !== options.messageId) return null;
+        if (operation === 'renew') {
+          next.status = 'active'; next.enabled = true;
+          next.nextRunAt = collectDueOccurrences(current, Date.parse(now)).nextRunAt || getNextScheduleOccurrence(current, now);
+          next.renewal = { batch: renewal.batch + 1, version: renewalVersion() };
+        } else {
+          next.status = 'cancelled'; next.enabled = false; next.cancelledAt = now; next.nextRunAt = '';
+        }
+      } else { throw new Error('Invalid schedule renewal operation'); }
+    }
+    next.updatedAt = now;
+    rows[index] = next;
+    await save(rows);
+    return clone(next);
+  });
+  if (result && ['pause', 'renew', 'stop'].includes(operation)) notifyAutomationWake('schedule_configuration');
   return result;
 }
 
@@ -676,6 +734,29 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
   let skipped = 0;
   let failed = 0;
   let schedules = await listRecurringSchedules();
+  const batchReads = new Map();
+  const readRenewal = options.getScheduleRenewalBatch && ((id, batch) => {
+    const key = `${id}:${batch}`;
+    if (!batchReads.has(key)) batchReads.set(key, options.getScheduleRenewalBatch(id, batch));
+    return batchReads.get(key);
+  });
+  for (let schedule of schedules.filter(entry => entry.renewal && ['active', 'paused'].includes(entry.status))) {
+    if (schedule.status === 'paused' && (!schedule.renewal.awaitingAt || schedule.renewal.published)) continue;
+    if (!readRenewal) continue; // No renewal dependencies: never materialize unmetered work.
+    try {
+      const batch = await readRenewal(schedule.id, schedule.renewal.batch);
+      if (batch.started < SCHEDULE_BATCH_SIZE) continue;
+      if (schedule.status === 'active') {
+        schedule = await applyScheduleRenewal(schedule.id, schedule.renewal.version, 'pause', { now });
+      }
+      if (schedule && !batch.open && options.publishScheduleRenewal) {
+        await options.publishScheduleRenewal(schedule);
+        await applyScheduleRenewal(schedule.id, schedule.renewal.version, 'publish', { now });
+      }
+    } catch (error) {
+      await observeRecentError('schedule-gate', { operation: [schedule?.id, 'renewal'], error, at: now });
+    }
+  }
   for (const schedule of schedules.filter((entry) => entry.status === 'active' && entry.lifetime?.mode === 'bounded')) {
     const counts = schedule.lifetime.maxExecutions ? await getScheduleTriggerCounts(schedule.id) : {};
     const reason = lifetimeCompletionReason(schedule, nowMs, counts);
@@ -715,8 +796,10 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
       }
       const counts = await getScheduleTriggerCounts(candidate.id);
       const reservedExecutions = Number(counts.admittedExecutions || 0) + Number(counts.pendingAdmissions || 0);
-      const atExecutionCapacity = candidate.lifetime?.maxExecutions
-        && reservedExecutions >= candidate.lifetime.maxExecutions;
+      const batch = candidate.renewal && readRenewal ? await readRenewal(candidate.id, candidate.renewal.batch) : null;
+      const atExecutionCapacity = candidate.renewal
+        ? !batch || batch.open > 0 || batch.reserved >= SCHEDULE_BATCH_SIZE
+        : candidate.lifetime?.maxExecutions && reservedExecutions >= candidate.lifetime.maxExecutions;
       const openCount = await countOpenScheduleTriggers(candidate.id);
       let gateResult = { trigger: true, reason: '', dedupeKey: '' };
       let gateError = null;
@@ -784,6 +867,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             automationPolicy: current.automationPolicy,
             scheduleId: current.id,
             occurrenceId: `${current.id}:${dedupeSuffix}`,
+            ...(current.renewal ? { renewalBatch: current.renewal.batch } : {}),
           });
           current.checkCount += 1;
           current.matchCount += 1;
