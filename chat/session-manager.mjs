@@ -2,7 +2,7 @@ import { findIdentity, loadAuthDocument } from '../lib/auth-config.mjs';
 import { PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled } from './personal-antigravity.mjs';
 import { refreshRuntimeHrPolicy, runtimeHrPolicy, resolveHrActor, hrActorNotice } from '../lib/hr-policy.mjs';
 import { evaluateRequestAccess } from './request-access-guard.mjs';
-import { observeRecentError } from '../lib/recent-errors.mjs';
+import { FEISHU_REPLY_UNASSIGNED, observeRecentError } from '../lib/recent-errors.mjs';
 import { captureCodexAccountPolicy, usesCodexAccountPool } from './codex-account-context.mjs';
 import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
@@ -1758,6 +1758,11 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
+function observeFeishuUnassignedReply(record) {
+  void observeRecentError('run-result', { operation: record.key, attempt: 'feishu-unassigned-reply',
+    error: new Error(FEISHU_REPLY_UNASSIGNED), sessionId: record.sessionId });
+}
+
 // Several user inputs can be consumed by one native turn. Each keeps its own
 // response address, while the resulting conversation reply is published once.
 async function settleNativeRequest(record, run) {
@@ -1771,6 +1776,7 @@ async function settleNativeRequest(record, run) {
     const result = pilotInputResult(record, run);
     await requests.settle(record.key, result, record.mainlineReply || record.routingHandoff?.state === 'submitted'
       ? [] : buildReplyDeliveries(ownPlan, result.payload, { running: false }));
+    if (run.state === 'completed' && result.state === 'failed' && ownPlan?.connector === 'feishu') observeFeishuUnassignedReply(record);
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: true }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
