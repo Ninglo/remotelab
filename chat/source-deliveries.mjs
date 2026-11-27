@@ -1,4 +1,5 @@
 import { rememberFeishuThreadSurface } from './feishu-thread-continuation.mjs';
+import { observeRecentError } from '../lib/recent-errors.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
@@ -239,7 +240,10 @@ async function inspectAndClaimSourceDelivery(options = {}) {
       const keys = openingTopic ? [`session:${entry.sessionId}`] : targetKeys(refined || entry);
       const claimedAt = Date.parse(entry.claimedAt);
       if (entry.state === 'sending' && (!Number.isFinite(claimedAt) || nowMs - claimedAt >= timeout)) {
-        entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: 'Sender lease expired without a receipt' }));
+        const error = 'Sender lease expired without a receipt';
+        await observeRecentError('source-delivery', { operation: entry.id, attempt: `expire:${entry.leaseId}`,
+          error, at: now, sessionId: entry.sessionId });
+        entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: error }));
       }
       // Fence this uncertain operation, not the whole conversation. A later
       // receipt can still settle its original lease without resending it.
@@ -356,6 +360,8 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
       leaseId: state === 'unknown' ? entry.leaseId : '', lastError: String(error?.message || error),
       availableAt: new Date(Date.parse(nowIso(options.now)) + (options.retryDelayMs ?? 5000)).toISOString() };
   }));
+  await observeRecentError('source-delivery', { operation: id, attempt: `report:${leaseId}`,
+    error: { message: String(error?.message || error), code: options.errorCode || error?.code }, sessionId: failed.sessionId });
   if (failed.responseId?.startsWith('plan-topic:')) {
     const { resumeExecutionPlanTopic } = await import('./work-execution-plans.mjs');
     await resumeExecutionPlanTopic(failed);

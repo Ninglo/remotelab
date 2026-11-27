@@ -1,5 +1,6 @@
 import { refreshRuntimeHrPolicy, runtimeHrPolicy, resolveHrActor, hrActorNotice } from '../lib/hr-policy.mjs';
 import { evaluateRequestAccess } from './request-access-guard.mjs';
+import { observeRecentError } from '../lib/recent-errors.mjs';
 import { captureCodexAccountPolicy, usesCodexAccountPool } from './codex-account-context.mjs';
 import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
@@ -1828,6 +1829,19 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     ? manifest.compactionTargetSessionId
     : '';
 
+  // Provider retries and terminal failure share the owning run, so a single
+  // request retried by the provider cannot, on its own, open a repair item.
+  let retryObservation = 0;
+  for (const event of fullNormalizedEvents) {
+    if (event.type !== 'status' || !event.providerError || !event.willRetry) continue;
+    const provider = event.providerError;
+    await observeRecentError('run-result', { operation: run.id, attempt: `retry:${++retryObservation}`,
+      error: { message: provider.message, code: provider.code || provider.codexErrorInfo }, sessionId, reference: run.id });
+  }
+  if (run.state === 'failed') await observeRecentError('run-result', { operation: run.id, attempt: 'terminal',
+    error: run.failureReason || run.result?.error, at: run.completedAt || run.result?.completedAt || Date.now(),
+    sessionId, reference: run.id });
+
   if (run.state === 'cancelled') {
     const event = {
       ...statusEvent('cancelled'),
@@ -3460,6 +3474,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
   recordInput: ensureRequestInput,
   settle: settleNativeRequest,
   reject: async (record, error) => {
+    await observeRecentError('request-prepare', { operation: record.key, attempt: 'native-reject', error, sessionId: record.sessionId });
     const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
     const run = await getRun(record.nativeDispatchRunId);
     await requests.settle(record.key, { state: 'failed', payload: null, error },
@@ -3829,7 +3844,11 @@ async function launchAutomationRun(runId, options = {}) {
     allowed = await runAutomationHook(manifest.automationPolicy || options.automationPolicy, 'beforeLaunch', {
       runId, sessionId: run.sessionId, scheduleId: manifest.scheduleId, folder: manifest.folder,
     });
-  } catch (error) { allowed = { trigger: false, reason: `Before-launch check failed: ${error.message}` }; }
+  } catch (error) {
+    await observeRecentError('schedule-gate', { operation: runId, attempt: 'beforeLaunch', error,
+      sessionId: run.sessionId, reference: runId });
+    allowed = { trigger: false, reason: `Before-launch check failed: ${error.message}` };
+  }
   // Include cancellation arriving while the script was checking/preparing its
   // guard. A script failure or busy foreground spends no model invocation.
   const accepted = await requests.byRunId(runId);
@@ -3862,7 +3881,12 @@ async function prepareRequestRun(record) {
     const [run, launch] = await Promise.all([getRun(record.runId), readRecord(joinRequestPath(runDir(record.runId), 'launch.json'))]);
     if (run && (isTerminalRunState(run.state) || launch || dispatchRecorded(run))) return;
   }
-  await prepareRequestRunOnce(record);
+  try { await prepareRequestRunOnce(record); }
+  catch (error) {
+    await observeRecentError('request-prepare', { operation: record.key, attempt: randomBytes(12).toString('hex'),
+      error, sessionId: record.sessionId, reference: record.runId });
+    throw error;
+  }
   preparedInProcess.add(record.runId);
 }
 

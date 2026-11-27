@@ -2,6 +2,7 @@ import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '.
 import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { createHash, randomBytes } from 'crypto';
 import { normalizeGate, runScheduleGate } from '../lib/automation-script.mjs';
+import { observeRecentError } from '../lib/recent-errors.mjs';
 import { normalizeAutomationPolicy } from '../lib/automation-execution-policy.mjs';
 import { normalizeAutomationPurpose } from '../lib/automation-purpose.mjs';
 export { runScheduleGate, parseGateOutput } from '../lib/automation-script.mjs';
@@ -687,10 +688,12 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
       : Date.parse(entry.nextRunAt) <= nowMs)
   ));
   for (const candidate of candidates) {
+    let occurrenceAt = eventWake ? now : candidate.nextRunAt;
     try {
       const occurrences = eventWake ? { latestAt: now, dueCount: 1, nextRunAt: candidate.nextRunAt }
         : collectDueOccurrences(candidate, nowMs);
       if (!occurrences.latestAt) continue;
+      occurrenceAt = occurrences.latestAt;
       if (candidate.automationPolicy?.minIdleSeconds) {
         const resources = await (options.getResourceSnapshot
           ? options.getResourceSnapshot() : import('./automation-resources.mjs').then(m => m.getAutomationResourceSnapshot()));
@@ -744,6 +747,8 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
           current.skippedCount += 1;
           skipped += 1;
         } else if (gateError) {
+          await observeRecentError('schedule-gate', { operation: [current.id, occurrences.latestAt], error: gateError,
+            at: now, sessionId: current.sourceSessionId });
           current.checkCount += 1;
           current.gateErrorCount += 1;
           current.lastCheckAt = occurrences.latestAt;
@@ -813,6 +818,8 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
       });
     } catch (error) {
       failed += 1;
+      await observeRecentError('schedule-gate', { operation: [candidate.id, occurrenceAt], attempt: 'materialize',
+        error, at: now, sessionId: candidate.sourceSessionId });
       await withScheduleMutation(async (schedules, save) => {
         const current = schedules.find((entry) => entry.id === candidate.id);
         if (!current) return;

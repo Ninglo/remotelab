@@ -131,6 +131,7 @@
             <div id="monitoringSessions" aria-live="polite"></div>
 
           </div>
+          <section id="monitorRecentErrors" class="monitoring-summary-panel recent-errors" hidden></section>
           <section id="monitoringResourcePanel" class="monitoring-summary-panel"><div id="monitoringResourceAttention" aria-live="polite"></div><div id="monitoringContent" aria-live="polite"></div></section>
         </section>
         <section id="monitoringSecurity" class="monitoring-overview" role="tabpanel" aria-labelledby="monitoringSecurityTab" hidden>
@@ -924,6 +925,8 @@
 <script src="chat/project-feedback.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/agent-monitor-dashboard.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/monitoring-sessions.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<link rel="stylesheet" href="chat/recent-errors.css?v={{ASSET_VERSION}}">
+<script src="chat/recent-errors.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/monitoring.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/usage-analysis.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

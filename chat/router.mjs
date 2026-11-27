@@ -105,6 +105,7 @@ import {
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { handleWorkAwarenessRoutes } from './router-work-awareness.mjs';
 import { handleMonitoringPreview } from './router-monitoring-preview.mjs';
+import { handleRecentErrors } from './router-recent-errors.mjs';
 import { handleMonitoringResolution } from './monitoring-resolution.mjs';
 import { handleMonitoringEvidence } from './router-monitoring-evidence.mjs';
 import { handleFeatureObservation } from './router-feature-observation.mjs';
@@ -1508,7 +1509,8 @@ export async function handleRequest(req, res) {
 
   if (await handleMonitoringResolution({ req, res, pathname, authSession, writeJson })) return;
   if (await handleOrganizationWork({ req, res, pathname, authSession })) return;
-  if (await handleMonitoringPreview({ req, res, pathname })) return;
+  if (await handleMonitoringPreview({ req, res, pathname, canSeeRecentErrors: Boolean(authSession.personId && authSession.authKind !== 'service') })) return;
+  if (await handleRecentErrors({ req, res, pathname, authSession, writeJson })) return;
   if (await handleMonitoringEvidence({ req, res, pathname, authSession })) return;
   if (await handleFeatureObservation({ req, res, pathname, parsedUrl, authSession, writeJson })) return;
   if (await handleKnowledgePilot({ req, res, pathname, authSession, writeJson })) return;

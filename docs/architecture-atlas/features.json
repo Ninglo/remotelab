@@ -1187,6 +1187,31 @@
       "maintainer": null,
       "features": [
         {
+          "id": "recent-errors",
+          "name": "近期报错",
+          "purpose": "统一记录已接入的系统报错并归并同类问题。24 小时内独立发生 3 次才标为待修，未达阈值和后来重试成功的报错也保留。",
+          "entry": "监管中心 → 总览 → 近期报错，展开可看发生记录或登记修复验证。",
+          "condition": "实例维护者显式启用，按原管理员范围读取；同一请求重试不重复计算升级次数。未覆盖来源单列，不复制报错原文，也不自动推送、修复或关单。",
+          "example": "在总览找出反复出现的投递报错，展开核对原会话；修复并复验后登记提交与结果。",
+          "sources": [
+            "docs/monitoring.md",
+            "chat/recent-error-service-source.mjs",
+            "chat/router-recent-errors.mjs",
+            "chat/recurring-schedules.mjs",
+            "chat/source-deliveries.mjs",
+            "chat/triggers.mjs",
+            "lib/automation-execution-policy.mjs",
+            "lib/connector-inbox.mjs",
+            "lib/recent-errors-store.mjs",
+            "lib/recent-errors.mjs",
+            "lib/sqlite-state-worker.mjs",
+            "scripts/feishu-connector.mjs",
+            "static/chat/recent-errors.css",
+            "static/chat/recent-errors.js"
+          ],
+          "commands": []
+        },
+        {
           "id": "monitor",
           "name": "监控器的总览与自动化列表",
           "purpose": "依次查看 Session、基础资源、API。总览显示 Session 均值、名称与异常指标，按群或发起人查看数量；磁盘圆盘、账户进度与近 7 天 Session／上下文／Token 曲线展示真实样本，缺失留空；完整明细按需展开。 对本实例可取回的历史及增量提交文本做Luna风险审阅，展示覆盖缺口、失败、脱敏证据及实际调用消耗。",

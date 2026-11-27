@@ -12,7 +12,7 @@ export function rewriteMonitoringPresentation(text,{prefix='/monitoring-preview'
  return text.replace(/(["'])\/case-review\//g,'$1'+prefix+'/case-review/');
 }
 const caseAssets=new Set(['','index.html','capability-model.js','capability-view.js','capability-review.js','capability.css','case-metadata.js','project-adapter.js','workbench.js','review-model.js','case-catalog.json','session-bindings.json','agent-assessments.json','workbench.css','workbench-layout.css','feedback-layout.css','overview-layout.css','compact-layout.css','project-overview.js','overview-model.js','project-overview.json','project-feedback.json','feedback-review.js']);
-export async function handleMonitoringPreview({req,res,pathname,configOverride}) {
+export async function handleMonitoringPreview({req,res,pathname,configOverride,canSeeRecentErrors=false}) {
  const prefix='/monitoring-preview';if(pathname!==prefix&&!pathname.startsWith(prefix+'/'))return false;
  const config=configOverride||await evidenceConfig(),port=config?.previewPort;
  const publicOrigin=(await readResolutionConfig())?.publicOrigin;
@@ -28,7 +28,12 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride})
     if(/html|javascript/.test(type)){
      body=Buffer.from(rewriteMonitoringPresentation(body.toString(),{prefix,publicOrigin}));
     }
-    if(response.statusCode===200&&/^text\/html/.test(type))body=injectSiteIdentityHtml(body);
+    if(response.statusCode===200&&/^text\/html/.test(type)){
+      if(path==='/'&&canSeeRecentErrors)body=Buffer.from(body.toString().replace('</head>',
+        '<link rel="stylesheet" href="/chat/recent-errors.css"><script defer src="/chat/recent-errors.js"></script></head>')
+        .replace('<div id="content">','<section id="monitorRecentErrors" class="panel recent-errors" data-portal hidden></section><div id="content">'));
+      body=injectSiteIdentityHtml(body);
+    }
     res.writeHead(response.statusCode||502,{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(body);resolve();
    });
   });upstream.on('timeout',()=>upstream.destroy());upstream.on('error',()=>{if(!res.headersSent)res.writeHead(502);res.end();resolve()});res.on('close',()=>upstream.destroy());

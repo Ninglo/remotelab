@@ -10,6 +10,7 @@ import { getModelsForTool } from './models.mjs';
 import { randomBytes } from 'crypto';
 
 import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
+import { observeRecentError } from '../lib/recent-errors.mjs';
 import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
@@ -717,6 +718,8 @@ async function markTriggerDeliveryFailure(triggerId, error, attemptCount = 1) {
     updatedTrigger = cloneTrigger(next);
   });
 
+  if (updatedTrigger) await observeRecentError('schedule-gate', { operation: normalizedTriggerId, attempt: attemptCount,
+    error, at: failedAt, sessionId: updatedTrigger.sourceSessionId, reference: normalizedTriggerId });
   return updatedTrigger;
 }
 

@@ -57,6 +57,7 @@ import { findConnectorMessageIndexRecord, initializeConnectorMessageIndex } from
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
+import { observeRecentError } from '../lib/recent-errors.mjs';
 import { readServiceToken } from '../lib/auth-config.mjs';
 import {
   normalizeExternalRuntimeOverride,
@@ -2359,10 +2360,16 @@ async function notifyFeishuAdmissionFailure(runtime, entry) {
 
 function initializeInbox(runtime) {
   const notifyFailure = createInboxFailureAlerts(join(runtime.config.storageDir, 'inbox-alerts'));
+  const reportFailure = (entry, error) => {
+    if ([401, 403, 429].includes(Number(error?.status || error?.statusCode)) && error?.retryable === false) return;
+    return observeRecentError('feishu-inbox', { operation: [runtime.config.sourceRouteId, entry.key],
+      attempt: entry.attempts || 1, error, reference: entry.key });
+  };
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
     archiveRetentionDays: 90,
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
     retryPolicy: (error, record) => ({ ...feishuReadRetryPolicy(error, record), maxCrashAttempts: 2 }),
+    onAttemptFailure: reportFailure,
     onRetryExhausted: async entry => {
       const summary = applyFeishuReplyRouting(runtime.config, entry.summary);
       const notice = await queueFeishuReply(runtime, summary,
@@ -2405,6 +2412,7 @@ function initializeInbox(runtime) {
         });
       } catch (error) {
         if (error.retryable !== false || isFeishuBotSender(entry.summary)) throw error;
+        await reportFailure(entry, error);
         const admissionFailure = error.message;
         const admissionFailureCode = error.code || '';
         await update({ admissionFailure, admissionFailureCode, lastError: admissionFailure });

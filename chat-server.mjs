@@ -2,6 +2,7 @@
 import { join } from 'path';
 import { pruneSessionCatalog } from './chat/session-meta-store.mjs';
 import { startRuntimeHealth } from './chat/runtime-health.mjs';
+import { startRecentErrorServiceSource } from './chat/recent-error-service-source.mjs';
 import { startCacheRelease } from './chat/cache-release.mjs';
 
 const http = await import('http');
@@ -68,6 +69,7 @@ await new Promise((resolve, reject) => {
   server.listen(CHAT_PORT, CHAT_BIND_HOST, resolve);
 });
 const stopRuntimeHealth = startRuntimeHealth();
+const stopRecentErrorServiceSource = startRecentErrorServiceSource();
 const cacheRelease = startCacheRelease();
 await cleanupAtomicTemps(CONFIG_DIR);
 // Old immutable catalog bodies retain a full day for in-flight readers.
@@ -108,6 +110,7 @@ const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
 
 async function shutdown() {
   stopRuntimeHealth();
+  stopRecentErrorServiceSource();
   cacheRelease.stop();
   clearInterval(catalogCleanup);
   if (!ready) return;
