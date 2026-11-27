@@ -8,6 +8,8 @@ publication. External waits retain their actual callback or Trigger reference.
 
 The deterministic daily disk collector (`scripts/disk-daily-check.mjs --output-dir <existing-daily-directory>`) preserves the previous evidence and writes the existing daily-report pointers without starting an Agent; repairs remain with the minute observer. See [monitoring](monitoring.md).
 
+[Feishu reply latency](monitoring.md) describes per-message admission, missing reply ownership and late but successful opening/transport receipts. Use `remotelab response-time --request-id ID --session ID --json` for the measured stages of one message.
+
 [Short-term disk growth warnings](monitoring.md#short-term-disk-growth) use the existing minute observer and delivery ledger, independently of capacity thresholds.
 
 This repo now keeps documentation in four layers:

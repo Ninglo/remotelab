@@ -1,3 +1,4 @@
+import { latencyFacts } from '../lib/feishu-delivery-latency.mjs';
 import { join } from 'node:path';
 import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -13,6 +14,7 @@ const prompt = `你是 RemoteLab 故障分析 Agent。只能分析，不得调�
 // redacted for administrators) can embed private task text, paths or secrets.
 export function groupErrorLine(value) {
   const line = String(value || '').trim();
+  if (Object.values(latencyFacts).some(([diagnostic]) => diagnostic === line)) return line;
   if (line === FEISHU_ADMISSION_TIMEOUT || line === FEISHU_REPLY_UNASSIGNED) return line;
   if (/^Detached runner disappeared before writing a result$/i.test(line)
     || /^Sender lease expired without a receipt$/i.test(line)
@@ -37,6 +39,10 @@ export async function analyzeRecentErrors(evidence) {
   return {cause,direction};
 }
 function operationalFacts(source, events) {
+  if (source === 'source-delivery' && events.length) {
+    const fact = Object.values(latencyFacts).find(([diagnostic]) => events.every(e => e.diagnostic === diagnostic));
+    if (fact) return { title: fact[1], cause: fact[2], direction: fact[3], deterministicOnly: true };
+  }
   if (source === 'feishu-inbox' && events.every(e => e.diagnostic === FEISHU_ADMISSION_TIMEOUT)) {
     return { title: '飞书任务受理回执超时', deterministicOnly: true,
       cause: '已进入任务受理路径，但 30 秒内未确认受理回执；这不代表原消息丢失，也不是正文生成超时。',

@@ -1392,7 +1392,7 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
   return null;
 }
 
-async function buildManagerTurnContextSlots(session, options = {}) {
+async function buildManagerTurnContextSlots(session, options = {}, partTimings = null) {
   if (options.internalOperation === RETRIEVAL_OPERATION) return [];
   const slots = [];
   slots.push(createModelContextSlot('execution_default', 'Default task execution',
@@ -1403,7 +1403,9 @@ async function buildManagerTurnContextSlots(session, options = {}) {
       ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
+  const historyStart = performance.now();
   const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true, bodyTypes: ['message'] })) : null;
+  if (partTimings && optedIn) partTimings.workboardHistory = Math.round(performance.now()-historyStart);
   if ((optedIn && options.workboardEnabled !== false && options.messageReplyPolicy?.checklist !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
       (!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
@@ -1433,7 +1435,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     ));
   }
   const turnContext = await buildTurnContextHook(session, {
-    separateProjectContext: true,
+    partTimings, separateProjectContext: true,
     sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasFeishuInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy, parallelWorkPolicy: options.parallelWorkPolicy,
@@ -4051,8 +4053,9 @@ async function prepareRequestRunOnce(record) {
   });
   const contextOptions = { ...options, modelSourceContext: contextProjection.sourceContext };
   markPreparedStage('sourceContext');
+  const contextPartTimingsMs = {};
   const turnSlots = effectiveToolDefinition?.promptMode === 'bare-user'
-    ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId });
+    ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId }, contextPartTimingsMs);
   markPreparedStage('turnContext');
   const ruleProjection = await projectRuleContext(sessionId, turnSlots, {
     enabled: effectiveToolDefinition?.inputMode === 'native',
@@ -4240,7 +4243,7 @@ async function prepareRequestRunOnce(record) {
   }
 
   markPreparedStage('persistence');
-  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs }));
+  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs, contextPartTimingsMs }));
   await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
   await launchAutomationRun(run.id, options);

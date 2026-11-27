@@ -27,22 +27,27 @@ function buildFeishuLogPromptBlock(sourceContext) {
   ].join('\n');
 }
 
-export async function buildTurnContextHook(session = {}, { sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy, parallelWorkPolicy, separateProjectContext = false } = {}) {
+export async function buildTurnContextHook(session = {}, { partTimings, sourceContext, requestId, personId, identityId, query = '', experimentInput = {}, pilotInputReplyContract = false, messageRoutingPolicy, parallelWorkPolicy, separateProjectContext = false } = {}) {
   // Ordinary turns carry accepted source/state and small identity/project
   // pointers. The Harness chooses explicit work/memory reads for its task;
   // only an explicitly enrolled experiment may restore automatic background.
+  // Fixed-size wall times; concurrent contributors overlap. No content or extra I/O.
+  const timed = async (key, read) => {
+    const start = performance.now();
+    try { return await read(); } finally { if (partTimings) partTimings[key] = Math.round(performance.now() - start); }
+  };
   const sections = await Promise.allSettled([
-    buildProjectMemoryPromptBlock(session, sourceContext),
-    buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy }),
-    buildProjectWorkDirectoryPrompt(session, sourceContext),
+    timed('project', () => buildProjectMemoryPromptBlock(session, sourceContext)),
+    timed('groupRouting', () => buildGroupRoutingContext(session, sourceContext, { inputReplyContract: pilotInputReplyContract, messageRoutingPolicy })),
+    timed('directory', () => buildProjectWorkDirectoryPrompt(session, sourceContext)),
   ]);
   const [project, groupRouting, directory] = sections.map((result, index) => result.status === 'fulfilled'
     ? result.value : 'Context source unavailable: ' + JSON.stringify({ kind: ['project', 'group-routing', 'project-directory'][index], reason: result.reason.message }));
   const personalMemory = !experimentInput.automated
-    ? await buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId: session.id })
+    ? await timed('personalMemory', () => buildPersonalMemoryConversationParts({ personId, identityId, sourceContext, sessionId: session.id }))
     : { rules: '', feedback: '' };
-  const skillExtraction = await buildSkillExtractionTrial({ personId, identityId, sourceContext,
-    automated: experimentInput.automated });
+  const skillExtraction = await timed('skillTrial', () => buildSkillExtractionTrial({ personId, identityId, sourceContext,
+    automated: experimentInput.automated }));
   const sectionsBeforeProject = [
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
@@ -54,11 +59,11 @@ export async function buildTurnContextHook(session = {}, { sourceContext, reques
     personalMemory.feedback,
   ];
   const [parallelWork, topicDiscovery, background, deliveryReview] = await Promise.all([
-    !experimentInput.automated ? buildParallelWorkContext(session, sourceContext, { messageRoutingPolicy, parallelWorkPolicy }) : '',
-    buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
-      automated: experimentInput.automated }),
-    experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query }),
-    deliveryReviewPrompt(session, sourceContext),
+    !experimentInput.automated ? timed('parallelWork', () => buildParallelWorkContext(session, sourceContext, { messageRoutingPolicy, parallelWorkPolicy })) : '',
+    timed('topicDiscovery', () => buildWebTopicDiscoveryPrompt(session, { sourceContext: experimentInput.baselineSourceContext || sourceContext,
+      automated: experimentInput.automated })),
+    timed('experimentBackground', () => experimentBackground(session, { ...experimentInput, sourceContext, requestId, personId, identityId, query })),
+    timed('deliveryReview', () => deliveryReviewPrompt(session, sourceContext)),
   ]);
   const sectionsAfterProject = [topicDiscovery, background, deliveryReview];
   const render = parts => parts.map(section => String(section || '').trim()).filter(Boolean).join('\n\n');
