@@ -1,6 +1,7 @@
 "use strict";
 (() => {
-  const root = document.getElementById('monitorRecentErrors');
+  const template = document.getElementById('monitorRecentErrorsTemplate');
+  const root = template?.content.firstElementChild.cloneNode(true) || document.getElementById('monitorRecentErrors');
   if (!root) return;
   const endpoint = '/api/monitoring/recent-errors';
   const node = (tag, text) => {
@@ -18,7 +19,12 @@
   function request(query = '', options) {
     return fetch(endpoint + query, { credentials: 'same-origin', signal: AbortSignal.timeout(10_000), ...options });
   }
-  const headline = node('h2','近期报错');
+  const headline = node('strong','近期报错');
+  const count = node('span');
+  const disclosure = node('details');
+  disclosure.className = 'recent-errors-disclosure';
+  const entry = node('summary');
+  entry.append(headline, count);
   const summary = node('p');
   const coverage = node('details');
   const coverageList = node('ul');
@@ -27,7 +33,8 @@
   const listNext = node('div');
   const notice = node('p');
   notice.setAttribute('role','status');
-  root.append(headline, summary, button('刷新报错', () => load()), coverage, notice, list, listNext);
+  disclosure.append(entry, summary, button('刷新报错', () => load()), coverage, notice, list, listNext);
+  root.append(disclosure);
   let loaded = false, unavailable = false, loading = false;
   const labels = new Map();
 
@@ -90,6 +97,14 @@
             link.href = `/?tab=sessions&session=${encodeURIComponent(item.sessionId)}`;
             entry.append(' · ', link);
           }
+          if (item.excerpt) {
+            const original = node('pre', item.excerpt);
+            original.className = 'recent-error-excerpt';
+            original.setAttribute('aria-label', '报错原文');
+            entry.append(original);
+          } else {
+            entry.append(node('p', '原文未留存或当前不可查看。'));
+          }
           records.append(entry);
         }
         if (!records.childElementCount) records.append(node('li','没有保留下来的明细。'));
@@ -123,7 +138,8 @@
         for (const source of data.sources) labels.set(source.id, source.label);
         coverageList.replaceChildren(...data.sources.map(source => node('li', `${source.label}：${source.firstObservedAt ? `最早取到 ${time(source.firstObservedAt)}` : '暂无报错样本（不是健康确认）'}`)),
           node('li', '不含未接入的业务服务、普通工具命令退出和未结构化日志；除已有服务异常退出证据外，不回填旧记录。'));
-        summary.textContent = `近 ${data.windowDays} 天 · ${data.pending} 类待修。滚动 ${data.escalationHours} 小时内第 ${data.threshold} 次独立发生标为待修；重试记录保留，不重复计入升级。`;
+        count.textContent = `近 ${data.windowDays} 天 · ${data.pending} 类待修`;
+        summary.textContent = `滚动 ${data.escalationHours} 小时内第 ${data.threshold} 次独立发生标为待修；重试记录保留，不重复计入升级。报错原文显示脱敏后的第一行。`;
         if (!data.rows.length) list.append(node('p','接入来源暂无近期报错记录。'));
         for (const row of data.rows) { const box = rowView(row); box.open = opened.has(row.id); list.append(box); }
       } else list.append(...data.rows.filter(row => ![...list.children].some(el => el.dataset.cluster === row.id)).map(rowView));
@@ -131,21 +147,24 @@
       listNext.replaceChildren();
       if (data.next) listNext.append(button('更多错误簇', () => load(data.next)));
       loaded = true;
-    } catch { notice.textContent = '报错记录暂不可用，不能据此判断无故障。'; }
+    } catch { count.textContent = '暂不可用'; notice.textContent = '报错记录暂不可用，不能据此判断无故障。'; }
     finally { loading = false; }
   }
 
-  const portal = root.hasAttribute('data-portal');
   const updateView = () => {
-    const current = document.querySelector('#tabs [aria-current="page"]')?.dataset.tab;
-    const params = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
-    root.hidden = unavailable || (portal && (current || params.get('tab') || 'overview') !== 'overview');
-    if (!root.hidden && !loaded) void load();
+    if (template) {
+      const effect = document.getElementById('effect-block');
+      if (!effect) return;
+      // The host replaces #content during tab changes and refreshes; reattach
+      // the same node so the reader's expanded state survives either action.
+      if (root.parentElement !== effect) effect.append(root);
+    }
+    root.hidden = unavailable;
+    if (!unavailable && !loaded) void load();
   };
-  if (portal) {
-    const tabs = document.getElementById('tabs');
-    if (tabs) new MutationObserver(updateView).observe(tabs, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-current'] });
-    window.addEventListener('popstate', updateView);
+  if (template) {
+    const content = document.getElementById('content');
+    if (content) new MutationObserver(updateView).observe(content, { childList: true });
   }
   updateView();
 })();

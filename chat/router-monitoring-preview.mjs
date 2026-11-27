@@ -30,8 +30,8 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride,c
     }
     if(response.statusCode===200&&/^text\/html/.test(type)){
       if(path==='/'&&canSeeRecentErrors)body=Buffer.from(body.toString().replace('</head>',
-        '<link rel="stylesheet" href="/chat/recent-errors.css"><script defer src="/chat/recent-errors.js"></script></head>')
-        .replace('<div id="content">','<section id="monitorRecentErrors" class="panel recent-errors" data-portal hidden></section><div id="content">'));
+        '<link rel="stylesheet" href="/chat/recent-errors.css?v=2"><script defer src="/chat/recent-errors.js?v=2"></script></head>')
+        .replace('<div id="content">','<template id="monitorRecentErrorsTemplate"><section id="monitorRecentErrors" class="recent-errors" hidden></section></template><div id="content">'));
       body=injectSiteIdentityHtml(body);
     }
     res.writeHead(response.statusCode||502,{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(body);resolve();

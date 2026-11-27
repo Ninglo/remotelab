@@ -30,7 +30,9 @@ export function startRecentErrorServiceSource({
           || !['javascript_heap_oom', 'os_oom', 'abnormal_exit', 'fatal_error'].includes(event.reason)) continue;
         activeIds.add(event.id);
         if (seen.has(event.id)) continue;
-        await monitor.record('service-exit', { operation: event.id, component: event.unit,
+        const diagnostic = event.evidence?.find(item => typeof item.message === 'string' && item.message.startsWith('FATAL ERROR:'))
+          || event.evidence?.find(item => typeof item.message === 'string' && /Main process exited,|Failed with result/.test(item.message));
+        await monitor.record('service-exit', { operation: event.id, component: event.unit, diagnostic: diagnostic?.message ?? null,
           at: event.at, error: event.reason, reference: event.id });
       }
       seen = activeIds;
