@@ -2635,6 +2635,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     broadcastScopedSessionsInvalidation(created.session);
   }
 
+  if (extra.feishuAdmissionOnly === true) return created.session;
   return projectSessionPersonView(await enrichSessionMeta(created.session), requestedViewPersonId);
 }
 
@@ -3572,7 +3573,7 @@ async function refuseRestrictedRequest(session, text, options, decision, prior) 
   });
 }
 
-export async function submitHttpMessage(sessionId, text, images, options = {}) {
+export async function submitHttpMessage(sessionId, text, images, options = {}, { feishuAdmissionOnly = false } = {}) {
   // An explicitly requested reply route is part of admission's durable contract.
   // Never accept work and silently discard its final-delivery responsibility.
   if (options.sourceDelivery != null && !normalizeSourceDeliveryPlan(options.sourceDelivery)) {
@@ -3787,9 +3788,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ? buildTemporarySessionName(record.text)
       : '';
     const mutation = await mutateSessionMeta(sessionId, draft => {
-      if (draft.workboardPilot === true && options.checklistGateReceipt && !duplicate) {
-        draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
-      }
+      const changesGate = draft.workboardPilot === true && Boolean(options.checklistGateReceipt) && !duplicate;
+      if (changesGate) draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
+      const hadWorkflowState = Object.hasOwn(draft, 'workflowState') || Object.hasOwn(draft, 'workflowPriority');
       delete draft.workflowState;
       delete draft.workflowPriority;
       if (
@@ -3798,8 +3799,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         && normalizeSessionName(draft.name) === DEFAULT_SESSION_NAME
       ) {
         draft.name = draftName;
+        return true;
       }
-      return true;
+      return hadWorkflowState || changesGate;
     });
     if (mutation.meta) session = mutation.meta;
   }
@@ -3807,7 +3809,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   return { requestId: record.requestId, duplicate, queued,
     run: { id: record.runId, sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' },
     response: { id: record.responseId, state: record.result ? (record.result.state === 'completed' ? 'ready' : record.result.state) : 'queued' },
-    session: await enrichSessionMeta(session) };
+    ...(feishuAdmissionOnly ? {} : { session: await enrichSessionMeta(session) }) };
 }
 
 async function ensureRequestInput(record, manifest) {

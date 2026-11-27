@@ -554,11 +554,13 @@ export async function handleSessionMainRoutes({
         messageOptions.viewPersonId = initiator.personId;
         messageOptions.usagePersonId = authSession?.authKind === 'service' ? initiator.personId : authSession?.personId;
         if (authSession?.authKind === 'service' && initiator.personId === SYSTEM_PERSON_ID) messageOptions.usageActorKind = 'agent';
+        const feishuAdmissionOnly = Boolean(requestId && payload.feishuAdmissionOnly === true
+          && messageOptions.feishuConnectorAuthenticated && payload.sourceDelivery?.connector === 'feishu');
         const outcome = requestId
           ? await submitHttpMessage(sessionId, payload.text.trim(), [], {
               ...messageOptions,
               requestId,
-            })
+            }, { feishuAdmissionOnly })
           : await sendMessage(sessionId, payload.text.trim(), [], messageOptions);
         writeJson(res, outcome.duplicate ? 200 : 202, {
           requestId: requestId || outcome.requestId || outcome.run?.requestId || null,
@@ -566,9 +568,9 @@ export async function handleSessionMainRoutes({
           queued: outcome.queued,
           run: outcome.run,
           response: outcome.response || null,
-          session: createClientSessionDetail(await getSession(sessionId, {
+          ...(feishuAdmissionOnly ? {} : { session: createClientSessionDetail(await getSession(sessionId, {
             viewPersonId: authSession?.personId || initiator.personId,
-          }) || outcome.session),
+          }) || outcome.session) }),
         });
       } catch (error) {
         const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED', 'THREAD_CONTINUATION_EXPIRED'].includes(error?.code) ? 409 : 400;
@@ -753,7 +755,14 @@ export async function handleSessionMainRoutes({
         : (Object.prototype.hasOwnProperty.call(payload, 'welcomeMessage')
           ? explicitWelcomeMessage
           : (starterDefinition?.welcomeMessage || ''));
-      let session = await createSession(effectiveFolder, effectiveTool, name || '', createOptions);
+      const feishuAdmissionOnly = authSession?.authKind === 'service' && payload.feishuAdmissionOnly === true
+        && sourceId === 'feishu' && payload.conversation?.connector === 'feishu' && !initialWelcomeMessage;
+      let session = await createSession(effectiveFolder, effectiveTool, name || '', { ...createOptions, feishuAdmissionOnly });
+      if (feishuAdmissionOnly) {
+        const { id, systemPrompt, executionProfile, privateConversationStart } = session;
+        writeJson(res, 201, { session: { id, systemPrompt, executionProfile, privateConversationStart } });
+        return true;
+      }
       if (initialWelcomeMessage) {
         await appendEvent(session.id, messageEvent('assistant', initialWelcomeMessage));
         session = await getSession(session.id) || session;

@@ -76,6 +76,14 @@ try {
   assert.equal((await call('service', resolveRoute, 'POST', { conversation: feishuPrivate })).data.admissionSession, undefined);
   assert.equal((await call('admin', resolveRoute, 'POST', admissionRequest)).data.admissionSession, undefined);
   assert.equal((await call('b', resolveRoute, 'POST', admissionRequest)).status, 403);
+  const newConversation = { ...feishuPrivate, target: { ...feishuPrivate.target, chatId: 'fixture-new-private' } };
+  const admissionCreate = { folder: home, tool: 'codex', sourceId: 'feishu', conversation: newConversation,
+    systemPrompt: 'fixture connector prompt', feishuAdmissionOnly: true };
+  const admissionCreated = await call('service', '/api/sessions', 'POST', admissionCreate);
+  assert.equal(admissionCreated.status, 201);
+  assert.deepEqual(admissionCreated.data.session, { id: admissionCreated.data.session.id, systemPrompt: 'fixture connector prompt' });
+  assert.equal((await call('a', '/api/sessions', 'POST', admissionCreate)).status, 403);
+  assert.equal((await call('service', `/api/sessions/${admissionCreated.data.session.id}`)).data.session.id, admissionCreated.data.session.id);
   const wrongBot = { ...feishuPrivate, sourceRouteId: 'other-bot' };
   assert.equal((await call('service', resolveRoute, 'POST', { ...admissionRequest, conversation: wrongBot })).data.sessionId, null);
   const deniedPage = await call('a', '/?session=' + ids.b);

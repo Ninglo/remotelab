@@ -1063,6 +1063,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     try {
       submission = await submitConnectorMessage(requester, prepared.sessionId, {
       ...prepared.payload,
+      feishuAdmissionOnly: true,
       // A pre-upgrade prepared worker submission owns its original topology.
       // Its user event has not been observed in the mainline Session.
       ...(skipUserMessage && (!observedSessionId || prepared.sessionId === observedSessionId)
@@ -1158,7 +1159,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       session = updated.json.session;
     }
   } else {
-    session = await createConnectorSession(requester, sessionPayload);
+    session = await createConnectorSession(requester, { ...sessionPayload, feishuAdmissionOnly: true });
   }
   // Group prompt edits apply to an existing mainline as well as bound topics.
   // Never mutate an already accepted Run's prompt snapshot.
