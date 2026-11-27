@@ -6,9 +6,15 @@ Choose **Antigravity · 个人 Google** in the Index Harness picker, send a text
 
 Google credentials remain in the local Antigravity profile. Index retains the messages and responses in its usual Session history. Index routes a new request to the accepting person's connection and never falls back to a shared Antigravity login. A paired device cannot receive another person's requests. Follow-ups use that Session's local conversation while the connection is open. After a reconnect or Index restart, pair the device again. A stopped, disconnected or interrupted request is not automatically sent again.
 
-## Use previous Index conversations
+## Reference Index context
 
-With **Antigravity · 个人 Google** selected, open **引用 Index 历史**, search by a topic or keyword, and preview the matching messages. Use **加入草稿** to include a passage and its source link with your question. Index searches your owned Sessions, including ones previously used with Codex. Only the draft you send is forwarded to Antigravity. It can cite those passages and their links. Other users' Sessions, hidden prompt blocks, assistant progress and tool output are excluded. This search covers Index conversation messages. It does not query the company directory, project files or another provider's private thread state.
+With **Antigravity · 个人 Google** selected, open **引用 Index 上下文**. Choose **以前的对话**, **项目记忆**, or **工作摘要**, search by topic or keyword, and preview the results. **加入草稿** includes the selected passage and its link with your question. Only the draft you send goes to Antigravity.
+
+- Dialogue search covers visible messages in the Index Sessions you own, including previous Codex and Gemini answers. Hidden blocks, background operations, assistant progress and tool output are excluded.
+- Project memory uses the registered project ledger. It covers projects explicitly bound to your Sessions or confirmed in your verified participation records. A result links to the registered project brief or the associated Session.
+- Work summaries show the goal, conclusions and next steps recorded for your Sessions and the latest outcome of your own registered work.
+
+This feature covers sources that Index can read. Provider conversations that exist outside Index and the company directory are outside this search.
 
 ## Instance enablement
 

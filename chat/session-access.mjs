@@ -40,6 +40,12 @@ export function canReadSession(actor, session, document = getAuthReadSnapshot())
     && findIdentity(document, identityId)?.person.id === actor.personId);
 }
 
+export function canReferenceOwnSession(actor, session, document = getAuthReadSnapshot()) {
+  if (!actor?.personId || actor.authKind === 'service' || hrBrowserRestricted(actor)
+      || !/^[a-f0-9]{32}$/.test(session?.id || '') || session.groupFeed || session.internalRole?.trim()) return false;
+  return findIdentity(document, sessionCreatorIdentity(session))?.person.id === actor.personId;
+}
+
 export function sessionAccessFilter(actor, document = getAuthReadSnapshot()) {
   return session => canReadSession(actor, session, document);
 }

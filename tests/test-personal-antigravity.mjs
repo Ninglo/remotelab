@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import http from 'node:http';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -37,6 +37,8 @@ process.env.CHAT_PORT = String(server.address().port);
 const base = 'http://127.0.0.1:' + process.env.CHAT_PORT;
 const { handleRequest } = await import('../chat/router.mjs');
 const { appendEvents } = await import('../chat/history.mjs');
+const { mutateSessionMeta } = await import('../chat/session-meta-store.mjs');
+const { PROJECT_MEMORY_RUNTIME_FILE } = await import('../chat/project-memory-runtime.mjs');
 const cookies = new Map();
 
 async function request(path, method, payload, headers = {}) {
@@ -104,21 +106,54 @@ try {
     { type: 'message', role: 'assistant', phase: 'commentary', content: 'orchid-bridge provisional content' },
     { type: 'tool_result', output: 'orchid-bridge hidden tool output' },
   ]);
+  const oldGemini = (await call('a', '/api/sessions', 'POST', { tool, folder: home, name: 'Gemini fixture' })).data.session.id;
+  await appendEvents(oldGemini, [{ type: 'message', role: 'assistant', phase: 'final', content: 'orchid-bridge from Gemini' }]);
   await appendEvents(b, [{ type: 'message', role: 'assistant', content: 'orchid-bridge other-person response' }]);
+  await mutateSessionMeta(oldA, meta => {
+    meta.workSummary = { summary: 'orchid-bridge migration summary', knownConclusions: ['Verified on both clients'] };
+    return true;
+  });
+  await mutateSessionMeta(b, meta => {
+    meta.workSummary = { summary: 'orchid-bridge other-person summary' };
+    return true;
+  });
+  await mkdir(dirname(PROJECT_MEMORY_RUNTIME_FILE), { recursive: true });
+  const indexPath = join(home, 'project-index.md');
+  const ledgerPath = join(home, 'project-ledger.md');
+  await writeFile(indexPath, [
+    '| orchid | Orchid | project | — | [memory](projects.md#orchid) |',
+    '| private-b | Other person | project | — | [memory](projects.md#other-person) |',
+  ].join('\n'));
+  await writeFile(ledgerPath, '## Orchid\norchid-bridge approved decision\n## Other person\norchid-bridge other-person project memory');
+  await writeFile(PROJECT_MEMORY_RUNTIME_FILE, JSON.stringify({
+    schemaVersion: 1, enabled: true, contextEnabled: true, reviewEnabled: false, releaseId: 'fixture',
+    indexPath, ledgerPath, workflowPath: join(home, 'project-workflow.md'), groups: [],
+    projects: [{ id: 'orchid' }, { id: 'private-b' }],
+    sessionBindings: [{ sessionId: oldA, projectIds: ['orchid'] }, { sessionId: b, projectIds: ['private-b'] }],
+  }));
+  assert.equal((await request(route + 'context?kind=project-memory&q=orchid-bridge', 'GET', undefined,
+    { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
+  const reference = (who, kind) => call(who, route + 'context?kind=' + kind + '&q=orchid-bridge');
+  assert.deepEqual((await reference('a', 'project-memory')).data.references.map(r => r.excerpt), ['orchid-bridge approved decision']);
+  assert.deepEqual((await reference('b', 'project-memory')).data.references.map(r => r.excerpt), ['orchid-bridge other-person project memory']);
+  assert.deepEqual((await reference('a', 'work-summary')).data.references.map(r => r.excerpt), ['orchid-bridge migration summary\nVerified on both clients']);
+  assert.deepEqual((await reference('b', 'work-summary')).data.references.map(r => r.excerpt), ['orchid-bridge other-person summary']);
   const historyRoute = '/api/sessions/search?scope=personal-context&q=orchid-bridge';
   assert.equal((await request(historyRoute, 'GET', undefined, { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
   const hitsA = await call('a', historyRoute);
   const hitsB = await call('b', historyRoute);
   assert.equal(hitsA.status, 200);
   assert.equal(hitsB.status, 200);
-  assert.deepEqual(hitsA.data.sessions.map(session => session.id), [oldA]);
+  assert.deepEqual(new Set(hitsA.data.sessions.map(session => session.id)), new Set([oldA, oldGemini]));
+  assert.deepEqual(hitsA.data.sessions.find(session => session.id === oldGemini).matches.map(match => match.excerpt), ['orchid-bridge from Gemini']);
   assert.deepEqual(hitsB.data.sessions.map(session => session.id), [b]);
-  const matches = hitsA.data.sessions[0].matches;
+  const previousSource = hitsA.data.sessions.find(session => session.id === oldA);
+  const matches = previousSource.matches;
   assert.deepEqual(matches.map(match => match.excerpt).sort(), ['orchid-bridge fix confirmed', 'orchid-bridge issue']);
   const source = matches.find(match => match.role === 'assistant');
   assert.equal(source.seq, 2);
   assert.equal((await call('b', source.eventPath)).status, 403);
-  let question = '用历史片段回答\n' + source.excerpt + '\n' + hitsA.data.sessions[0].sessionUrl;
+  let question = '用历史片段回答\n' + source.excerpt + '\n' + previousSource.sessionUrl;
   if (process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE) {
     const { chromium } = await import(process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE);
     const browser = await chromium.launch({ executablePath: process.env.REMOTELAB_TEST_CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
@@ -140,9 +175,19 @@ try {
       assert.equal(await page.locator('#indexHistoryResults').getByText('orchid-bridge other-person response').count(), 0);
       assert.match(await result.getByRole('link').getAttribute('href'), new RegExp(oldA));
       await result.getByRole('button', { name: '加入草稿' }).click();
+      for (const [kind, expectedText] of [['project-memory', 'orchid-bridge approved decision'], ['work-summary', 'orchid-bridge migration summary']]) {
+        await page.locator('#personalAntigravityHistoryButton').click();
+        await page.locator('#indexHistoryKind').selectOption(kind);
+        await page.locator('#indexHistoryQuery').fill('orchid-bridge');
+        await page.getByRole('button', { name: '搜索', exact: true }).click();
+        const card = page.locator('#indexHistoryResults article').filter({ hasText: expectedText });
+        await card.getByRole('button', { name: '加入草稿' }).click();
+      }
       question = await page.locator('#msgInput').inputValue();
       assert.match(question, /请根据以前的回复说明修了什么/);
       assert.match(question, /orchid-bridge fix confirmed/);
+      assert.match(question, /orchid-bridge approved decision/);
+      assert.match(question, /orchid-bridge migration summary/);
       assert.match(question, new RegExp(oldA));
       assert.doesNotMatch(question, /hidden-context|other-person response/);
       assert.equal((await call('a', '/api/sessions/' + a + '/events')).data.latestSeq || 0, 0, 'adding an excerpt does not send');

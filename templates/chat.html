@@ -773,7 +773,7 @@
                   <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
                 </button>
               </div>
-              <button class="modal-btn" id="personalAntigravityHistoryButton" type="button" hidden>引用 Index 历史</button>
+              <button class="modal-btn" id="personalAntigravityHistoryButton" type="button" hidden>引用 Index 上下文</button>
             </div>
             <div class="voice-review-panel" id="voiceReviewPanel" role="status" aria-live="polite" hidden>
               <span class="voice-review-body" id="voiceReviewBody"></span>
@@ -904,11 +904,16 @@
 
 <dialog class="modal index-history-dialog" id="personalAntigravityHistory" aria-labelledby="indexHistoryTitle">
   <header class="modal-header">
-    <h2 class="modal-title" id="indexHistoryTitle">引用 Index 历史</h2>
+    <h2 class="modal-title" id="indexHistoryTitle">引用 Index 上下文</h2>
     <form method="dialog"><button class="modal-close" aria-label="关闭">×</button></form>
   </header>
   <div class="modal-body">
     <form id="indexHistorySearch">
+      <select class="settings-inline-input" id="indexHistoryKind" aria-label="选择资料来源">
+        <option value="history">以前的对话</option>
+        <option value="project-memory">项目记忆</option>
+        <option value="work-summary">工作摘要</option>
+      </select>
       <input class="settings-inline-input" id="indexHistoryQuery" type="search" maxlength="1000" required placeholder="输入项目名或关键词" aria-label="搜索会话历史">
       <button class="modal-btn" type="submit">搜索</button>
     </form>

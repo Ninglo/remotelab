@@ -1,4 +1,4 @@
-import { canReadSession } from './session-access.mjs';
+import { canReadSession, canReferenceOwnSession, hrBrowserRestricted } from './session-access.mjs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -7,6 +7,8 @@ import { loadSessionsMeta } from './session-meta-store.mjs';
 import { loadProjectMemoryRuntime } from './project-memory-runtime.mjs';
 import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
 import { getHistoryHeadSeq, readEventsAfter, findLatestAssistantMessage, findLatestUserMessage } from './history.mjs';
+import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import { requests } from './requests.mjs';
 import { createSerialTaskQueue } from './fs-utils.mjs';
 
@@ -71,10 +73,11 @@ export function projectMemorySection(markdown, anchor) {
   }
   return start < 0 ? null : { title, text: lines.slice(start).join('\n').trim() };
 }
-async function sourceFiles() {
+async function sourceFiles({ memoryOnly = false } = {}) {
   const { config } = await loadProjectMemoryRuntime();
   if (!config.enabled) throw Error('当前实例尚未启用项目记忆来源。');
   const index = await readBounded(config.indexPath, 65536), errors = {};
+  if (memoryOnly) return { config, index, ledger: await readBounded(config.ledgerPath) };
   const [memory, report] = await Promise.allSettled([
     (async () => ({ ledger: await readBounded(config.ledgerPath), memoryUpdatedAt: (await stat(config.ledgerPath)).mtime.toISOString() }))(),
     (async () => {
@@ -154,6 +157,52 @@ export function createPersonalWorkspace(deps = {}) {
     } else result.errors.projects = sources.reason.message;
     return result;
   }
+  async function referenceSources(actor, kind) {
+    const auth = await verified(actor);
+    if (hrBrowserRestricted(actor)) fail('当前账号无法引用此来源。', 403);
+    const sessions = (await dependencies.sessions()).filter(session => canReferenceOwnSession(actor, session, auth));
+    if (kind === 'work-summary') {
+      const records = [];
+      for (const session of sessions) {
+        const url = buildSessionNavigationHref(session.id);
+        const summary = normalizeSessionWorkSummary(session.workSummary);
+        if (summary) {
+          const excerpt = [summary.goal, summary.summary, ...summary.knownConclusions, ...summary.nextSteps].filter(Boolean).join('\n');
+          if (excerpt) records.push({ title: session.name || '会话工作摘要', url, excerpt, kind });
+        }
+        for (const work of session.workAwareness?.works || []) {
+          if (work.actor?.personId !== actor.personId || findIdentity(auth, work.actor.identityId)?.person.id !== actor.personId) continue;
+          const excerpt = [work.goal, work.results?.at(-1)?.result].filter(Boolean).join('\n');
+          if (excerpt) records.push({ title: session.name || '工作记录', url, excerpt, kind });
+        }
+      }
+      return { records, incomplete: false };
+    }
+
+    const source = await dependencies.sources({ memoryOnly: true });
+    const involved = involvedProjects(sessions, actor.personId, auth);
+    const ownedIds = new Set(sessions.map(session => session.id));
+    for (const binding of source.config.sessionBindings || []) {
+      if (!ownedIds.has(binding.sessionId)) continue;
+      for (const projectId of binding.projectIds) {
+        if (!involved.has(projectId)) involved.set(projectId, { sessionId: binding.sessionId });
+      }
+    }
+    const records = [];
+    let incomplete = false;
+    for (const row of projectIndexRows(source.index)) {
+      const association = involved.get(row.id);
+      const project = source.config.projects.find(candidate => candidate.id === row.id);
+      if (!association || !project) continue;
+      const memory = projectMemorySection(source.ledger, row.anchor);
+      if (!memory) { incomplete = true; continue; }
+      const link = safeLink(project.briefUrl);
+      records.push({ title: row.name, kind, excerpt: memory.text,
+        url: link || buildSessionNavigationHref(association.sessionId),
+        linkLabel: link ? '项目简报' : '关联会话' });
+    }
+    return { records, incomplete };
+  }
   async function view(actor, surface, requestId = '') {
     if (!['index', 'thinking'].includes(surface)) fail('Unknown workspace surface');
     const target = await serialized(actor.personId, () => resolve(actor, surface, surface === 'index'));
@@ -194,6 +243,6 @@ export function createPersonalWorkspace(deps = {}) {
       return { sessionId: session.id, requestId: accepted.requestId, duplicate: accepted.duplicate, accepted: true };
     });
   }
-  return { context, view, send };
+  return { context, referenceSources, view, send };
 }
 export const personalWorkspace = createPersonalWorkspace();

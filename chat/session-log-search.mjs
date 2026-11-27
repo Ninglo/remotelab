@@ -1,10 +1,11 @@
-import { hrBrowserRestricted, sessionAccessFilter, sessionCreatorIdentity } from './session-access.mjs';
-import { findIdentity, getAuthReadSnapshot } from '../lib/auth-config.mjs';
+import { canReferenceOwnSession, hrBrowserRestricted, sessionAccessFilter } from './session-access.mjs';
+import { getAuthReadSnapshot } from '../lib/auth-config.mjs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CHAT_HISTORY_DIR, CONFIG_DIR } from '../lib/config.mjs';
 import { ByteBudgetCache, cacheBudgetBytes } from '../lib/byte-budget-cache.mjs';
+import { isFinalAssistantMessage, isReplyMessage } from '../lib/assistant-message-phase.mjs';
 import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getLangSmithCaseStatus, readLangSmithCaseConfig } from '../lib/langsmith-case-link.mjs';
@@ -25,6 +26,25 @@ function terms(value, { query = false } = {}) {
     } else result.push(word);
   }
   return result.filter(term => !STOP_WORDS.has(term));
+}
+
+function referenceExcerpt(content, tokens, limit) {
+  const normalized = normalize(content);
+  const positions = tokens.map(token => normalized.indexOf(token)).filter(pos => pos >= 0);
+  const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 120);
+  return `${start ? '…' : ''}${content.slice(start, start + limit)}${content.length > start + limit ? '…' : ''}`;
+}
+
+export function rankIndexReferences(sources, query) {
+  const tokens = [...new Set(terms(query, { query: true }))].slice(0, 128);
+  const tokenSet = new Set(tokens);
+  return sources.map(({ title, excerpt, ...source }) => {
+    const text = stripHiddenBlocks(excerpt);
+    const titleHits = matchingTerms(title, tokenSet).size;
+    const bodyHits = matchingTerms(text, tokenSet).size;
+    return { ...source, title, score: titleHits * 3 + bodyHits, text };
+  }).filter(source => source.score && source.text).sort((a, b) => b.score - a.score)
+    .slice(0, 9).map(({ score, text, ...source }) => ({ ...source, excerpt: referenceExcerpt(text, tokens, 1000) }));
 }
 
 function matchingTerms(text, queryTerms) {
@@ -90,7 +110,7 @@ export function createSessionLogSearch({
     return { seq: number, role: event.role, timestamp: event.timestamp || '',
       content: stripHiddenBlocks(content),
       final: !event.internalOperation && (event.role === 'user' || (!event.channel || event.channel === 'final')
-        && (!event.phase || event.phase === 'final_answer')),
+        && isReplyMessage(event) && (!event.phase || isFinalAssistantMessage(event))),
       weight: event.role === 'user' ? 2 : 1 };
   }
 
@@ -194,15 +214,13 @@ export function createSessionLogSearch({
       throw Object.assign(new Error('当前账号无法引用会话历史。'), { statusCode: 403 });
     }
     const document = getAuthReadSnapshot();
-    const all = (await list()).filter(authSession ? sessionAccessFilter(authSession, document) : () => true);
+    const visible = personalContext ? session => canReferenceOwnSession(authSession, session, document)
+      : authSession ? sessionAccessFilter(authSession, document) : () => true;
+    const all = (await list()).filter(visible);
     let selected = all.filter(session => /^[0-9a-f]{32}$/.test(session.id)
       && (!session.internalRole?.trim() || session.internalRole.trim() === 'scheduled_execution'));
     const ids = new Set(all.map(session => session.id));
     for (const id of cache.keys()) if (!ids.has(id)) cache.delete(id);
-    if (personalContext) {
-      selected = selected.filter(session => !session.groupFeed && !session.internalRole?.trim()
-        && findIdentity(document, sessionCreatorIdentity(session))?.person.id === authSession.personId);
-    }
     if (scope === 'private-chat') {
       const key = privateChatKey(all.find(session => session.id === sessionId));
       if (!key) throw Object.assign(new Error('private-chat search requires a Session with a known Feishu private-chat source'), { statusCode: 400 });
@@ -253,10 +271,7 @@ export function createSessionLogSearch({
             const message = await readMessage(session.id, seq);
             if (!message) { incomplete = true; return null; }
             if (personalContext && (!message.final || !message.content)) return null;
-            const normalized = normalize(message.content);
-            const positions = tokens.map(token => normalized.indexOf(token)).filter(pos => pos >= 0);
-            const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 120);
-            const excerpt = `${start ? '…' : ''}${message.content.slice(start, start + 480)}${message.content.length > start + 480 ? '…' : ''}`;
+            const excerpt = referenceExcerpt(message.content, tokens, 480);
             return { seq, role: message.role, timestamp: message.timestamp, excerpt,
               eventPath: `/api/sessions/${session.id}/events?filter=all&afterSeq=${seq - 1}&limit=1` };
           } catch { incomplete = true; return null; }

@@ -1,17 +1,25 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-personal-workspace-')); setIsolatedTestHome(home);
 after(() => rm(home, { recursive: true, force: true }));
-const { updateAuthDocument, loadAuthDocument } = await import('../lib/auth-config.mjs');
+const { AUTH_FILE } = await import('../lib/config.mjs');
+await mkdir(dirname(AUTH_FILE), { recursive: true });
+await writeFile(AUTH_FILE, JSON.stringify({
+  version: 2, primaryPersonId: 'person_alice', administratorPersonIds: [],
+  people: ['alice', 'bob'].map(name => ({
+    id: 'person_' + name, name, credentials: [], preferences: {},
+    identities: [{ id: 'identity_' + name, kind: 'web', realm: 'remotelab', subjectId: name }],
+  })),
+}));
+const { loadAuthDocument } = await import('../lib/auth-config.mjs');
 const { createPersonalWorkspace, projectMemorySection } = await import('../chat/feishu-personal-workspace.mjs');
 const { handleFeishuPersonalWorkspace } = await import('../chat/router-feishu-personal-workspace.mjs');
 const connections = await import('../chat/feishu-web-settings.mjs');
-await updateAuthDocument(d => { d.people = ['alice', 'bob'].map(name => ({ id: 'person_' + name, name, credentials: [], preferences: {}, identities: [{ id: 'identity_' + name, kind: 'web', realm: 'remotelab', subjectId: name }] })); d.primaryPersonId = 'person_alice'; });
 const actor = name => ({ personId: 'person_' + name, identityId: 'identity_' + name });
 const a = 'a'.repeat(32), b = 'b'.repeat(32), c = 'c'.repeat(32), group = 'd'.repeat(32);
 function fixture() {

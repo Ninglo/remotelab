@@ -7,6 +7,7 @@
   const historyButton = field('HistoryButton');
   const historyDialog = field('History');
   const historyForm = document.getElementById('indexHistorySearch');
+  const historyKind = document.getElementById('indexHistoryKind');
   const historyQuery = document.getElementById('indexHistoryQuery');
   const historyStatus = document.getElementById('indexHistoryStatus');
   const historyResults = document.getElementById('indexHistoryResults');
@@ -23,10 +24,11 @@
       historyDialog.close();
       return;
     }
-    const heading = '\n\nIndex 历史引用（仅作参考。请区分历史记录和当前事实，并引用来源链接）';
+    const heading = '\n\nIndex 上下文引用（仅作参考。请区分已有记录和当前事实，并引用来源链接）';
     const quote = match.excerpt.split('\n').map(line => '> ' + line).join('\n');
-    const role = match.role === 'assistant' ? '历史回复' : '历史提问';
-    const addition = '\n\n' + role + ' · 来源 ' + url + '\n' + quote;
+    const label = match.kind === 'project-memory' ? '项目记忆' : match.kind === 'work-summary' ? '工作摘要'
+      : match.role === 'assistant' ? '历史回复' : '历史提问';
+    const addition = '\n\n' + label + ' · ' + (match.linkLabel || '来源') + ' ' + url + '\n' + quote;
     if (!msgInput.value.includes(addition)) {
       msgInput.value = msgInput.value.trimEnd() + (msgInput.value.includes(heading) ? '' : heading) + addition;
       msgInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -35,66 +37,70 @@
     msgInput.focus();
   }
 
-  function renderHistory(sessions) {
+  function renderReferences(references) {
     let count = 0;
-    for (const session of sessions) {
-      const url = new URL(session.sessionUrl || ('/?session=' + encodeURIComponent(session.id)), location.href);
+    for (const match of references) {
+      const url = new URL(match.url, location.href);
       if (!['https:', 'http:'].includes(url.protocol)) continue;
-      for (const match of session.matches || []) {
-        const section = document.createElement('article');
-        const link = document.createElement('a');
-        link.href = url.href;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = session.title;
-        const excerpt = document.createElement('p');
-        excerpt.textContent = match.excerpt;
-        const add = document.createElement('button');
-        add.type = 'button';
-        add.className = 'modal-btn';
-        add.textContent = '加入草稿';
-        add.addEventListener('click', () => addHistoryExcerpt(match, url.href));
-        section.append(link, excerpt, add);
-        historyResults.append(section);
-        count += 1;
-      }
+      const section = document.createElement('article');
+      const link = document.createElement('a');
+      link.href = url.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = match.linkLabel ? match.title + ' · ' + match.linkLabel : match.title;
+      const excerpt = document.createElement('p');
+      excerpt.textContent = match.excerpt;
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'modal-btn';
+      add.textContent = '加入草稿';
+      add.addEventListener('click', () => addHistoryExcerpt(match, url.href));
+      section.append(link, excerpt, add);
+      historyResults.append(section);
+      count += 1;
     }
     return count;
   }
 
+  function resetResults() {
+    historyRequest?.abort();
+    historyResults.replaceChildren();
+    historyStatus.textContent = '';
+  }
+
+  historyKind.addEventListener('change', resetResults);
   historyButton.addEventListener('click', () => {
     if (msgInput.disabled) return;
     historySession = resolveActiveComposerSessionId();
     historyQuery.value = '';
-    historyStatus.textContent = '';
-    historyResults.replaceChildren();
+    resetResults();
     historyDialog.showModal();
     historyQuery.focus();
   });
-  historyDialog.addEventListener('close', () => {
-    historyRequest?.abort();
-    historyResults.replaceChildren();
-  });
+  historyDialog.addEventListener('close', resetResults);
   historyForm.addEventListener('submit', async event => {
     event.preventDefault();
     const query = historyQuery.value.trim();
     if (!query) return;
-    historyRequest?.abort();
+    resetResults();
     const controller = new AbortController();
     historyRequest = controller;
-    historyResults.replaceChildren();
     historyStatus.textContent = '正在搜索…';
     try {
-      const params = new URLSearchParams({ q: query, scope: 'personal-context' });
-      const result = await fetchJsonOrRedirect('/api/sessions/search?' + params, {
-        revalidate: false, signal: controller.signal,
-      });
+      const kind = historyKind.value;
+      const searchingHistory = kind === 'history';
+      const params = new URLSearchParams({ q: query, ...(searchingHistory ? { scope: 'personal-context' } : { kind }) });
+      const endpoint = searchingHistory ? '/api/sessions/search' : '/api/personal-antigravity/context';
+      const result = await fetchJsonOrRedirect(endpoint + '?' + params, { revalidate: false, signal: controller.signal });
       if (controller.signal.aborted) return;
-      const count = renderHistory(result.sessions);
-      historyStatus.textContent = result.incomplete ? '部分历史暂时无法读取。'
+      const references = searchingHistory ? result.sessions.flatMap(session => (session.matches || []).map(match => ({
+        ...match, title: session.title, url: session.sessionUrl || ('/?session=' + encodeURIComponent(session.id)),
+      }))) : result.references;
+      const count = renderReferences(references);
+      historyStatus.textContent = result.incomplete ? '部分来源暂时无法读取。'
         : count ? '' : '没有找到可引用的片段。可以换个关键词。';
     } catch {
-      if (!controller.signal.aborted) historyStatus.textContent = '无法读取会话历史，请稍后重试。';
+      if (!controller.signal.aborted) historyStatus.textContent = '无法读取所选来源，请稍后重试。';
     }
   });
 

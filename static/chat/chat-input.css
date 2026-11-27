@@ -1184,7 +1184,8 @@
 .index-history-dialog::backdrop { background: var(--modal-backdrop); }
 .index-history-dialog .modal-title { margin: 0; }
 .index-history-dialog .modal-body { gap: 10px; }
-#indexHistorySearch { display: flex; gap: 8px; }
+#indexHistorySearch { display: flex; flex-wrap: wrap; gap: 8px; }
+#indexHistoryKind { width: auto; }
 #indexHistoryQuery { flex: 1; min-width: 0; }
 .index-history-note { margin: 0; color: var(--text-secondary); font-size: 13px; }
 #indexHistoryResults article { border-top: 1px solid var(--border); padding: 12px 0; }

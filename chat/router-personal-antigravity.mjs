@@ -1,6 +1,8 @@
 import { open, readFile } from 'node:fs/promises';
 import { readBody } from '../lib/utils.mjs';
 import { join } from 'node:path';
+import { personalWorkspace } from './feishu-personal-workspace.mjs';
+import { rankIndexReferences } from './session-log-search.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import {
   PERSONAL_ANTIGRAVITY_API, PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled,
@@ -104,7 +106,17 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
       writeJson(res, 403, { error: '请使用本人的 Index 账号登录。' });
       return true;
     }
-    if (action === 'status' && req.method === 'GET') {
+    if (action === 'context' && req.method === 'GET') {
+      const params = new URL(req.url, 'http://localhost').searchParams;
+      const kind = params.get('kind');
+      const query = params.get('q')?.trim();
+      if (!['project-memory', 'work-summary'].includes(kind) || !query || query.length > 1000) {
+        writeJson(res, 400, { error: '请选择来源并输入搜索关键词。' });
+        return true;
+      }
+      const { records, incomplete } = await personalWorkspace.referenceSources(authSession, kind);
+      writeJson(res, 200, { references: rankIndexReferences(records, query), incomplete });
+    } else if (action === 'status' && req.method === 'GET') {
       writeJson(res, 200, relay.status(personId));
     } else if ((action === 'pair' || action === 'disconnect') && req.method === 'POST'
         && req.headers['content-type']?.startsWith('application/json')) {
