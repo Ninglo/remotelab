@@ -3,7 +3,7 @@ import { readBody } from '../lib/utils.mjs';
 import { join } from 'node:path';
 import { personalWorkspace } from './feishu-personal-workspace.mjs';
 import { requests } from './requests.mjs';
-import { buildPersonalAntigravityPrompt } from './personal-antigravity-context.mjs';
+import { createPersonalAntigravityContextLookup, indexContextKinds } from './personal-antigravity-context.mjs';
 import { rankIndexReferences } from './session-log-search.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import {
@@ -42,13 +42,23 @@ export async function handlePersonalAntigravityDeviceRoutes({ req, res, pathname
       writeJson(res, 403, { error: '需要已绑定设备凭据。' });
       return true;
     }
+    if (action === 'context') {
+      const { id, kind, query } = await body(req);
+      if (!credential.test(id || '') || !indexContextKinds.includes(kind) || typeof query !== 'string'
+          || !query.trim() || query.length > 1000) {
+        writeJson(res, 400, { error: '请选择来源并输入搜索关键词。' });
+        return true;
+      }
+      const results = await relay.lookupContext(id, token, kind, query.trim());
+      if (!res.destroyed) writeJson(res, 200, results);
+      return true;
+    }
     const device = relay.authenticate(token);
     if (action === 'next') {
       const job = await relay.next(device, abortedOnClose(res));
       if (!res.destroyed) writeJson(res, 200, { job });
     } else if (action === 'start') {
-      relay.start(device, (await body(req)).id);
-      writeJson(res, 200, { ok: true });
+      writeJson(res, 200, { ok: true, ...relay.start(device, (await body(req)).id) });
     } else if (action === 'watch') {
       const { id } = await body(req);
       const active = await relay.watch(device, id, abortedOnClose(res));
@@ -101,11 +111,12 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
         writeJson(res, 403, { error: '无法核验个人 Antigravity 请求的发起人。' });
         return true;
       }
-      const prompt = await buildPersonalAntigravityPrompt(record, manifest.prompt, signal);
+      const lookup = await createPersonalAntigravityContextLookup(record, signal);
       const response = await relay.run(manifest.viewPersonId, manifest.personalAntigravityDeviceId, {
-        prompt, session: manifest.sessionId,
+        prompt: manifest.prompt, session: manifest.sessionId,
+        indexContextAvailable: Boolean(lookup),
         fresh: manifest.personalAntigravityFreshThread === true, model: manifest.options?.model || '', effort: manifest.options?.effort || '',
-      }, signal);
+      }, signal, lookup);
       if (!res.destroyed) writeJson(res, 200, { response });
       return true;
     }

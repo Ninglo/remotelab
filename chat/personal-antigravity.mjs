@@ -16,6 +16,7 @@ export function createPersonalAntigravityRelay() {
   const codes = new Map();
   const devices = new Map();
   const tokens = new Map();
+  const contextJobs = new Map();
 
   function removePair(pair) {
     if (!pair) return;
@@ -81,7 +82,7 @@ export function createPersonalAntigravityRelay() {
     return device.id;
   }
 
-  async function run(personId, deviceId, input, signal) {
+  async function run(personId, deviceId, input, signal, lookup) {
     const device = devices.get(personId);
     if (!device || device.id !== deviceId) throw fail('原个人 Antigravity 连接已关闭，请重新发送。');
     if (signal?.aborted) throw fail('Index 已停止这次调用。');
@@ -95,10 +96,11 @@ export function createPersonalAntigravityRelay() {
         signal?.removeEventListener('abort', onAbort);
         device.jobs.get(id)?.notify?.();
         device.jobs.delete(id);
+        contextJobs.delete(id);
         if (error) reject(error);
         else resolve(response);
       }
-      device.jobs.set(id, { id, input, finish, claimed: false });
+      device.jobs.set(id, { id, input, finish, lookup, claimed: false });
       signal?.addEventListener('abort', onAbort, { once: true });
       device.wake?.();
     });
@@ -132,6 +134,22 @@ export function createPersonalAntigravityRelay() {
     const job = device.jobs.get(id);
     if (!job?.claimed || job.started) throw fail('任务已结束或不属于这台设备。', 404);
     job.started = true;
+    if (!job.lookup) return {};
+    const contextToken = secret();
+    contextJobs.set(id, { key: hash(contextToken), lookup: job.lookup, calls: 0 });
+    return { contextToken };
+  }
+
+  async function lookupContext(id, token, kind, query) {
+    const context = contextJobs.get(id);
+    if (!context || context.key !== hash(token)) throw fail('任务已结束或查询凭据无效。', 404);
+    if (context.calls >= 9) throw fail('这条请求已达到上下文查询次数上限。', 429);
+    context.calls += 1;
+    let result;
+    try { result = await context.lookup(kind, query); }
+    catch { result = { references: [], incomplete: true }; }
+    if (contextJobs.get(id) !== context) throw fail('任务已结束。', 404);
+    return result;
   }
 
   async function watch(device, id, signal) {
@@ -162,7 +180,7 @@ export function createPersonalAntigravityRelay() {
     else throw fail('本机返回的结果无效。', 400);
   }
 
-  return { status, pair, redeem, disconnect, requireDevice, authenticate, run, next, start, watch, complete };
+  return { status, pair, redeem, disconnect, requireDevice, authenticate, run, next, start, lookupContext, watch, complete };
 }
 
 export const personalAntigravity = createPersonalAntigravityRelay();

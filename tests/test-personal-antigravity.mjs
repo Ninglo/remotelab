@@ -3,6 +3,9 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import http from 'node:http';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -215,52 +218,104 @@ try {
   assert.equal(acceptA.status, 202, JSON.stringify(acceptA));
   assert.equal(acceptB.status, 202, JSON.stringify(acceptB));
   const [jobA, jobB] = await Promise.all([device(tokenA, 'next'), device(tokenB, 'next')]);
-  const promptA = jobA.data.job?.prompt;
-  const promptB = jobB.data.job?.prompt;
-  assert.ok(promptA?.startsWith(question), JSON.stringify(jobA));
-  assert.match(promptA, /orchid-bridge fix confirmed/);
-  assert.match(promptA, /orchid-bridge from Gemini/);
-  assert.match(promptA, /orchid-bridge approved decision/);
-  assert.match(promptA, /orchid-bridge migration summary/);
-  assert.match(promptA, new RegExp(oldA));
-  assert.match(promptA, new RegExp(oldGemini));
-  assert.equal(promptA.split(question).length, 2, 'the current request is never quoted as history');
-  assert.doesNotMatch(promptA, /hidden-context|provisional content|hidden tool output|other-person|confidential-marker/);
-  assert.ok(promptB?.startsWith(question), JSON.stringify(jobB));
-  assert.match(promptB, /orchid-bridge other-person response/);
-  assert.match(promptB, /orchid-bridge other-person summary/);
-  assert.match(promptB, /orchid-bridge other-person project memory/);
-  assert.doesNotMatch(promptB, /fix confirmed|migration summary|approved decision|from Gemini/);
-  assert.equal((await device(tokenA, 'result', { id: jobB.data.job.id, response: 'forged' })).status, 404);
-  assert.equal((await device(tokenA, 'result', { id: jobA.data.job.id, response: 'not started' })).status, 400);
-  for (const [token, job, answer] of [[tokenA, jobA.data.job, 'reply from A'], [tokenB, jobB.data.job, 'reply from B']]) {
-    assert.equal((await device(token, 'start', { id: job.id })).status, 200);
-    assert.equal((await device(token, 'start', { id: job.id })).status, 404);
-    assert.equal((await device(token, 'result', { id: job.id, response: answer })).status, 200);
-    assert.equal((await device(token, 'result', { id: job.id, response: answer })).status, 404);
+  for (const { data: { job } } of [jobA, jobB]) {
+    assert.equal(job.prompt, question, 'the relay sends no retrieved context before a tool call');
+    assert.equal(job.indexContextAvailable, true);
   }
+  const jobIdA = jobA.data.job.id;
+  const jobIdB = jobB.data.job.id;
+  const searchInput = { id: jobIdA, kind: 'history', query: 'orchid-bridge' };
+  assert.equal((await device(tokenA, 'context', searchInput)).status, 404);
+  assert.equal((await device('', 'context', searchInput)).status, 403);
+  assert.equal((await device(tokenB, 'start', { id: jobIdA })).status, 404);
+  assert.equal((await device(tokenA, 'result', { id: jobIdB, response: 'forged' })).status, 404);
+  assert.equal((await device(tokenA, 'result', { id: jobIdA, response: 'not started' })).status, 400);
+  const [startA, startB] = await Promise.all([device(tokenA, 'start', { id: jobIdA }), device(tokenB, 'start', { id: jobIdB })]);
+  assert.equal(startA.status, 200);
+  assert.equal(startB.status, 200);
+  const contextA = startA.data.contextToken;
+  const contextB = startB.data.contextToken;
+  assert.match(contextA, /^[A-Za-z0-9_-]{32}$/);
+  assert.notEqual(contextA, contextB);
+  assert.equal((await device(tokenA, 'start', { id: jobIdA })).status, 404);
+  assert.equal((await device(contextA, 'next')).status, 403);
+  assert.equal((await device(contextB, 'context', searchInput)).status, 404);
+  assert.equal((await device(contextA, 'context', { ...searchInput, kind: 'arbitrary' })).status, 400);
+
+  const mcp = spawn(process.execPath, [fileURLToPath(new URL('../scripts/personal-antigravity-device.mjs', import.meta.url)),
+    '--index-context-mcp'], {
+    env: { ...process.env, INDEX_CONTEXT_URL: base + route + 'device/context',
+      INDEX_CONTEXT_JOB: jobIdA, INDEX_CONTEXT_TOKEN: contextA },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const exitMcp = once(mcp, 'exit');
+  const replies = createInterface({ input: mcp.stdout })[Symbol.asyncIterator]();
+  let callId = 0;
+  async function rpc(method, params) {
+    const id = ++callId;
+    mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    const response = JSON.parse((await replies.next()).value);
+    assert.equal(response.id, id);
+    assert.equal(response.error, undefined);
+    return response.result;
+  }
+  async function toolSearch(kind, query = searchInput.query) {
+    const result = await rpc('tools/call', { name: 'search_index_context', arguments: { kind, query } });
+    assert.notEqual(result.isError, true);
+    return JSON.parse(result.content[0].text);
+  }
+  try {
+    assert.deepEqual((await rpc('initialize', { protocolVersion: '2025-03-26' })).capabilities, { tools: {} });
+    assert.deepEqual((await rpc('tools/list')).tools.map(item => item.name), ['search_index_context']);
+    const history = JSON.stringify(await toolSearch('history'));
+    assert.match(history, /orchid-bridge fix confirmed/);
+    assert.match(history, /orchid-bridge from Gemini/);
+    assert.match(history, new RegExp(oldA));
+    assert.match(history, new RegExp(oldGemini));
+    assert.ok(!history.includes(question), 'the current request is excluded from history');
+    assert.doesNotMatch(history, /hidden-context|provisional content|hidden tool output|other-person|confidential-marker/);
+    assert.deepEqual((await toolSearch('project-memory')).references.map(item => item.excerpt), ['orchid-bridge approved decision']);
+    const summary = JSON.stringify(await toolSearch('work-summary'));
+    assert.match(summary, /orchid-bridge migration summary/);
+    assert.doesNotMatch(summary, /other-person/);
+    assert.deepEqual(await toolSearch('history', 'nonexistent-marker-0932345021'), { references: [], incomplete: false });
+  } finally {
+    mcp.stdin.end();
+    assert.equal((await exitMcp)[0], 0);
+  }
+  const otherHistory = await device(contextB, 'context', { ...searchInput, id: jobIdB });
+  assert.equal(otherHistory.status, 200);
+  assert.match(JSON.stringify(otherHistory.data), /orchid-bridge other-person response/);
+  assert.doesNotMatch(JSON.stringify(otherHistory.data), /fix confirmed|from Gemini/);
+  for (const [token, id, answer] of [[tokenA, jobIdA, 'reply from A'], [tokenB, jobIdB, 'reply from B']]) {
+    assert.equal((await device(token, 'result', { id, response: answer })).status, 200);
+    assert.equal((await device(token, 'result', { id, response: answer })).status, 404);
+  }
+  assert.equal((await device(contextA, 'context', searchInput)).status, 404);
   const [runA, runB] = await Promise.all([completed('a', acceptA.data.runId || acceptA.data.run.id),
     completed('b', acceptB.data.runId || acceptB.data.run.id)]);
   assert.equal(runA.state, 'completed', JSON.stringify(runA));
   assert.equal(runB.state, 'completed', JSON.stringify(runB));
   const [eventsA, eventsB] = await Promise.all([call('a', '/api/sessions/' + a + '/events'), call('b', '/api/sessions/' + b + '/events')]);
   assert.match(JSON.stringify(eventsA.data), /reply from A/);
-  assert.doesNotMatch(JSON.stringify(eventsA.data), /orchid-bridge migration summary/, 'automatic context does not change the stored user message');
+  assert.doesNotMatch(JSON.stringify(eventsA.data), /orchid-bridge migration summary/, 'tool results do not change the stored user message');
   assert.match(JSON.stringify(eventsB.data), /reply from B/);
   assert.doesNotMatch(JSON.stringify(eventsA.data), /reply from B/);
   const stopped = await submit('a', a, 'stop during local execution', 'personal-request-stop-01');
   assert.equal(stopped.status, 202, JSON.stringify(stopped));
   const stoppedJob = (await device(tokenA, 'next')).data.job;
-  assert.equal((await device(tokenA, 'start', { id: stoppedJob.id })).status, 200);
+  const stoppedStart = await device(tokenA, 'start', { id: stoppedJob.id });
+  assert.equal(stoppedStart.status, 200);
   const interruption = device(tokenA, 'watch', { id: stoppedJob.id });
   assert.equal((await call('a', '/api/runs/' + stopped.data.run.id + '/cancel', 'POST', {})).status, 200);
   assert.deepEqual((await interruption).data, { active: false });
+  assert.equal((await device(stoppedStart.data.contextToken, 'context', { ...searchInput, id: stoppedJob.id })).status, 404);
   assert.equal((await device(tokenA, 'result', { id: stoppedJob.id, response: 'late response' })).status, 404);
   assert.equal((await completed('a', stopped.data.run.id)).state, 'cancelled');
   assert.equal((await call('a', route + 'disconnect', 'POST', {})).status, 200);
   assert.equal((await device(tokenA, 'next')).status, 403);
   assert.equal((await call('b', route + 'status')).data.connected, true);
-  console.log('Personal Antigravity: private history citations, device routing, cancellation and account isolation passed.');
+  console.log('Personal Antigravity: on-demand MCP context, device routing, cancellation and account isolation passed.');
 } finally {
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));
