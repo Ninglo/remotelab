@@ -1,8 +1,8 @@
 import { open, readFile } from 'node:fs/promises';
 import { readBody } from '../lib/utils.mjs';
 import { join } from 'node:path';
-import { personalWorkspace } from './feishu-personal-workspace.mjs';
-import { rankIndexReferences } from './session-log-search.mjs';
+import { requests } from './requests.mjs';
+import { createPersonalAntigravityContextLookup, indexContextKinds } from './personal-antigravity-context.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import {
   PERSONAL_ANTIGRAVITY_API, PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled,
@@ -27,12 +27,12 @@ export async function handlePersonalAntigravityDeviceRoutes({ req, res, pathname
   try {
     const action = pathname.slice(relayPath.length);
     if (action === 'redeem') {
-      const { code } = await body(req);
+      const { code, dailyMode } = await body(req);
       if (!credential.test(code || '')) {
         writeJson(res, 403, { error: '连接码无效。' });
         return true;
       }
-      writeJson(res, 200, relay.redeem(code));
+      writeJson(res, 200, relay.redeem(code, dailyMode === true));
       return true;
     }
     const token = /^Bearer ([A-Za-z0-9_-]{32})$/.exec(req.headers.authorization || '')?.[1];
@@ -40,13 +40,23 @@ export async function handlePersonalAntigravityDeviceRoutes({ req, res, pathname
       writeJson(res, 403, { error: '需要已绑定设备凭据。' });
       return true;
     }
+    if (action === 'context') {
+      const { id, kind, query } = await body(req);
+      if (!credential.test(id || '') || !indexContextKinds.includes(kind) || typeof query !== 'string'
+          || !query.trim() || query.length > 1000) {
+        writeJson(res, 400, { error: '请选择来源并输入搜索关键词。' });
+        return true;
+      }
+      const results = await relay.lookupContext(id, token, kind, query.trim());
+      if (!res.destroyed) writeJson(res, 200, results);
+      return true;
+    }
     const device = relay.authenticate(token);
     if (action === 'next') {
       const job = await relay.next(device, abortedOnClose(res));
       if (!res.destroyed) writeJson(res, 200, { job });
     } else if (action === 'start') {
-      relay.start(device, (await body(req)).id);
-      writeJson(res, 200, { ok: true });
+      writeJson(res, 200, { ok: true, ...relay.start(device, (await body(req)).id) });
     } else if (action === 'watch') {
       const { id } = await body(req);
       const active = await relay.watch(device, id, abortedOnClose(res));
@@ -94,10 +104,20 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
         writeJson(res, 409, { error: '请求已转发，避免重复执行。请重新发送。' });
         return true;
       }
+      const record = await requests.byRequest(manifest.sessionId, manifest.requestId);
+      if (record?.runId !== runId || record.options?.viewPersonId !== manifest.viewPersonId) {
+        writeJson(res, 403, { error: '无法核验个人 Antigravity 请求的发起人。' });
+        return true;
+      }
+      const lookup = await createPersonalAntigravityContextLookup(record, signal);
       const response = await relay.run(manifest.viewPersonId, manifest.personalAntigravityDeviceId, {
         prompt: manifest.prompt, session: manifest.sessionId,
+        indexContextAvailable: Boolean(lookup),
+        dailyModeEligible: Boolean(lookup) && record.options.usageSurface === 'web'
+          && record.options.usageActorKind === 'human' && !record.options.sourceContext
+          && !record.deliveryPlan && !record.options.sourceDelivery,
         fresh: manifest.personalAntigravityFreshThread === true, model: manifest.options?.model || '', effort: manifest.options?.effort || '',
-      }, signal);
+      }, signal, lookup);
       if (!res.destroyed) writeJson(res, 200, { response });
       return true;
     }
@@ -106,17 +126,7 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
       writeJson(res, 403, { error: '请使用本人的 Index 账号登录。' });
       return true;
     }
-    if (action === 'context' && req.method === 'GET') {
-      const params = new URL(req.url, 'http://localhost').searchParams;
-      const kind = params.get('kind');
-      const query = params.get('q')?.trim();
-      if (!['project-memory', 'work-summary'].includes(kind) || !query || query.length > 1000) {
-        writeJson(res, 400, { error: '请选择来源并输入搜索关键词。' });
-        return true;
-      }
-      const { records, incomplete } = await personalWorkspace.referenceSources(authSession, kind);
-      writeJson(res, 200, { references: rankIndexReferences(records, query), incomplete });
-    } else if (action === 'status' && req.method === 'GET') {
+    if (action === 'status' && req.method === 'GET') {
       writeJson(res, 200, relay.status(personId));
     } else if ((action === 'pair' || action === 'disconnect') && req.method === 'POST'
         && req.headers['content-type']?.startsWith('application/json')) {

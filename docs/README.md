@@ -8,7 +8,7 @@ publication. External waits retain their actual callback or Trigger reference.
 
 The deterministic daily disk collector (`scripts/disk-daily-check.mjs --output-dir <existing-daily-directory>`) preserves the previous evidence and writes the existing daily-report pointers without starting an Agent; repairs remain with the minute observer. See [monitoring](monitoring.md).
 
-[Short-term disk growth warnings](monitoring.md#short-term-disk-growth) use the existing minute observer and delivery ledger, independently of capacity thresholds.
+[Short-term disk growth warnings](monitoring.md#short-term-disk-growth) use the existing minute observer and delivery ledger, independently of capacity thresholds. The [SG syslog maintenance notes](monitoring.md) cover size-based rotation, log retention, and the verified `scripts/archive-rotated-syslog.sh` recovery tool.
 
 This repo now keeps documentation in four layers:
 

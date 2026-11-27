@@ -1,0 +1,23 @@
+# Install as a separate logrotate.d rule after removing ONLY /var/log/syslog
+# from the distro rsyslog stanza. Legacy numbered files remain untouched.
+/var/log/syslog {
+    su root adm
+    weekly
+    maxsize 1G
+    rotate -1
+    maxage 35
+    missingok
+    notifempty
+    dateext
+    dateformat -%Y%m%d-%H%M%S
+    compress
+    nodelaycompress
+    compresscmd /usr/bin/pigz
+    uncompresscmd /usr/bin/gunzip
+    compressoptions -3 -p 2
+    compressext .gz
+    create 0640 syslog adm
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}

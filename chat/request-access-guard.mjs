@@ -38,6 +38,19 @@ function rules(config) {
   });
 }
 
+// References sent to a personal runtime must not act as a second text path
+// around configured protected-source boundaries. Inspect full text before clipping.
+export async function loadReferenceContentFilter(configPath = process.env.REMOTELAB_REQUEST_ACCESS_GUARD) {
+  if (!configPath) return () => true;
+  const compiled = rules(JSON.parse(await readFile(configPath, 'utf8')))
+    .filter(rule => !rule.continuation);
+  return content => {
+    if (content.length > 65536) return false;
+    const text = normalizeAccessText(content);
+    return !compiled.some(rule => rule.patterns.every(pattern => pattern.test(text)));
+  };
+}
+
 function operationGranted(config, input, category) {
   const options = input.options || {}, source = options.sourceContext || {};
   return (config.operationGrants || []).some(grant => grant.sessionId === input.sessionId
