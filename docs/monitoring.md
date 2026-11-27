@@ -568,17 +568,14 @@ Use `scripts/monitoring-alerts.mjs --dry-run` against the target instance enviro
 
 For script-first disk maintenance, enable `recovery.diskScript.enabled` and
 configure `caches: [{kind: "npm", path: "/owned/npm-cache"}, {kind: "pip",
-path: "/owned/pip-cache"}]`, `maxBytes` (default 10 GiB), `maxDurationMs`
+path: "/owned/pip-cache"}, {kind: "uv", path: "/owned/uv-cache"}]`,
+`maxBytes` (default 10 GiB), `maxDurationMs`
 (default 30 seconds, within the observer service timeout), and optional
 `maintenanceTaskIds` for existing disk-maintenance tasks. This opt-in also
 routes measured `diskGrowth` failures to recovery. Include those resource keys
 in `recovery.workflowPaths` so any fallback reads the same authorized workflow.
 
-The existing observer runs the deterministic cache procedure once per incident
-before admitting AI work. It verifies ownership, filesystem, tree contents,
-size, official cache location, package processes and open handles, then uses
-only npm/pip's official cache commands. Unknown or busy candidates are skipped;
-no generic directory deletion, dependency removal or data migration is allowed.
+The existing observer runs the deterministic cache procedure once per incident before admitting AI work. It checks ownership, filesystem, size and the official cache location. For npm/pip it also verifies the tree, package processes and open handles before calling their official purge. For uv on Linux it checks the cache signature and rejects mounted subtrees; it uses only native `uv cache prune`, never force, CI mode or full cache deletion. The native command handles its cache locking. A successful no-op is distinct from a cleanup; the physical free-space delta is recorded separately. Unknown or busy candidates are skipped. Project files, environments outside the selected caches and migrated data are not cleanup targets.
 The durable attempt is saved before execution and the receipt includes cache
 outcomes and physical disk deltas (including concurrent writes). An interrupted
 attempt is not automatically replayed. Existing in-flight maintenance retains

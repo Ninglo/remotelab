@@ -35,6 +35,29 @@ test('record migration, indexed access, multi-process increments, rollback and i
   assert.equal((await store.prune()).removed,1);assert.deepEqual(await store.all(),before);
  } finally {await rm(dir,{recursive:true,force:true})}
 });
+test('external references stay outside runnable sessions and survive native updates, retries and prune',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'reference-catalog-')),file=join(dir,'chat-sessions.json');
+ try {
+  await writeFile(file,JSON.stringify([{id:'a',name:'native'}]));const c=createSessionCatalog(file);await c.migrate();
+  const nativeId='01234567-89ab-cdef-abcd-0123456789ab',key='sg-codex:ownerA:'+nativeId;
+  const ref={source:'sg-codex',nativeId,title:'fixture',archived:false,updatedAt:1};
+  await assert.rejects(c.writeExternalReference(key,ref,null),/NOT_ENABLED/);
+  assert.equal(await c.enableReferences(),true);assert.equal(await c.enableReferences(),false);
+  const first=await c.writeExternalReference(key,ref,null);assert.equal(first.changed,true);
+  assert.equal((await c.writeExternalReference(key,ref,null)).changed,false);
+  await assert.rejects(c.writeExternalReference(key,{...ref,title:'stale'},null),/STALE_REFERENCE/);
+  await assert.rejects(c.writeExternalReference(key,{...ref,transcript:'no'},first.hash),/INVALID_REFERENCE/);
+  await c.mutateAll((rows,save)=>save(rows.map(r=>({...r,name:'new native name'}))));
+  const reopened=createSessionCatalog(file);assert.equal((await reopened.all()).length,1);
+  assert.equal(await reopened.get(key),null);assert.deepEqual(await reopened.readExternalReference(await reopened.snapshot(),key),ref);
+  await utimes(join(c.directory,first.hash+'.json'),new Date(0),new Date(0));await c.prune();
+  assert.deepEqual(await c.readExternalReference(await c.snapshot(),key),ref);
+  await assert.rejects(c.exportLegacy(),/REFERENCE_NAMESPACE/);
+  assert.equal((await c.writeExternalReference(key,null,first.hash)).changed,true);
+  assert.equal(await c.readExternalReference(await c.snapshot(),key),null);
+  assert.equal((await c.get('a')).name,'new native name');
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
 test('OS mutation lock releases when a writer dies before index commit',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'session-catalog-crash-')), file=join(dir,'chat-sessions.json');
  try {
