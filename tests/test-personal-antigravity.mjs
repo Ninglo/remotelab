@@ -153,7 +153,15 @@ try {
   const source = matches.find(match => match.role === 'assistant');
   assert.equal(source.seq, 2);
   assert.equal((await call('b', source.eventPath)).status, 403);
-  let question = '用历史片段回答\n' + source.excerpt + '\n' + previousSource.sessionUrl;
+  const question = 'orchid-bridge 项目之前是怎么决定的？';
+  const policyPath = join(home, 'reference-guard.json');
+  await writeFile(policyPath, JSON.stringify({ version: 2, policyId: 'fixture', allowPairs: [],
+    rules: [{ id: 'fixture-confidential', category: 'protected', all: ['confidential-marker'] }] }));
+  process.env.REMOTELAB_REQUEST_ACCESS_GUARD = policyPath;
+  await appendEvents(oldA, [{ type: 'message', role: 'assistant', phase: 'final_answer',
+    content: 'orchid-bridge confidential-marker synthetic restricted history' }]);
+  const [tokenA, tokenB] = await Promise.all([enroll('a'), enroll('b')]);
+  let acceptA;
   if (process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE) {
     const { chromium } = await import(process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE);
     const browser = await chromium.launch({ executablePath: process.env.REMOTELAB_TEST_CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
@@ -183,28 +191,46 @@ try {
         const card = page.locator('#indexHistoryResults article').filter({ hasText: expectedText });
         await card.getByRole('button', { name: '加入草稿' }).click();
       }
-      question = await page.locator('#msgInput').inputValue();
-      assert.match(question, /请根据以前的回复说明修了什么/);
-      assert.match(question, /orchid-bridge fix confirmed/);
-      assert.match(question, /orchid-bridge approved decision/);
-      assert.match(question, /orchid-bridge migration summary/);
-      assert.match(question, new RegExp(oldA));
-      assert.doesNotMatch(question, /hidden-context|other-person response/);
+      const draft = await page.locator('#msgInput').inputValue();
+      assert.match(draft, /请根据以前的回复说明修了什么/);
+      assert.match(draft, /orchid-bridge fix confirmed/);
+      assert.match(draft, /orchid-bridge approved decision/);
+      assert.match(draft, /orchid-bridge migration summary/);
+      assert.match(draft, new RegExp(oldA));
+      assert.doesNotMatch(draft, /hidden-context|other-person response/);
       assert.equal((await call('a', '/api/sessions/' + a + '/events')).data.latestSeq || 0, 0, 'adding an excerpt does not send');
-      console.log('Browser: search, preview, source link and insert into draft passed.');
+      await page.locator('#msgInput').fill(question);
+      const submitted = page.waitForResponse(response => response.request().method() === 'POST'
+        && response.url().endsWith('/api/sessions/' + a + '/messages'));
+      await page.locator('#sendBtn').click();
+      const resultResponse = await submitted;
+      assert.equal(resultResponse.request().postDataJSON().text, question);
+      acceptA = { status: resultResponse.status(), data: await resultResponse.json() };
+      console.log('Browser: manual preview still works and an ordinary question is sent unchanged.');
     } finally { await browser.close(); }
   }
-  const [tokenA, tokenB] = await Promise.all([enroll('a'), enroll('b')]);
   assert.equal((await submit('b', a, 'send as A', 'impersonation-0001')).status, 403);
-  const [acceptA, acceptB] = await Promise.all([
-    submit('a', a, question, 'personal-request-0001'),
-    submit('b', b, 'text for B', 'personal-request-0002'),
-  ]);
+  acceptA ||= await submit('a', a, question, 'personal-request-0001');
+  const acceptB = await submit('b', b, question, 'personal-request-0002');
   assert.equal(acceptA.status, 202, JSON.stringify(acceptA));
   assert.equal(acceptB.status, 202, JSON.stringify(acceptB));
   const [jobA, jobB] = await Promise.all([device(tokenA, 'next'), device(tokenB, 'next')]);
-  assert.equal(jobA.data.job?.prompt, question, JSON.stringify(jobA));
-  assert.equal(jobB.data.job?.prompt, 'text for B', JSON.stringify(jobB));
+  const promptA = jobA.data.job?.prompt;
+  const promptB = jobB.data.job?.prompt;
+  assert.ok(promptA?.startsWith(question), JSON.stringify(jobA));
+  assert.match(promptA, /orchid-bridge fix confirmed/);
+  assert.match(promptA, /orchid-bridge from Gemini/);
+  assert.match(promptA, /orchid-bridge approved decision/);
+  assert.match(promptA, /orchid-bridge migration summary/);
+  assert.match(promptA, new RegExp(oldA));
+  assert.match(promptA, new RegExp(oldGemini));
+  assert.equal(promptA.split(question).length, 2, 'the current request is never quoted as history');
+  assert.doesNotMatch(promptA, /hidden-context|provisional content|hidden tool output|other-person|confidential-marker/);
+  assert.ok(promptB?.startsWith(question), JSON.stringify(jobB));
+  assert.match(promptB, /orchid-bridge other-person response/);
+  assert.match(promptB, /orchid-bridge other-person summary/);
+  assert.match(promptB, /orchid-bridge other-person project memory/);
+  assert.doesNotMatch(promptB, /fix confirmed|migration summary|approved decision|from Gemini/);
   assert.equal((await device(tokenA, 'result', { id: jobB.data.job.id, response: 'forged' })).status, 404);
   assert.equal((await device(tokenA, 'result', { id: jobA.data.job.id, response: 'not started' })).status, 400);
   for (const [token, job, answer] of [[tokenA, jobA.data.job, 'reply from A'], [tokenB, jobB.data.job, 'reply from B']]) {
@@ -219,6 +245,7 @@ try {
   assert.equal(runB.state, 'completed', JSON.stringify(runB));
   const [eventsA, eventsB] = await Promise.all([call('a', '/api/sessions/' + a + '/events'), call('b', '/api/sessions/' + b + '/events')]);
   assert.match(JSON.stringify(eventsA.data), /reply from A/);
+  assert.doesNotMatch(JSON.stringify(eventsA.data), /orchid-bridge migration summary/, 'automatic context does not change the stored user message');
   assert.match(JSON.stringify(eventsB.data), /reply from B/);
   assert.doesNotMatch(JSON.stringify(eventsA.data), /reply from B/);
   const stopped = await submit('a', a, 'stop during local execution', 'personal-request-stop-01');

@@ -2,6 +2,8 @@ import { open, readFile } from 'node:fs/promises';
 import { readBody } from '../lib/utils.mjs';
 import { join } from 'node:path';
 import { personalWorkspace } from './feishu-personal-workspace.mjs';
+import { requests } from './requests.mjs';
+import { buildPersonalAntigravityPrompt } from './personal-antigravity-context.mjs';
 import { rankIndexReferences } from './session-log-search.mjs';
 import { getRun, getRunManifest, runDir } from './runs.mjs';
 import {
@@ -94,8 +96,14 @@ export async function handlePersonalAntigravityRoutes({ req, res, pathname, auth
         writeJson(res, 409, { error: '请求已转发，避免重复执行。请重新发送。' });
         return true;
       }
+      const record = await requests.byRequest(manifest.sessionId, manifest.requestId);
+      if (record?.runId !== runId || record.options?.viewPersonId !== manifest.viewPersonId) {
+        writeJson(res, 403, { error: '无法核验个人 Antigravity 请求的发起人。' });
+        return true;
+      }
+      const prompt = await buildPersonalAntigravityPrompt(record, manifest.prompt, signal);
       const response = await relay.run(manifest.viewPersonId, manifest.personalAntigravityDeviceId, {
-        prompt: manifest.prompt, session: manifest.sessionId,
+        prompt, session: manifest.sessionId,
         fresh: manifest.personalAntigravityFreshThread === true, model: manifest.options?.model || '', effort: manifest.options?.effort || '',
       }, signal);
       if (!res.destroyed) writeJson(res, 200, { response });

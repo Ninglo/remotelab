@@ -35,7 +35,7 @@ function referenceExcerpt(content, tokens, limit) {
   return `${start ? '…' : ''}${content.slice(start, start + limit)}${content.length > start + limit ? '…' : ''}`;
 }
 
-export function rankIndexReferences(sources, query) {
+export function rankIndexReferences(sources, query, { allowContent = () => true, limit = 9 } = {}) {
   const tokens = [...new Set(terms(query, { query: true }))].slice(0, 128);
   const tokenSet = new Set(tokens);
   return sources.map(({ title, excerpt, ...source }) => {
@@ -43,8 +43,8 @@ export function rankIndexReferences(sources, query) {
     const titleHits = matchingTerms(title, tokenSet).size;
     const bodyHits = matchingTerms(text, tokenSet).size;
     return { ...source, title, score: titleHits * 3 + bodyHits, text };
-  }).filter(source => source.score && source.text).sort((a, b) => b.score - a.score)
-    .slice(0, 9).map(({ score, text, ...source }) => ({ ...source, excerpt: referenceExcerpt(text, tokens, 1000) }));
+  }).filter(source => source.score && source.text && allowContent(source.title + '\n' + source.text))
+    .sort((a, b) => b.score - a.score).slice(0, limit).map(({ score, text, ...source }) => ({ ...source, excerpt: referenceExcerpt(text, tokens, 1000) }));
 }
 
 function matchingTerms(text, queryTerms) {
@@ -107,7 +107,7 @@ export function createSessionLogSearch({
       if (!/^evt_\d+_content$/.test(event.bodyRef)) throw new Error('Invalid message body reference');
       content = await readFile(join(dir, 'bodies', `${event.bodyRef}.txt`), 'utf8');
     }
-    return { seq: number, role: event.role, timestamp: event.timestamp || '',
+    return { seq: number, requestId: event.requestId, role: event.role, timestamp: event.timestamp || '',
       content: stripHiddenBlocks(content),
       final: !event.internalOperation && (event.role === 'user' || (!event.channel || event.channel === 'final')
         && isReplyMessage(event) && (!event.phase || isFinalAssistantMessage(event))),
@@ -199,7 +199,8 @@ export function createSessionLogSearch({
     return { docs: docs.filter(Boolean), incomplete };
   }
 
-  return async function search(query, { scope = 'all', sessionId = '', authSession = null } = {}) {
+  return async function search(query, { scope = 'all', sessionId = '', authSession = null,
+    excludeRequestId, allowContent = () => true } = {}) {
     const text = String(query || '').trim();
     if (!text || text.length > 1000) {
       const error = new Error('Search query must contain 1–1000 characters');
@@ -216,10 +217,11 @@ export function createSessionLogSearch({
     const document = getAuthReadSnapshot();
     const visible = personalContext ? session => canReferenceOwnSession(authSession, session, document)
       : authSession ? sessionAccessFilter(authSession, document) : () => true;
-    const all = (await list()).filter(visible);
+    const listed = await list();
+    const all = listed.filter(visible);
     let selected = all.filter(session => /^[0-9a-f]{32}$/.test(session.id)
       && (!session.internalRole?.trim() || session.internalRole.trim() === 'scheduled_execution'));
-    const ids = new Set(all.map(session => session.id));
+    const ids = new Set(listed.map(session => session.id));
     for (const id of cache.keys()) if (!ids.has(id)) cache.delete(id);
     if (scope === 'private-chat') {
       const key = privateChatKey(all.find(session => session.id === sessionId));
@@ -270,7 +272,9 @@ export function createSessionLogSearch({
           try {
             const message = await readMessage(session.id, seq);
             if (!message) { incomplete = true; return null; }
-            if (personalContext && (!message.final || !message.content)) return null;
+            if (personalContext && (!message.final || !message.content
+                || (excludeRequestId && session.id === sessionId && message.requestId === excludeRequestId)
+                || !allowContent((session.name || '') + '\n' + message.content))) return null;
             const excerpt = referenceExcerpt(message.content, tokens, 480);
             return { seq, role: message.role, timestamp: message.timestamp, excerpt,
               eventPath: `/api/sessions/${session.id}/events?filter=all&afterSeq=${seq - 1}&limit=1` };

@@ -168,12 +168,12 @@ export function createPersonalWorkspace(deps = {}) {
         const summary = normalizeSessionWorkSummary(session.workSummary);
         if (summary) {
           const excerpt = [summary.goal, summary.summary, ...summary.knownConclusions, ...summary.nextSteps].filter(Boolean).join('\n');
-          if (excerpt) records.push({ title: session.name || '会话工作摘要', url, excerpt, kind });
+          if (excerpt) records.push({ title: session.name || '会话工作摘要', url, excerpt, kind, sourceSessionId: session.id });
         }
         for (const work of session.workAwareness?.works || []) {
           if (work.actor?.personId !== actor.personId || findIdentity(auth, work.actor.identityId)?.person.id !== actor.personId) continue;
           const excerpt = [work.goal, work.results?.at(-1)?.result].filter(Boolean).join('\n');
-          if (excerpt) records.push({ title: session.name || '工作记录', url, excerpt, kind });
+          if (excerpt) records.push({ title: session.name || '工作记录', url, excerpt, kind, sourceSessionId: session.id });
         }
       }
       return { records, incomplete: false };
@@ -197,7 +197,7 @@ export function createPersonalWorkspace(deps = {}) {
       const memory = projectMemorySection(source.ledger, row.anchor);
       if (!memory) { incomplete = true; continue; }
       const link = safeLink(project.briefUrl);
-      records.push({ title: row.name, kind, excerpt: memory.text,
+      records.push({ title: row.name, kind, excerpt: memory.text, sourceSessionId: association.sessionId,
         url: link || buildSessionNavigationHref(association.sessionId),
         linkLabel: link ? '项目简报' : '关联会话' });
     }

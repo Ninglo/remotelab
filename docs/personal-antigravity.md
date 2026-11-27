@@ -8,7 +8,7 @@ Google credentials remain in the local Antigravity profile. Index retains the me
 
 ## Reference Index context
 
-With **Antigravity · 个人 Google** selected, open **引用 Index 上下文**. Choose **以前的对话**, **项目记忆**, or **工作摘要**, search by topic or keyword, and preview the results. **加入草稿** includes the selected passage and its link with your question. Only the draft you send goes to Antigravity.
+With **Antigravity · 个人 Google** selected, type your question and send it normally. In your private Sessions, Index searches dialogue, project memory and work summaries using the question. Matching excerpts and source links appear in the terminal prompt before you confirm the call to Google. Only a small set of matching excerpts is included. You can also open **引用 Index 上下文** to preview and add specific passages to the draft.
 
 - Dialogue search covers visible messages in the Index Sessions you own, including previous Codex and Gemini answers. Hidden blocks, background operations, assistant progress and tool output are excluded.
 - Project memory uses the registered project ledger. It covers projects explicitly bound to your Sessions or confirmed in your verified participation records. A result links to the registered project brief or the associated Session.
