@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "updated": "2026-11-27",
+  "capabilities": [
+    "progress",
+    "questions_and_replies",
+    "final_answer",
+    "rule_injection",
+    "rule_recovery",
+    "memory",
+    "todo_list",
+    "file_change",
+    "artifacts",
+    "subagent_attribution",
+    "usage"
+  ],
+  "harnesses": {
+    "codex": {
+      "progress": "remotelab",
+      "questions_and_replies": "native",
+      "final_answer": "native",
+      "rule_injection": "remotelab",
+      "rule_recovery": "remotelab",
+      "memory": "remotelab",
+      "todo_list": "native",
+      "file_change": "native",
+      "artifacts": "native",
+      "subagent_attribution": "native",
+      "usage": "native",
+      "silent_progress_reminder": "missing"
+    },
+    "claude": {
+      "progress": "remotelab",
+      "questions_and_replies": "native",
+      "final_answer": "native",
+      "rule_injection": "remotelab",
+      "rule_recovery": "remotelab",
+      "memory": "remotelab",
+      "todo_list": "remotelab",
+      "file_change": "remotelab",
+      "artifacts": "missing",
+      "subagent_attribution": "remotelab",
+      "usage": "native",
+      "silent_progress_reminder": "missing"
+    },
+    "pi": {
+      "progress": "missing",
+      "questions_and_replies": "native",
+      "final_answer": "native",
+      "rule_injection": "native",
+      "rule_recovery": "missing",
+      "memory": "remotelab",
+      "todo_list": "missing",
+      "file_change": "missing",
+      "artifacts": "missing",
+      "subagent_attribution": "native",
+      "usage": "native",
+      "silent_progress_reminder": "missing"
+    }
+  }
+}

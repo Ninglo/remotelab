@@ -3453,7 +3453,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const decisionContext = await recordWorkInputAndDeliver(session, record);
     const tool = await getToolDefinitionAsync(manifest.tool);
     const execution = await getRun(manifest.id);
-    const orderedInitial = manifest.ruleContextDelivery?.recovery === 'codex-session-start';
+    const orderedInitial = ['codex-session-start', 'claude-session-start'].includes(manifest.ruleContextDelivery?.recovery);
     const projection = await projectFeishuContext(record.sessionId, record.options.sourceContext, {
       identity: feishuResumeIdentity(execution || {}), requestId: record.requestId,
       initialDelivery: orderedInitial ? manifest.feishuContextDelivery : null,
@@ -4048,7 +4048,9 @@ async function prepareRequestRunOnce(record) {
   markPreparedStage('turnContext');
   const ruleProjection = await projectRuleContext(sessionId, turnSlots, {
     enabled: effectiveToolDefinition?.inputMode === 'native',
-    recovery: effectiveRuntimeFamily === 'codex-json' ? 'codex-session-start' : '',
+    recovery: effectiveRuntimeFamily === 'codex-json'
+      ? 'codex-session-start'
+      : effectiveRuntimeFamily === 'claude-stream-json' ? 'claude-session-start' : '',
     identity: freshProviderSession ? null : feishuResumeIdentity({ codexThreadId: persistedCodexThreadId,
       claudeSessionId: persistedClaudeSessionId, antigravityConversationId: persistedAntigravityConversationId }),
     requestId, personId: options.viewPersonId, identityId: options.initiatedByIdentityId,

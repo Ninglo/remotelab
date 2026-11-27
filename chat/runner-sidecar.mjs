@@ -348,6 +348,7 @@ async function main() {
     model: manifest.options?.model,
     effort: manifest.options?.effort,
     developerInstructions: manifest.options?.developerInstructions,
+    ...(manifest.ruleContextDelivery?.recovery === 'claude-session-start' ? { ruleRecoverySessionId: manifest.sessionId } : {}),
     ...(Object.prototype.hasOwnProperty.call(manifest.options || {}, 'systemPrefix')
       ? { systemPrefix: manifest.options.systemPrefix }
       : {}),

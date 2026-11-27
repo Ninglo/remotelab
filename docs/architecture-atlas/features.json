@@ -40,7 +40,20 @@
             "connectors/feishu/conversation-context.mjs",
             "connectors/feishu/index.mjs",
             "scripts/feishu-connector.mjs",
-            "chat/native/codex.mjs"
+            "chat/native/codex.mjs",
+            "docs/harness-capability-contract.md",
+            "chat/adapters/claude.mjs",
+            "chat/adapters/codex.mjs",
+            "chat/claude-rule-recovery.mjs",
+            "chat/codex-tool-bridge-config.mjs",
+            "chat/codex-tool-bridge.mjs",
+            "chat/harness-capabilities.json",
+            "chat/harness-capabilities.mjs",
+            "chat/normalizer.mjs",
+            "chat/process-runner.mjs",
+            "chat/runner-sidecar.mjs",
+            "chat/session-manager.mjs",
+            "scripts/harness-alignment-report.mjs"
           ],
           "commands": []
         },

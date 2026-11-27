@@ -73,10 +73,10 @@ export async function projectRuleContext(sessionId, slots, { enabled = false, id
       await writeJsonAtomic(file, snapshot, { mode: 0o600 });
     }
     const previous = await previousReceipt(sessionId, identity, requestId,
-      recovery === 'codex-session-start' ? initialDelivery : null, deps);
+      ['codex-session-start', 'claude-session-start'].includes(recovery) ? initialDelivery : null, deps);
     const scopeHash = hash(scope);
     const slotHashes = Object.fromEntries(rules.map(slot => [slot.id, hash(slot)]));
-    const reusable = recovery === 'codex-session-start' && previous?.recovery === recovery
+    const reusable = ['codex-session-start', 'claude-session-start'].includes(recovery) && previous?.recovery === recovery
       && previous?.version === 1 && previous.scopeHash === scopeHash && previous.slotHashes
       && typeof previous.slotHashes === 'object' && !Array.isArray(previous.slotHashes);
     const unchanged = reusable
