@@ -773,6 +773,7 @@
                   <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
                 </button>
               </div>
+              <button class="modal-btn" id="personalAntigravityHistoryButton" type="button" hidden>引用 Index 历史</button>
             </div>
             <div class="voice-review-panel" id="voiceReviewPanel" role="status" aria-live="polite" hidden>
               <span class="voice-review-body" id="voiceReviewBody"></span>
@@ -900,6 +901,22 @@
     </div>
   </div>
 </div>
+
+<dialog class="modal index-history-dialog" id="personalAntigravityHistory" aria-labelledby="indexHistoryTitle">
+  <header class="modal-header">
+    <h2 class="modal-title" id="indexHistoryTitle">引用 Index 历史</h2>
+    <form method="dialog"><button class="modal-close" aria-label="关闭">×</button></form>
+  </header>
+  <div class="modal-body">
+    <form id="indexHistorySearch">
+      <input class="settings-inline-input" id="indexHistoryQuery" type="search" maxlength="1000" required placeholder="输入项目名或关键词" aria-label="搜索会话历史">
+      <button class="modal-btn" type="submit">搜索</button>
+    </form>
+    <p class="index-history-note">发送后，加入草稿的片段会随问题交给 Gemini。</p>
+    <span id="indexHistoryStatus" role="status"></span>
+    <div id="indexHistoryResults"></div>
+  </div>
+</dialog>
 
 {{BOOTSTRAP_SCRIPT_TAGS}}
 {{EXTRA_BOOTSTRAP_SCRIPTS}}

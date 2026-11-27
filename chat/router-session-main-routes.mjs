@@ -185,8 +185,8 @@ export async function handleSessionMainRoutes({
       const sessionId = parsedUrl.query.sessionId ?? '';
       writeJson(res, 200, await searchSessionLogs(query, { scope, sessionId, authSession }));
     } catch (error) {
-      writeJson(res, error.statusCode === 400 ? 400 : 503, { error: error.statusCode === 400
-        ? error.message : 'Session search is temporarily unavailable' });
+      const status = [400, 403].includes(error.statusCode) ? error.statusCode : 503;
+      writeJson(res, status, { error: status === 503 ? 'Session search is temporarily unavailable' : error.message });
     }
     return true;
   }

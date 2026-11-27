@@ -921,6 +921,7 @@ function resetCurrentModelPickerUi() {
 }
 
 async function loadModelsForCurrentTool({ refresh = false } = {}) {
+  window.remotelabPersonalAntigravity?.syncHistoryButton();
   if (!canChangeRuntimeSelectionFromUi()) {
     resetCurrentModelPickerUi();
     return;

@@ -23,7 +23,7 @@ const people = ['a', 'b'].map((id, index) => ({
 }));
 await mkdir(config, { recursive: true });
 await writeFile(join(config, 'auth.json'), JSON.stringify({
-  version: 2, primaryPersonId: 'a', people, serviceToken: 'f'.repeat(64),
+  version: 2, primaryPersonId: 'a', administratorPersonIds: ['a'], people, serviceToken: 'f'.repeat(64),
 }));
 
 const server = http.createServer((req, res) => void handleRequest(req, res).catch(error => {
@@ -36,6 +36,7 @@ await once(server, 'listening');
 process.env.CHAT_PORT = String(server.address().port);
 const base = 'http://127.0.0.1:' + process.env.CHAT_PORT;
 const { handleRequest } = await import('../chat/router.mjs');
+const { appendEvents } = await import('../chat/history.mjs');
 const cookies = new Map();
 
 async function request(path, method, payload, headers = {}) {
@@ -94,16 +95,70 @@ try {
     return data.session.id;
   }));
   assert.match((await submit('a', a, 'unbound', 'unbound-request-0001')).data.error, /我的 Antigravity/);
+  const previous = await call('a', '/api/sessions', 'POST', { tool: 'codex', folder: home, name: 'Archive fixture' });
+  assert.equal(previous.status, 201, JSON.stringify(previous));
+  const oldA = previous.data.session.id;
+  await appendEvents(oldA, [
+    { type: 'message', role: 'user', content: 'orchid-bridge issue' },
+    { type: 'message', role: 'assistant', phase: 'final_answer', content: 'orchid-bridge fix confirmed <private>hidden-context</private>' },
+    { type: 'message', role: 'assistant', phase: 'commentary', content: 'orchid-bridge provisional content' },
+    { type: 'tool_result', output: 'orchid-bridge hidden tool output' },
+  ]);
+  await appendEvents(b, [{ type: 'message', role: 'assistant', content: 'orchid-bridge other-person response' }]);
+  const historyRoute = '/api/sessions/search?scope=personal-context&q=orchid-bridge';
+  assert.equal((await request(historyRoute, 'GET', undefined, { Authorization: 'Bearer ' + 'f'.repeat(64) })).status, 403);
+  const hitsA = await call('a', historyRoute);
+  const hitsB = await call('b', historyRoute);
+  assert.equal(hitsA.status, 200);
+  assert.equal(hitsB.status, 200);
+  assert.deepEqual(hitsA.data.sessions.map(session => session.id), [oldA]);
+  assert.deepEqual(hitsB.data.sessions.map(session => session.id), [b]);
+  const matches = hitsA.data.sessions[0].matches;
+  assert.deepEqual(matches.map(match => match.excerpt).sort(), ['orchid-bridge fix confirmed', 'orchid-bridge issue']);
+  const source = matches.find(match => match.role === 'assistant');
+  assert.equal(source.seq, 2);
+  assert.equal((await call('b', source.eventPath)).status, 403);
+  let question = '用历史片段回答\n' + source.excerpt + '\n' + hitsA.data.sessions[0].sessionUrl;
+  if (process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE) {
+    const { chromium } = await import(process.env.REMOTELAB_TEST_PLAYWRIGHT_MODULE);
+    const browser = await chromium.launch({ executablePath: process.env.REMOTELAB_TEST_CHROMIUM_PATH, headless: true, args: ['--no-sandbox'] });
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      page.setDefaultTimeout(7000);
+      const [name, value] = cookies.get('a').split('=');
+      await page.context().addCookies([{ name, value, url: base }]);
+      await page.goto(base + '/?session=' + a + '&tab=sessions');
+      const picker = page.locator('#inlineToolSelect');
+      if (await page.locator('#customModeBtn').isVisible()) await page.locator('#customModeBtn').click();
+      await picker.selectOption(tool);
+      await page.locator('#msgInput').fill('请根据以前的回复说明修了什么');
+      await page.locator('#personalAntigravityHistoryButton').click();
+      await page.locator('#indexHistoryQuery').fill('orchid-bridge');
+      await page.getByRole('button', { name: '搜索', exact: true }).click();
+      const result = page.locator('#indexHistoryResults article').filter({ hasText: source.excerpt });
+      await result.waitFor();
+      assert.equal(await page.locator('#indexHistoryResults').getByText('orchid-bridge other-person response').count(), 0);
+      assert.match(await result.getByRole('link').getAttribute('href'), new RegExp(oldA));
+      await result.getByRole('button', { name: '加入草稿' }).click();
+      question = await page.locator('#msgInput').inputValue();
+      assert.match(question, /请根据以前的回复说明修了什么/);
+      assert.match(question, /orchid-bridge fix confirmed/);
+      assert.match(question, new RegExp(oldA));
+      assert.doesNotMatch(question, /hidden-context|other-person response/);
+      assert.equal((await call('a', '/api/sessions/' + a + '/events')).data.latestSeq || 0, 0, 'adding an excerpt does not send');
+      console.log('Browser: search, preview, source link and insert into draft passed.');
+    } finally { await browser.close(); }
+  }
   const [tokenA, tokenB] = await Promise.all([enroll('a'), enroll('b')]);
   assert.equal((await submit('b', a, 'send as A', 'impersonation-0001')).status, 403);
   const [acceptA, acceptB] = await Promise.all([
-    submit('a', a, 'text for A', 'personal-request-0001'),
+    submit('a', a, question, 'personal-request-0001'),
     submit('b', b, 'text for B', 'personal-request-0002'),
   ]);
   assert.equal(acceptA.status, 202, JSON.stringify(acceptA));
   assert.equal(acceptB.status, 202, JSON.stringify(acceptB));
   const [jobA, jobB] = await Promise.all([device(tokenA, 'next'), device(tokenB, 'next')]);
-  assert.equal(jobA.data.job?.prompt, 'text for A', JSON.stringify(jobA));
+  assert.equal(jobA.data.job?.prompt, question, JSON.stringify(jobA));
   assert.equal(jobB.data.job?.prompt, 'text for B', JSON.stringify(jobB));
   assert.equal((await device(tokenA, 'result', { id: jobB.data.job.id, response: 'forged' })).status, 404);
   assert.equal((await device(tokenA, 'result', { id: jobA.data.job.id, response: 'not started' })).status, 400);
@@ -133,7 +188,7 @@ try {
   assert.equal((await call('a', route + 'disconnect', 'POST', {})).status, 200);
   assert.equal((await device(tokenA, 'next')).status, 403);
   assert.equal((await call('b', route + 'status')).data.connected, true);
-  console.log('Personal Antigravity: two browser identities and two devices reached the correct Index sessions.');
+  console.log('Personal Antigravity: private history citations, device routing, cancellation and account isolation passed.');
 } finally {
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));

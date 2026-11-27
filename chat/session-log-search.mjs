@@ -1,4 +1,5 @@
-import { sessionAccessFilter } from './session-access.mjs';
+import { hrBrowserRestricted, sessionAccessFilter, sessionCreatorIdentity } from './session-access.mjs';
+import { findIdentity, getAuthReadSnapshot } from '../lib/auth-config.mjs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -87,7 +88,10 @@ export function createSessionLogSearch({
       content = await readFile(join(dir, 'bodies', `${event.bodyRef}.txt`), 'utf8');
     }
     return { seq: number, role: event.role, timestamp: event.timestamp || '',
-      content: stripHiddenBlocks(content), weight: event.role === 'user' ? 2 : 1 };
+      content: stripHiddenBlocks(content),
+      final: !event.internalOperation && (event.role === 'user' || (!event.channel || event.channel === 'final')
+        && (!event.phase || event.phase === 'final_answer')),
+      weight: event.role === 'user' ? 2 : 1 };
   }
 
   async function indexSession(session) {
@@ -182,13 +186,22 @@ export function createSessionLogSearch({
       error.statusCode = 400;
       throw error;
     }
-    const all = (await list()).filter(authSession ? sessionAccessFilter(authSession) : () => true);
+    const personalContext = scope === 'personal-context';
+    if (!['all', 'private-chat', 'personal-context'].includes(scope)) {
+      throw Object.assign(new Error('Unknown history search scope'), { statusCode: 400 });
+    }
+    if (personalContext && (!authSession?.personId || authSession.authKind === 'service' || hrBrowserRestricted(authSession))) {
+      throw Object.assign(new Error('当前账号无法引用会话历史。'), { statusCode: 403 });
+    }
+    const document = getAuthReadSnapshot();
+    const all = (await list()).filter(authSession ? sessionAccessFilter(authSession, document) : () => true);
     let selected = all.filter(session => /^[0-9a-f]{32}$/.test(session.id)
       && (!session.internalRole?.trim() || session.internalRole.trim() === 'scheduled_execution'));
     const ids = new Set(all.map(session => session.id));
     for (const id of cache.keys()) if (!ids.has(id)) cache.delete(id);
-    if (!['all', 'private-chat'].includes(scope)) {
-      throw Object.assign(new Error('Unknown history search scope'), { statusCode: 400 });
+    if (personalContext) {
+      selected = selected.filter(session => !session.groupFeed && !session.internalRole?.trim()
+        && findIdentity(document, sessionCreatorIdentity(session))?.person.id === authSession.personId);
     }
     if (scope === 'private-chat') {
       const key = privateChatKey(all.find(session => session.id === sessionId));
@@ -199,7 +212,7 @@ export function createSessionLogSearch({
       ? { scope, sourceSessionId: sessionId, searchedSessionCount: selected.length } : {};
     const tokens = [...new Set(terms(text, { query: true }))].slice(0, 128);
     if (!tokens.length) return { sessions: [], incomplete: false, ...coverage };
-    let { docs, incomplete } = await refresh(selected, new Set(tokens), scope === 'private-chat');
+    let { docs, incomplete } = await refresh(selected, new Set(tokens), scope !== 'all');
     const averageLength = docs.reduce((sum, doc) => sum + doc.length, 0) / Math.max(1, docs.length) || 1;
     const idf = new Map(tokens.map(token => {
       const count = docs.filter(doc => doc.title.has(token) || doc.summary.has(token) || doc.body.has(token)).length;
@@ -228,16 +241,18 @@ export function createSessionLogSearch({
       try { config = await readCaseConfig(); } catch { configError = true; }
     }
     const sessions = await Promise.all(ranked.map(async ({ session, postings }) => {
-      if (scope === 'private-chat') {
+      if (scope !== 'all') {
         const scores = new Map();
         for (const token of tokens) {
           for (const seq of postings.get(token) || []) scores.set(seq, (scores.get(seq) || 0) + idf.get(token));
         }
-        const numbers = [...scores].sort((a, b) => b[1] - a[1] || b[0] - a[0]).slice(0, 3).map(([seq]) => seq);
+        const numbers = [...scores].sort((a, b) => b[1] - a[1] || b[0] - a[0])
+          .slice(0, personalContext ? 9 : 3).map(([seq]) => seq);
         const matches = (await Promise.all(numbers.map(async seq => {
           try {
             const message = await readMessage(session.id, seq);
             if (!message) { incomplete = true; return null; }
+            if (personalContext && (!message.final || !message.content)) return null;
             const normalized = normalize(message.content);
             const positions = tokens.map(token => normalized.indexOf(token)).filter(pos => pos >= 0);
             const start = Math.max(0, (positions.length ? Math.min(...positions) : 0) - 120);
@@ -245,7 +260,7 @@ export function createSessionLogSearch({
             return { seq, role: message.role, timestamp: message.timestamp, excerpt,
               eventPath: `/api/sessions/${session.id}/events?filter=all&afterSeq=${seq - 1}&limit=1` };
           } catch { incomplete = true; return null; }
-        }))).filter(Boolean);
+        }))).filter(Boolean).slice(0, 3);
         return { id: session.id, title: session.name || '未命名会话', sessionUrl: sessionHref(session.id), matches };
       }
       let snapshot;
