@@ -6,10 +6,8 @@
 .recent-errors summary { cursor: pointer; overflow-wrap: anywhere; }
 .recent-error-cluster { padding: .65rem 0; border-bottom: 1px solid var(--border, #d4d8df); }
 .recent-error-cluster summary > span { display: block; margin: .35rem 0 0 1rem; font-size: .9em; }
-.recent-error-cluster summary > small { margin-inline-start: .7rem; padding: .15rem .45rem; border: 1px solid currentColor; border-radius: 6px; }
-.recent-error-cluster summary > small[data-state="pending"] { font-weight: 700; }
-.recent-errors form, .recent-errors label { display: grid; gap: .4rem; }
-.recent-errors form { margin-block: .65rem; }
-.recent-errors input, .recent-errors textarea { width: 100%; box-sizing: border-box; max-width: 40rem; }
+.recent-error-records { list-style: none; margin-block: .65rem; padding-inline-start: 1rem; }
+.recent-error-records li { margin-block: .7rem; }
+.recent-error-records time { font-variant-numeric: tabular-nums; font-size: .9em; }
 .recent-errors button { cursor: pointer; width: fit-content; }
 .recent-errors li { overflow-wrap: anywhere; }

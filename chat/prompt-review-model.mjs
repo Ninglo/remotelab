@@ -14,7 +14,8 @@ import { REVIEW_MODEL, REVIEW_PROMPT } from './prompt-review-policy.mjs';
 // Reuse the installed provider runtime and account pool. Pi's explicit deny
 // switches remove ALL tools/extensions/context discovery; source text travels
 // on stdin and is never interpreted as @files, shell arguments or instructions.
-export async function reviewPromptBatch(segments, { timeoutMs = 180000, command: suppliedCommand } = {}) {
+export async function reviewPromptBatch(segments, { timeoutMs = 180000, command: suppliedCommand,
+  systemPrompt = REVIEW_PROMPT, usageOperation = 'prompt_security_review' } = {}) {
   const wireIds = new Map(segments.map((segment, index) => [`d${index + 1}`, segment.id]));
   const account = await codexAccounts.acquireForRun({ sessionId: '', model: REVIEW_MODEL });
   const dir = await mkdtemp(join(tmpdir(), 'remotelab-prompt-review-'));
@@ -27,7 +28,7 @@ export async function reviewPromptBatch(segments, { timeoutMs = 180000, command:
     const text = await new Promise((resolve, reject) => {
       const proc = spawn(command, ['--mode','json','--print','--no-session','--no-tools','--no-extensions','--no-skills',
         '--no-prompt-templates','--no-context-files','--no-themes','--no-approve','--offline',
-        '--provider','openai-codex','--model',REVIEW_MODEL,'--thinking','low','--system-prompt',REVIEW_PROMPT],
+        '--provider','openai-codex','--model',REVIEW_MODEL,'--thinking','low','--system-prompt',systemPrompt],
       { cwd: dir, env, stdio: ['pipe','pipe','pipe'] });
       account.lease.setToolProcessId(proc.pid).catch(() => {});
       let answer = '', failure = null, fatal = null, bytes = 0, killTimer;
@@ -74,7 +75,7 @@ export async function reviewPromptBatch(segments, { timeoutMs = 180000, command:
     if (usage) {
       const record = buildDetachedUsageLedgerRecord({ session: { id: '', tool: 'pi', model: `openai-codex/${actualModel || REVIEW_MODEL}` },
         usageEvent: { inputTokens: (usage.input || 0) + (usage.cacheRead || 0), cachedInputTokens: usage.cacheRead || 0, outputTokens: usage.output || 0 },
-        tracking: { operation: 'prompt_security_review', tool: 'pi', model: `openai-codex/${actualModel || REVIEW_MODEL}`, state: succeeded ? 'completed' : 'failed' } });
+        tracking: { operation: usageOperation, tool: 'pi', model: `openai-codex/${actualModel || REVIEW_MODEL}`, state: succeeded ? 'completed' : 'failed' } });
       if (record) appendUsageLedgerRecord(record);
     }
     await rm(dir, { recursive: true, force: true });

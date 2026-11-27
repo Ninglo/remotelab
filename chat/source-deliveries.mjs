@@ -241,7 +241,7 @@ async function inspectAndClaimSourceDelivery(options = {}) {
       const claimedAt = Date.parse(entry.claimedAt);
       if (entry.state === 'sending' && (!Number.isFinite(claimedAt) || nowMs - claimedAt >= timeout)) {
         const error = 'Sender lease expired without a receipt';
-        await observeRecentError('source-delivery', { operation: entry.id, attempt: `expire:${entry.leaseId}`,
+        if (!entry.responseId?.startsWith('recent-error-alert:')) await observeRecentError('source-delivery', { operation: entry.id, attempt: `expire:${entry.leaseId}`,
           error, at: now, sessionId: entry.sessionId });
         entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: error }));
       }
@@ -360,7 +360,7 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
       leaseId: state === 'unknown' ? entry.leaseId : '', lastError: String(error?.message || error),
       availableAt: new Date(Date.parse(nowIso(options.now)) + (options.retryDelayMs ?? 5000)).toISOString() };
   }));
-  await observeRecentError('source-delivery', { operation: id, attempt: `report:${leaseId}`,
+  if (!failed.responseId?.startsWith('recent-error-alert:')) await observeRecentError('source-delivery', { operation: id, attempt: `report:${leaseId}`,
     error: { message: String(error?.message || error), code: options.errorCode || error?.code }, sessionId: failed.sessionId });
   if (failed.responseId?.startsWith('plan-topic:')) {
     const { resumeExecutionPlanTopic } = await import('./work-execution-plans.mjs');

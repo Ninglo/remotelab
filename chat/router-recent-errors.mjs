@@ -1,7 +1,6 @@
 import { getSessionToken } from '../lib/auth.mjs';
 import { recentErrors, recentErrorsEnabled, recentErrorExcerpt } from '../lib/recent-errors.mjs';
 import { getRun } from './runs.mjs';
-import { readBody } from '../lib/utils.mjs';
 import { canAccessSession, isSessionAdministrator, hrBrowserRestricted } from './session-access.mjs';
 
 const endpoint = '/api/monitoring/recent-errors';
@@ -18,16 +17,12 @@ export async function handleRecentErrors({ req, res, pathname, authSession, writ
       const query = new URL(req.url, 'http://local').searchParams;
       const cluster = query.get('cluster');
       const before = query.get('before') || 0;
-      if (cluster === null) return reply(200, await monitor.list({ before }));
-      if (!fingerprint.test(cluster)) return reply(400, { error: 'Invalid error cluster' });
-      const detail = await monitor.detail(cluster, { before });
-      if (!detail) return reply(404, { error: 'Unknown error cluster' });
       const personalBrowser = Boolean(authSession.personId && authSession.authKind !== 'service' && !req._bearerAuthSession && getSessionToken(req));
-      await Promise.all(detail.events.map(async event => {
+      const prepare = (events, source, legacy = false) => Promise.all(events.map(async event => {
         const visible = !event.sessionId || await canRead(authSession, event.sessionId);
         if (!visible) { delete event.sessionId; delete event.reference; }
         if (!personalBrowser || !visible) { delete event.excerpt; return; }
-        if (!event.excerpt && detail.cluster.source === 'run-result' && event.sessionId && /^run_[a-f0-9]{24}$/.test(event.reference || '')) {
+        if (legacy && !event.excerpt && source === 'run-result' && event.sessionId && /^run_[a-f0-9]{24}$/.test(event.reference || '')) {
           // A legacy terminal record may point at an intact original result.
           // A retry or ambiguous reference must not borrow another error line.
           const run = await loadRun(event.reference).catch(() => null);
@@ -37,23 +32,18 @@ export async function handleRecentErrors({ req, res, pathname, authSession, writ
           }
         }
       }));
+      if (cluster === null) {
+        const view = await monitor.list({ before, samples: personalBrowser && query.get('samples') === '1' });
+        await Promise.all(view.rows.filter(row => row.events).map(row => prepare(row.events,row.source)));
+        return reply(200, view);
+      }
+      if (!fingerprint.test(cluster)) return reply(400, { error: 'Invalid error cluster' });
+      const detail = await monitor.detail(cluster, { before });
+      if (!detail) return reply(404, { error: 'Unknown error cluster' });
+      await prepare(detail.events, detail.cluster.source, true);
       return reply(200, detail);
     }
-    if (req.method === 'POST' && pathname.endsWith('/repair')) {
-      if (authSession.authKind === 'service' || !authSession.personId || !getSessionToken(req)
-        || req.headers['sec-fetch-site'] !== 'same-origin') return reply(403, { error: 'Same-origin administrator browser session required' });
-      if (req.headers['content-type']?.split(';')[0] !== 'application/json') return reply(415, { error: 'JSON required' });
-      let body;
-      try { body = JSON.parse(await readBody(req, 4096)); } catch { return reply(400, { error: 'Invalid repair receipt' }); }
-      const { cluster, version, commit, verification } = body || {};
-      if (!fingerprint.test(cluster || '') || !Number.isSafeInteger(version) || version <= 0 || !/^[a-f0-9]{40}$/.test(commit || '')
-        || typeof verification !== 'string' || !verification.trim() || verification.trim().length > 600) {
-        return reply(400, { error: 'Original cluster version, full repair commit and verification result required' });
-      }
-      const result = await monitor.fix(cluster, { version, commit, verification: verification.trim(), personId: authSession.personId });
-      if (result.status === 200) return reply(200, { status: 'fixed' });
-      return reply(result.status, { error: result.status === 409 ? 'Error changed; refresh detail before closing' : 'Unknown error cluster' });
-    }
+    if (pathname.endsWith('/repair')) return reply(410, { error: 'Recent errors is read-only; repair workflow retired' });
     return reply(405, { error: 'Method not allowed' });
   } catch {
     return reply(503, { error: 'Recent-error records are temporarily unavailable' });

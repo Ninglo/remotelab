@@ -30,7 +30,7 @@ export async function handleMonitoringPreview({req,res,pathname,configOverride,c
     }
     if(response.statusCode===200&&/^text\/html/.test(type)){
       if(path==='/'&&canSeeRecentErrors)body=Buffer.from(body.toString().replace('</head>',
-        '<link rel="stylesheet" href="/chat/recent-errors.css?v=2"><script defer src="/chat/recent-errors.js?v=2"></script></head>')
+        '<link rel="stylesheet" href="/chat/recent-errors.css?v=3"><script defer src="/chat/recent-errors.js?v=3"></script></head>')
         .replace('<div id="content">','<template id="monitorRecentErrorsTemplate"><section id="monitorRecentErrors" class="recent-errors" hidden></section></template><div id="content">'));
       body=injectSiteIdentityHtml(body);
     }
