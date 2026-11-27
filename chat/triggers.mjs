@@ -13,7 +13,8 @@ import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
 import { observeRecentError } from '../lib/recent-errors.mjs';
 import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
-import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
+import { createSerialTaskQueue, statOrNull } from './fs-utils.mjs';
+import { readRecord, writeDurableJson } from '../lib/durable-records.mjs';
 import {
   createSession,
   getSession,
@@ -24,7 +25,7 @@ import {
 import { findSessionConversation, updateSessionConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { requests } from './requests.mjs';
-import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
+import { getRun, isTerminalRunState, requestRunCancel, readScheduledAgentStart } from './runs.mjs';
 
 const DEFAULT_TRIGGER_POLL_MS = 15000;
 const MIN_TRIGGER_POLL_MS = 250;
@@ -189,6 +190,7 @@ function normalizeStoredTrigger(value) {
     deliveryMode: trimString(raw.deliveryMode),
     automationPolicy: normalizeAutomationPolicy(raw.automationPolicy),
     scheduleId: trimString(raw.scheduleId),
+    ...(Number.isSafeInteger(raw.renewalBatch) && raw.renewalBatch > 0 ? { renewalBatch: raw.renewalBatch } : {}),
     occurrenceId: trimString(raw.occurrenceId),
     executionSessionId,
   };
@@ -212,8 +214,13 @@ function normalizeStoredTriggers(entries) {
 }
 
 async function saveTriggersUnlocked(triggers) {
-  triggersCache = Array.isArray(triggers) ? triggers : [];
-  await writeJsonAtomic(CHAT_TRIGGERS_FILE, triggersCache);
+  try {
+    await writeDurableJson(CHAT_TRIGGERS_FILE, triggers);
+  } catch (error) {
+    triggersCache = null;
+    throw error;
+  }
+  triggersCache = triggers;
   const stats = await statOrNull(CHAT_TRIGGERS_FILE);
   triggersCacheMtimeMs = stats?.mtimeMs || Date.now();
 }
@@ -225,7 +232,8 @@ async function loadTriggers() {
     return triggersCache;
   }
 
-  const parsed = await readJson(CHAT_TRIGGERS_FILE, []);
+  const parsed = await readRecord(CHAT_TRIGGERS_FILE) ?? [];
+  if (!Array.isArray(parsed)) throw new Error('Invalid trigger registry');
   const normalized = normalizeStoredTriggers(parsed);
   triggersCache = normalized.list;
   if (normalized.changed) {
@@ -379,6 +387,7 @@ export async function createTrigger(input = {}, options = {}) {
     deliveryAttempts: 0,
     automationPolicy: normalizeAutomationPolicy(input.automationPolicy),
     scheduleId: trimString(input.scheduleId),
+    ...(options.scheduled && input.renewalBatch ? { renewalBatch: input.renewalBatch } : {}),
     occurrenceId: trimString(input.occurrenceId),
     executionSessionId: '',
   };
@@ -408,7 +417,34 @@ export async function createTrigger(input = {}, options = {}) {
 }
 
 export async function createScheduledTrigger(input = {}) {
-  return createTrigger(input);
+  return createTrigger(input, { scheduled: true });
+}
+
+// A materialized trigger reserves a slot until its native Request settles.
+// A queued Request or a failed preflight never consumes a started slot.
+export async function getScheduleRenewalBatch(scheduleId, batch) {
+  const entries = await withTriggerMutation(async triggers => triggers
+    .filter(trigger => trigger.scheduleId === scheduleId && trigger.renewalBatch === batch).map(cloneTrigger));
+  const executions = [];
+  let open = 0;
+  for (const trigger of entries) {
+    if (trigger.deliveryMode === 'access_denied' || trigger.status === TRIGGER_STATUS_CANCELLED) continue;
+    if (!isTriggerTerminal(trigger)) { open++; continue; }
+    if (trigger.status !== TRIGGER_STATUS_DELIVERED) continue;
+    const receipt = await requests.byRequest(trigger.executionSessionId, trigger.requestId);
+    const runId = receipt?.nativeDispatchRunId || trigger.runId;
+    const run = runId ? await getRun(runId) : null;
+    // Accepting a Request is not a start. A missing receipt is not proof that
+    // an admitted execution ended; keep its reservation rather than overrun.
+    const settled = receipt ? Boolean(receipt.result) : run && isTerminalRunState(run.state);
+    if (!settled) open++;
+    const start = runId ? await readScheduledAgentStart(runId) : null;
+    if (!start) continue;
+    executions.push({ runId, startedAt: start.at,
+      state: receipt?.result?.state || run?.state || 'failed', completedAt: run?.completedAt || receipt?.settledAt });
+  }
+  executions.sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
+  return { started: executions.length, open, reserved: executions.length + open, executions };
 }
 
 export async function countOpenScheduleTriggers(scheduleId) {
@@ -523,6 +559,7 @@ export async function updateTrigger(triggerId, patch = {}, options = {}) {
     }
 
     const current = triggers[index];
+    if (current.renewalBatch) throw new Error('Manage this occurrence through its parent schedule');
     options.validateCurrent?.(current);
     if (current.status === TRIGGER_STATUS_DELIVERING && !isClaimStale(current)) {
       throw new Error('Trigger is currently delivering');
@@ -654,6 +691,7 @@ export async function deleteTrigger(triggerId) {
       deletedTrigger = null;
       return;
     }
+    if (triggers[index].renewalBatch) throw new Error('Managed occurrence history cannot be deleted');
     deletedTrigger = cloneTrigger(triggers[index]);
     triggers.splice(index, 1);
     await saveTriggers(triggers);
@@ -703,6 +741,7 @@ async function markTriggerDeliveryFailure(triggerId, error, attemptCount = 1) {
     const index = triggers.findIndex((trigger) => trigger.id === normalizedTriggerId);
     if (index === -1) return;
     const current = triggers[index];
+    if (current.status !== TRIGGER_STATUS_DELIVERING) return;
     const next = {
       ...current,
       status: exhausted ? TRIGGER_STATUS_FAILED : TRIGGER_STATUS_PENDING,
@@ -732,6 +771,7 @@ async function releaseTriggerForBusy(triggerId) {
     const index = triggers.findIndex((trigger) => trigger.id === normalizedTriggerId);
     if (index === -1) return;
     const current = triggers[index];
+    if (current.status !== TRIGGER_STATUS_DELIVERING) return;
     const next = {
       ...current,
       status: TRIGGER_STATUS_PENDING,
@@ -803,6 +843,7 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       automationTitle: current.title || current.sessionTemplate?.name || '自动化任务',
       automationPolicy: current.automationPolicy || undefined,
       scheduleId: current.scheduleId || undefined,
+      ...(current.renewalBatch ? { renewalBatch: current.renewalBatch } : {}),
       occurrenceId: current.occurrenceId || undefined,
       automationAttribution,
       ...sourceOptions,

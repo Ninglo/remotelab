@@ -21,6 +21,7 @@ import {
   updateExecutionRun as updateRun,
   writeRunResult,
   runDir,
+  markScheduledAgentStart,
 } from './runs.mjs';
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
@@ -572,11 +573,18 @@ async function main() {
   };
 
   let providerRuntimeLease = null;
+  let scheduledAgentStarted = false;
 
   const runToolAttempt = async (invocation, preflightAttempt = 0, options = {}) => {
     const useSessionStartPreflight = !!sessionStartPreflightPolicy && options.skipSessionStartPreflight !== true;
     const preflightAttemptStartedAt = useSessionStartPreflight ? nowIso() : '';
     const resolvedCommand = await resolveCommand(invocation.command);
+    if (manifest.renewalBatch && !scheduledAgentStarted) {
+      // Commit the attempt just before invoking the Harness. A crash after
+      // this boundary is charged, not silently allowed to overspend the batch.
+      await markScheduledAgentStart(runId, nowIso());
+      scheduledAgentStarted = true;
+    }
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: { ...invocationOptions, ...(options.invocationOptions || {}), requestId: manifest.requestId,
