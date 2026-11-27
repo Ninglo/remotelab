@@ -63,6 +63,13 @@ identity 的 `feishu` 登录方式及 Web identity，不发行额外密码或 be
 
 ## Configuration and scope
 
+A dedicated employee-site ingress can instantiate the host and login handlers
+with its own employee identity provider. Use the existing Feishu device flow and
+tenant validation, bind the service to loopback behind HTTPS, supply the exact
+origin check for login POSTs, and configure only the intended host and paths.
+A dedicated device session may use a shorter lifetime via `sessionAgeMs`. An
+ingress that does not call `renew` uses a fixed lifetime from Feishu confirmation.
+
 For the existing device provider, `site-login.json` in the instance config directory contains `realm`, `tenantKey`,
 `feishuConfigPath`, and optional `personIds` for already verified employees who
 also have a RemoteLab login. The application credentials remain in the existing

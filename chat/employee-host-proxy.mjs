@@ -3,9 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createGunzip, createInflate, createBrotliDecompress } from 'node:zlib';
 import { CONFIG_DIR } from '../lib/config.mjs';
-import { requireEmployeeSite, sameSiteOrigin } from './employee-site-auth.mjs';
-import { handleSiteLogin } from './router-site-login.mjs';
 import { siteIdentityCsp, siteIdentityHtmlTransform } from './site-identity-html.mjs';
+
+const requireEmployeeSite = async (...args) => (await import('./employee-site-auth.mjs')).requireEmployeeSite(...args);
+const sameSiteOrigin = async (...args) => (await import('./employee-site-auth.mjs')).sameSiteOrigin(...args);
+const handleSiteLogin = async (...args) => (await import('./router-site-login.mjs')).handleSiteLogin(...args);
 
 const ASSETS = { '/site-login.js': ['site-login.js', 'text/javascript'], '/site-identity.js': ['site-identity.js', 'text/javascript'], '/site-identity.css': ['site-identity.css', 'text/css'] };
 const reply = (res, status, message) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-store' }); res.end(JSON.stringify({ error: message })); };
@@ -56,7 +58,7 @@ export function createEmployeeHostHandler({ routes = loadEmployeeHosts, requireP
       const health = read && route.publicHealthPaths?.includes(path);
       const person = health ? null : await requirePerson(req, res);
       if (!health && !person) return true;
-      if (!read && !sameSiteOrigin(req)) { reply(res, 403, '请从当前网站提交'); return true; }
+      if (!read && !await sameSiteOrigin(req)) { reply(res, 403, '请从当前网站提交'); return true; }
       const headers = { 'accept-encoding': 'identity' };
       for (const name of ['accept', 'range', 'if-range', 'if-none-match', 'if-modified-since', 'content-type', 'content-length', 'origin']) {
         if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];

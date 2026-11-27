@@ -1,9 +1,22 @@
 import { readFile } from 'node:fs/promises';
 import { createSiteSsoHandler } from './site-login-sso.mjs';
-import { generateNonce, setSecurityHeaders } from './middleware.mjs';
-import { employeeSiteIdentity, employeeSitePerson, sameSiteOrigin } from './employee-site-auth.mjs';
+import { randomBytes } from 'node:crypto';
 
-export function createSiteLoginHandler({ identity = employeeSiteIdentity, personFor = employeeSitePerson, ssoOptions = {} } = {}) {
+const secureLoginPage = async (res, nonce) => (await import('./middleware.mjs')).setSecurityHeaders(res, nonce);
+const sameSiteOrigin = async req => (await import('./employee-site-auth.mjs')).sameSiteOrigin(req);
+
+export function createSiteLoginHandler({ identity, personFor, ssoOptions = {}, securePage = secureLoginPage,
+  checkOrigin = sameSiteOrigin } = {}) {
+  if (!identity || !personFor) {
+    let configured;
+    return async (...args) => {
+      configured ||= import('./employee-site-auth.mjs').then(defaults => createSiteLoginHandler({
+        identity: identity || defaults.employeeSiteIdentity, personFor: personFor || defaults.employeeSitePerson,
+        ssoOptions, securePage, checkOrigin,
+      }));
+      return (await configured)(...args);
+    };
+  }
   const sso = createSiteSsoHandler({ identity, personFor, ...ssoOptions });
   return async (req, res, pathname) => {
     if (pathname !== '/site-login' && !pathname.startsWith('/api/site-login/')) return false;
@@ -28,7 +41,7 @@ export function createSiteLoginHandler({ identity = employeeSiteIdentity, person
         const action = pathname.slice('/api/site-login/'.length);
         const method = { me: 'GET', start: 'POST', poll: 'GET', logout: 'POST' }[action];
         if (!method || req.method !== method) { send(405, { error: 'Method not allowed' }); return true; }
-        if (method === 'POST' && !sameSiteOrigin(req)) { send(403, { error: '请从本站提交' }); return true; }
+        if (method === 'POST' && !await checkOrigin(req)) { send(403, { error: '请从本站提交' }); return true; }
         if (!person) { send(401, { error: '请通过公司统一登录访问', login: '/site-login' }); return true; }
         if (action === 'logout') {
           send(200, { state: 'redirect', redirect_url: `${gateway.issuer}/sso/logout/start?app=${encodeURIComponent(gateway.appId)}` }); return true;
@@ -36,14 +49,14 @@ export function createSiteLoginHandler({ identity = employeeSiteIdentity, person
         send(200, { state: 'connected', person, provider: 'muka-sso' }); return true;
       }
       if (pathname === '/site-login' && req.method === 'GET') {
-        const nonce = generateNonce(); setSecurityHeaders(res, nonce);
+        const nonce = randomBytes(16).toString('base64'); await securePage(res, nonce);
         const page = await readFile(new URL('../templates/site-login.html', import.meta.url), 'utf8');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(page.replaceAll('{{NONCE}}', nonce)); return true;
       }
       const action = pathname.slice('/api/site-login/'.length);
       const method = { me: 'GET', start: 'POST', poll: 'GET', logout: 'POST' }[action];
       if (!method || req.method !== method) { send(405, { error: 'Method not allowed' }); return true; }
-      if (method === 'POST' && !sameSiteOrigin(req)) { send(403, { error: '请从登录页面提交' }); return true; }
+      if (method === 'POST' && !await checkOrigin(req)) { send(403, { error: '请从登录页面提交' }); return true; }
       if (action === 'logout') {
         res.setHeader('Set-Cookie', await identity.logout(req)); send(200, { state: 'signed_out' }); return true;
       }
