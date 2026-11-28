@@ -1,4 +1,5 @@
 import { rememberFeishuThreadSurface } from './feishu-thread-continuation.mjs';
+import { slowCompletedDelivery, latencyFacts } from '../lib/feishu-delivery-latency.mjs';
 import { observeRecentError } from '../lib/recent-errors.mjs';
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
@@ -346,8 +347,13 @@ export async function completeSourceDelivery(id, leaseId, input = {}, executionP
   });
   // The committed receipt and any refined conversation address are already
   // visible to the next claim. History and UI projection must not block it.
-  await publishDeliveryMutation(mutation);
   const delivered = mutation.entry;
+  // Never put telemetry in the lease critical section or wait on SQLite to acknowledge delivery.
+  for (const stage of slowCompletedDelivery(mutation.record, delivered)) {
+    void observeRecentError('source-delivery', { operation: `${mutation.record.requestId}:${stage}`,
+      attempt: 'confirmed', error: latencyFacts[stage][0], at: delivered.deliveredAt, sessionId: mutation.record.sessionId });
+  }
+  await publishDeliveryMutation(mutation);
   // Resume only after releasing the delivery lock; plan admission enqueues its
   // own source notice. A failed continuation can be retried with this receipt.
   if (delivered.responseId?.startsWith('plan-topic:')) {

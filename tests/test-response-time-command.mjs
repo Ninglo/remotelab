@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { responseTimeSummary, requestResponseTime, runResponseTimeCommand, renderResponseTime } from '../lib/response-time-command.mjs';
+import { requestHarnessStages, responseTimeSummary, requestResponseTime, runResponseTimeCommand, renderResponseTime } from '../lib/response-time-command.mjs';
 import { createRequestStore, requestKey } from '../chat/requests.mjs';
 
 const metric = (count, median) => ({ count, median, mean: median + 10, p95: median + 100 });
@@ -74,6 +74,19 @@ result = await requestResponseTime('s', 'extra', steeredStore);
 assert.equal(result.metricsMs.finalDelivery, null, 'unattributed root output does not answer a supplement');
 await assert.rejects(requestResponseTime('s', 'missing', store), /not found/);
 
+// Runtime family is the accepted launch manifest, not a guess from model name.
+const id='run_'+'a'.repeat(24), rec={...root,runId:id};
+for (const [family,mode,ackResult,want] of [
+  ['codex-json','native',{mode:'start'},'codex:start'],['codex-json','native',{mode:'steer'},'codex:steer'],
+  ['pi-json','native',{protocol:'pi-rpc'},'pi-rpc'],['claude-stream-json','native',{protocol:'claude-stream-json',evidence:'user_replay'},'claude-stream-json'],
+  ['antigravity-stream-json','native',{protocol:'antigravity-stream-json'},'antigravity-stream-json'],['antigravity-stream-json','batch',{},null],
+]) {
+  const follow=ackResult.mode==='steer';
+  const stages=await requestHarnessStages({...rec,nativeDispatchRunId:follow?id:null},{directory:()=>'/fixture',read:async path=>path.endsWith('manifest.json')?{id,sessionId:'s',runtimeFamily:family,inputMode:mode}:{runId:id,startedAt:t+3000},receipt:async()=>{
+    assert.equal(mode,'native');return {id:'r',state:'accepted',acceptedAt:t+7000,result:{accepted:true,...ackResult}};}});
+  assert.equal(stages.protocol,want); assert.equal(stages.nativeInputState,mode==='batch'?'not-applicable':'accepted');
+  assert.equal(stages.preparedToRunnerMs,follow?null:1000); assert.equal(stages.toNativeReceiptMs,mode==='batch'?null:follow?6000:5000);
+}
 // Real durable point lookup: archive access works without listing or touching spools.
 const dir = await mkdtemp(join(tmpdir(), 'response-time-'));
 try {

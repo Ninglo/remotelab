@@ -2,7 +2,7 @@ import { findIdentity, loadAuthDocument } from '../lib/auth-config.mjs';
 import { PERSONAL_ANTIGRAVITY_TOOL, personalAntigravity, personalAntigravityEnabled } from './personal-antigravity.mjs';
 import { refreshRuntimeHrPolicy, runtimeHrPolicy, resolveHrActor, hrActorNotice } from '../lib/hr-policy.mjs';
 import { evaluateRequestAccess } from './request-access-guard.mjs';
-import { observeRecentError } from '../lib/recent-errors.mjs';
+import { FEISHU_REPLY_UNASSIGNED, observeRecentError } from '../lib/recent-errors.mjs';
 import { captureCodexAccountPolicy, usesCodexAccountPool } from './codex-account-context.mjs';
 import { publishPersonalCodexFallbackNotice } from './personal-codex-notice.mjs';
 import { kickoffQuestionDecision, acceptWorkKickoff, recoverWorkKickoffs } from './work-kickoff.mjs';
@@ -1394,7 +1394,7 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
   return null;
 }
 
-async function buildManagerTurnContextSlots(session, options = {}) {
+async function buildManagerTurnContextSlots(session, options = {}, partTimings = null) {
   if (options.internalOperation === RETRIEVAL_OPERATION) return [];
   const slots = [];
   slots.push(createModelContextSlot('execution_default', 'Default task execution',
@@ -1405,7 +1405,9 @@ async function buildManagerTurnContextSlots(session, options = {}) {
       ? 'system/surface-messages-feishu-group-20261007.md' : 'system/surface-messages.md')));
   const optedIn = options.workboardEnabled === true || session?.workboardPilot === true
     && (!session.workboardOptInPersonId || session.workboardOptInPersonId === options.viewPersonId);
+  const historyStart = performance.now();
   const taskContext = optedIn ? workboardContext(await loadHistory(session.id, { includeBodies: true, bodyTypes: ['message'] })) : null;
+  if (partTimings && optedIn) partTimings.workboardHistory = Math.round(performance.now()-historyStart);
   if ((optedIn && options.workboardEnabled !== false && options.messageReplyPolicy?.checklist !== false) || taskContext?.activeTasks.length) {
     slots.push(createModelContextSlot('session_workboard', 'Visible checklist for this opt-in Session',
       (!options.messageReplyPolicy && usesOctober7GroupMessaging(session)
@@ -1435,7 +1437,7 @@ async function buildManagerTurnContextSlots(session, options = {}) {
     ));
   }
   const turnContext = await buildTurnContextHook(session, {
-    separateProjectContext: true,
+    partTimings, separateProjectContext: true,
     sourceContext: normalizeSourceContext(options.modelSourceContext ?? options.sourceContext, Infinity), requestId: options.requestId,
     pilotInputReplyContract: hasFeishuInputReplyContract({ options }),
     messageRoutingPolicy: options.messageRoutingPolicy, parallelWorkPolicy: options.parallelWorkPolicy,
@@ -1760,6 +1762,11 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
+function observeFeishuUnassignedReply(record) {
+  void observeRecentError('run-result', { operation: record.key, attempt: 'feishu-unassigned-reply',
+    error: new Error(FEISHU_REPLY_UNASSIGNED), sessionId: record.sessionId });
+}
+
 // Several user inputs can be consumed by one native turn. Each keeps its own
 // response address, while the resulting conversation reply is published once.
 async function settleNativeRequest(record, run) {
@@ -1773,6 +1780,7 @@ async function settleNativeRequest(record, run) {
     const result = pilotInputResult(record, run);
     await requests.settle(record.key, result, record.mainlineReply || record.routingHandoff?.state === 'submitted'
       ? [] : buildReplyDeliveries(ownPlan, result.payload, { running: false }));
+    if (run.state === 'completed' && result.state === 'failed' && ownPlan?.connector === 'feishu') observeFeishuUnassignedReply(record);
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: true }));
     await requestRuntime.refresh(record.key);
     await requests.archiveFinished(record.key);
@@ -2638,6 +2646,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     broadcastScopedSessionsInvalidation(created.session);
   }
 
+  if (extra.feishuAdmissionOnly === true) return created.session;
   return projectSessionPersonView(await enrichSessionMeta(created.session), requestedViewPersonId);
 }
 
@@ -3586,7 +3595,7 @@ async function refuseRestrictedRequest(session, text, options, decision, prior) 
   });
 }
 
-export async function submitHttpMessage(sessionId, text, images, options = {}) {
+export async function submitHttpMessage(sessionId, text, images, options = {}, { feishuAdmissionOnly = false } = {}) {
   // An explicitly requested reply route is part of admission's durable contract.
   // Never accept work and silently discard its final-delivery responsibility.
   if (options.sourceDelivery != null && !normalizeSourceDeliveryPlan(options.sourceDelivery)) {
@@ -3802,9 +3811,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ? buildTemporarySessionName(record.text)
       : '';
     const mutation = await mutateSessionMeta(sessionId, draft => {
-      if (draft.workboardPilot === true && options.checklistGateReceipt && !duplicate) {
-        draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
-      }
+      const changesGate = draft.workboardPilot === true && Boolean(options.checklistGateReceipt) && !duplicate;
+      if (changesGate) draft.workboardGate = { requestId: record.requestId, ...options.checklistGateReceipt };
+      const hadWorkflowState = Object.hasOwn(draft, 'workflowState') || Object.hasOwn(draft, 'workflowPriority');
       delete draft.workflowState;
       delete draft.workflowPriority;
       if (
@@ -3813,8 +3822,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         && normalizeSessionName(draft.name) === DEFAULT_SESSION_NAME
       ) {
         draft.name = draftName;
+        return true;
       }
-      return true;
+      return hadWorkflowState || changesGate;
     });
     if (mutation.meta) session = mutation.meta;
   }
@@ -3822,7 +3832,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   return { requestId: record.requestId, duplicate, queued,
     run: { id: record.runId, sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' },
     response: { id: record.responseId, state: record.result ? (record.result.state === 'completed' ? 'ready' : record.result.state) : 'queued' },
-    session: await enrichSessionMeta(session) };
+    ...(feishuAdmissionOnly ? {} : { session: await enrichSessionMeta(session) }) };
 }
 
 async function ensureRequestInput(record, manifest) {
@@ -4058,8 +4068,9 @@ async function prepareRequestRunOnce(record) {
   });
   const contextOptions = { ...options, modelSourceContext: contextProjection.sourceContext };
   markPreparedStage('sourceContext');
+  const contextPartTimingsMs = {};
   const turnSlots = effectiveToolDefinition?.promptMode === 'bare-user'
-    ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId });
+    ? [] : await buildManagerTurnContextSlots(session, { ...contextOptions, requestId }, contextPartTimingsMs);
   markPreparedStage('turnContext');
   const ruleProjection = await projectRuleContext(sessionId, turnSlots, {
     enabled: effectiveToolDefinition?.inputMode === 'native',
@@ -4252,7 +4263,7 @@ async function prepareRequestRunOnce(record) {
   }
 
   markPreparedStage('persistence');
-  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs }));
+  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso(), preparationTimingsMs, contextPartTimingsMs }));
   await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
   await launchAutomationRun(run.id, options);

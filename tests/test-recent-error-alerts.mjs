@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 const tmp = await mkdtemp(join(tmpdir(),'recent-error-alert-test-'));
 setIsolatedTestHome(tmp);
 try {
-  const { createRecentErrorMonitor } = await import('../lib/recent-errors.mjs');
+  const { createRecentErrorMonitor, FEISHU_ADMISSION_TIMEOUT, FEISHU_REPLY_UNASSIGNED } = await import('../lib/recent-errors.mjs');
+  const { latencyFacts } = await import('../lib/feishu-delivery-latency.mjs');
   const { dispatchRecentErrorAlerts, groupErrorLine } = await import('../chat/recent-error-alerts.mjs');
   const { enqueueSourceDelivery, claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
   let now=Date.parse('2026-11-27T06:00:00Z');
@@ -60,11 +61,31 @@ try {
   assert(link); assert.equal(await monitor.sourceSession(link[1]),'private_fixture_session');
   assert(!gate.delivery.text.includes('private_fixture_session'));
   assert(!gate.delivery.text.includes('private_task'));
+  await completeSourceDelivery(gate.delivery.id,gate.leaseId,{messageId:'om_gate_fixture'});
   for(const id of ['private-a','private-b','private-c']) await monitor.record('feishu-inbox',{
     operation:id, error:'Private text not suitable for publishing', sessionId:'private_fixture_session',
   });
   assert.equal((await run({analyze:async()=>assert.fail('no Agent for unshareable error')})).skipped,'insufficient-evidence');
   assert.equal(sends,2);
+  for (const [source, error, expected] of [
+    ['feishu-inbox', FEISHU_ADMISSION_TIMEOUT, /已确认：已进入任务受理路径/],
+    ['run-result', FEISHU_REPLY_UNASSIGNED, /已确认：会话已结束/],
+    ...Object.values(latencyFacts).map(([line, ,cause])=>['source-delivery',line,new RegExp(cause)]),
+  ]) {
+    for (let n=1;n<=2;n++) await monitor.record(source,{operation:`${error}-${n}`,error});
+    const sendsBefore = sends;
+    let modelCalls=0;
+    const noModel = {analyze: async()=>{modelCalls++;throw Error('model offline');}};
+    await run(noModel); assert.equal(sends,sendsBefore);
+    await monitor.record(source,{operation:`${error}-3`,error});
+    const alert = await run(noModel);
+    const {delivery,leaseId} = await claimSourceDelivery({connector:'feishu',sourceRouteId:'bot-2'});
+    assert.equal(alert.queued,delivery.id);
+    assert.match(delivery.text,expected);
+    await completeSourceDelivery(delivery.id,leaseId,{messageId:`om_${source}`});
+    await run(noModel); assert.equal(sends,sendsBefore+1);
+    assert.equal(modelCalls,0,'deterministic Feishu alerts must not call a model');
+  }
   assert.equal(groupErrorLine('ETIMEDOUT token=not-shareable'),'ETIMEDOUT');
   assert.equal(groupErrorLine('Customer-provided contents that must not leave the session'),'');
   console.log('recent error alerts: third independent error + Agent advice, target and mute checks, original outbox, receipts, cooldown, privacy and fallback passed');
