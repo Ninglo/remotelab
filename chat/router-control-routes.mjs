@@ -708,7 +708,6 @@ export async function handleControlRoutes({
         const payload = JSON.parse(await readBody(req, 32768) || '{}');
         if (payload.replaceSessionId && !await canAccessSession(authSession, payload.replaceSessionId)) { writeJson(res, 403, { error: 'Session access denied' }); return true; }
         await ensureAutomationHome(id, { auth: authSession, brief: payload.brief, replaceSessionId: payload.replaceSessionId });
-        broadcastAll({ type: 'sessions_invalidated' });
         broadcastAll({ type: 'automation_tasks_updated', taskId: id });
       }
       const home = await readAutomationHomeView(id);

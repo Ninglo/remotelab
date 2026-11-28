@@ -34,7 +34,9 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
   const records = createRecordStore(root);
   const admission = serialQueue();
   const get = records.get;
+  let deliveriesRevision = 0;
   const publishPendingDeliveries = (record, accepted = false, previous) => {
+    if (record?.deliveries?.length || previous?.deliveries?.length) deliveriesRevision++;
     notifySourceDeliveryAvailable(record?.deliveries || []);
     try { onChange(record, { accepted, previous }); } catch { /* Observation must not interrupt admission. */ }
     return record;
@@ -104,6 +106,7 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
   });
   return {
     get, accept, active: records.active, projectActive: records.projectActive, mutate,
+    deliveriesRevision: () => deliveriesRevision,
     // Streaming migration reader; do not retain archived prompt bodies in memory.
     archived: async function* () {
       let names;
@@ -127,6 +130,7 @@ export function createRequestStore(root, { onChange = () => {} } = {}) {
       const record = await get(key);
       if (record?.result && !record.postCompletionPending && (record.releasedAt || record.options.deliveryOnly) && record.deliveries.every(x => ['delivered', 'cancelled'].includes(x.state) || (x.kind === 'delivery_notice' && ['delivery_failed', 'unknown'].includes(x.state)))) {
         await records.archive(key);
+        if (record.deliveries.length) deliveriesRevision++;
       }
     },
     idle: async () => { await admission.idle(); await records.idle(); },

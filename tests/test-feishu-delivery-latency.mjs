@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { deliverySpans, slowCompletedDelivery } from '../lib/feishu-delivery-latency.mjs';
+const t=Date.parse('2026-11-27T12:37:43Z');
+const r={requestId:'feishu:om_fixture',options:{sourceContext:{connector:'feishu',createTime:String(t)}},deliveries:[]};
+const d={id:'d',connector:'feishu',kind:'reaction',processingState:'active',state:'delivered',target:{messageId:'om_fixture'},attempts:1,createdAt:t+9963,availableAt:t+9963,claimedAt:t+53272,deliveredAt:t+57630};
+assert.deepEqual(deliverySpans(d,t),{fromSendMs:57630,queueMs:43309,eligibleToClaimMs:43309,claimToReceiptMs:4358});
+assert.deepEqual(slowCompletedDelivery(r,d),['pickup']);
+const o={...d,kind:'content',surfaceKind:'opening',deliveredAt:t+75000};
+assert.deepEqual(slowCompletedDelivery(r,o),['pickup','receipt','opening']);
+assert.deepEqual(slowCompletedDelivery({...r,deliveries:[{...o,id:'first',surfaceKind:'question',deliveredAt:t+5000}]},o),['pickup','receipt']);
+assert.deepEqual(slowCompletedDelivery(r,{...d,attempts:2}),[]);
+assert.deepEqual(slowCompletedDelivery(r,{...o,publicationRequestId:'feishu:om_other'}),[]);
+assert.deepEqual(slowCompletedDelivery(r,{...o,target:{messageId:'om_other'}}),[]);
+assert.deepEqual(slowCompletedDelivery(r,{...d,processingState:'cleared'}),[]);
+assert.deepEqual(slowCompletedDelivery(r,{...d,state:'unknown'}),[]);
+assert.deepEqual(slowCompletedDelivery({...r,options:{...r.options,internalOperation:'trigger_delivery'}},o),[]);
+assert(Object.values(deliverySpans(null,t)).every(x=>x===null));
+console.log('PASS per-message first outbound claim and receipt intervals, eligibility, attribution, silence and retry boundaries');

@@ -32,6 +32,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { cleanupAtomicTemps, createKeyedTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { watchFeishuAdmission } from '../connectors/feishu/admission-watch.mjs';
 import { feishuReadRetryPolicy } from '../lib/feishu-retry-policy.mjs';
 import { createInboxFailureAlerts } from '../connectors/feishu/inbox-failure-alerts.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -1063,6 +1064,7 @@ async function submitRemoteLabRequest(runtime, summary, {
     try {
       submission = await submitConnectorMessage(requester, prepared.sessionId, {
       ...prepared.payload,
+      feishuAdmissionOnly: true,
       // A pre-upgrade prepared worker submission owns its original topology.
       // Its user event has not been observed in the mainline Session.
       ...(skipUserMessage && (!observedSessionId || prepared.sessionId === observedSessionId)
@@ -1158,7 +1160,7 @@ async function submitRemoteLabRequest(runtime, summary, {
       session = updated.json.session;
     }
   } else {
-    session = await createConnectorSession(requester, sessionPayload);
+    session = await createConnectorSession(requester, { ...sessionPayload, feishuAdmissionOnly: true });
   }
   // Group prompt edits apply to an existing mainline as well as bound topics.
   // Never mutate an already accepted Run's prompt snapshot.
@@ -2420,9 +2422,15 @@ function initializeInbox(runtime) {
           participationSnapshot: entry.participationSnapshot,
           preparedRuntimeCommand: entry.runtimeCommand,
           saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
-          submitRemoteLabRequest: (runtime, summary, options = {}) => submitRemoteLabRequest(runtime, summary, {
-            ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
-          }),
+          submitRemoteLabRequest: (runtime, summary, options = {}) => {
+            const submit = () => submitRemoteLabRequest(runtime, summary, {
+              ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
+            });
+            if (entry.sourceLabel !== 'im.message.receive_v1' || summary.sender?.senderType !== 'user') return submit();
+            return watchFeishuAdmission([runtime.config.sourceRouteId, entry.key], submit, {
+              startedAt: entry.ingressReceivedAt || entry.lastAttemptAt || Date.now(),
+            });
+          },
         });
       } catch (error) {
         if (error.retryable !== false || isFeishuBotSender(entry.summary)) throw error;
@@ -2666,10 +2674,11 @@ async function main() {
   const displayHint = type => async raw => { await displayChanged(type, raw); return {}; };
   const persist = (sourceLabel, summarize) => async raw => {
     const receivedAt = performance.now();
+    const ingressReceivedAt = Date.now();
     const summary = summarize(raw);
     if (summary.fileToken && await documentEvents.accept(summary)) return {};
     const status = participationEnabled(runtime, summary) ? await participationController(runtime).state(summary) : null;
-    const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel,
+    const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel, ingressReceivedAt,
       ...(status ? { participationSnapshot: { key: status.key, mode: status.receptionMode, epoch: status.epoch, receivedAt: Date.now() } } : {}),
     });
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {

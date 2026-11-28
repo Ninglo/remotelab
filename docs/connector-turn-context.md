@@ -1,5 +1,7 @@
 # Connector metadata in turn Context
 
+Request preparation keeps bounded `contextPartTimingsMs` wall times for measured contributors (including workboard history when enabled) without changing the prompt. Reads that run in parallel overlap: compare durations to the inclusive `turnContext` total, do not sum them. An absent timing does not prove a zero-cost read.
+
 Connector inputs carry `text`, attachments and `sourceContext` independently. Text contains the normalized user content. Sender labels, platform message/thread IDs, email headers and ingestion status belong to sourceContext. Quoted document text and comment history are source context; actual email body representations remain message content.
 
 The existing Request record freezes these inputs at admission. Feishu initial/default forks, explicit forks and continued messages use the same message-context builder. Forking selects the Session; it does not select a reduced input format. WeChat already submits separate metadata, and both email workers and GitHub intake now do so too.

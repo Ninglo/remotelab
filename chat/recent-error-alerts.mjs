@@ -2,10 +2,11 @@ import { DAY, digestOptions, digestPeriod, renderRecentErrorDigest } from '../li
 import { loadedRepairReceipts } from '../lib/recent-error-repairs.mjs';
 import { groupErrorLine, originalLink } from '../lib/recent-error-public.mjs';
 export { groupErrorLine } from '../lib/recent-error-public.mjs';
+import { latencyFacts } from '../lib/feishu-delivery-latency.mjs';
 import { join } from 'node:path';
 import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
-import { RECENT_ERROR_SOURCES, recentErrors, recentErrorsConfig, recentErrorExcerpt } from '../lib/recent-errors.mjs';
+import { FEISHU_ADMISSION_TIMEOUT, FEISHU_REPLY_UNASSIGNED, RECENT_ERROR_SOURCES, recentErrors, recentErrorsConfig, recentErrorExcerpt } from '../lib/recent-errors.mjs';
 import { reviewPromptBatch } from './prompt-review-model.mjs';
 import { enqueueSourceDelivery, getSourceDelivery } from './source-deliveries.mjs';
 import { monitoringIm } from './monitoring-alert-message.mjs';
@@ -27,6 +28,20 @@ export async function analyzeRecentErrors(evidence) {
   return {cause,direction};
 }
 function operationalFacts(source, events) {
+  if (source === 'source-delivery' && events.length) {
+    const fact = Object.values(latencyFacts).find(([diagnostic]) => events.every(e => e.diagnostic === diagnostic));
+    if (fact) return { title: fact[1], cause: fact[2], direction: fact[3], deterministicOnly: true };
+  }
+  if (source === 'feishu-inbox' && events.every(e => e.diagnostic === FEISHU_ADMISSION_TIMEOUT)) {
+    return { title: '飞书任务受理回执超时', deterministicOnly: true,
+      cause: '已进入任务受理路径，但 30 秒内未确认受理回执；这不代表原消息丢失，也不是正文生成超时。',
+      direction: '按原消息核对路由、上下文准备和核心受理；修复后确认新消息在预算内取得回执且重试不重复执行。' };
+  }
+  if (source === 'run-result' && events.every(e => e.diagnostic === FEISHU_REPLY_UNASSIGNED)) {
+    return { title: '飞书消息未结算答复', deterministicOnly: true,
+      cause: '会话已结束，但这条应答输入没有登记独立回复、合并答复或移交，不能把表情当成答复。',
+      direction: '核对结束时每条输入的回复归属与实际送达回执；恢复时避免重复答复。' };
+  }
   const timeout = source==='schedule-gate' && events.every(e=>e.diagnostic===events[0]?.diagnostic)
     && events[0]?.diagnostic.match(/^Gate timed out after (\d+)s$/);
   if (timeout) return { title:'定时任务前置检查超时',
@@ -137,7 +152,7 @@ export async function dispatchRecentErrorAlerts({ monitor=recentErrors, loadConf
     const facts=operationalFacts(job.evidence.source,events);
     const evidence={source:RECENT_ERROR_SOURCES[job.evidence.source] || '系统报错',label:facts?.title || job.evidence.label,
       ...(facts ? {confirmedCause:facts.cause} : {}),events};
-    const advice=job.state==='new' ? await analyze(evidence).catch(()=>null) : null;
+    const advice=job.state==='new' && !facts?.deterministicOnly ? await analyze(evidence).catch(()=>null) : null;
     if (!facts && (!advice?.cause || !advice?.direction)) {
       await monitor.alertTransition(target,job.id,current,'insufficient');
       return {enabled:true,skipped:'insufficient-analysis'};

@@ -3,17 +3,18 @@ import { createSessionListCache } from '../chat/session-list-cache.mjs';
 
 let clock = 10000, fullReads = 0;
 const singleReads = [];
-const store = new Map(Array.from({ length: 2100 }, (_, n) => {
+const store = new Map(Array.from({ length: 7000 }, (_, n) => {
   const s = { id: `s${n}`, sourceId: 'chat', name: `Cold ${n}`, created: new Date(n * 1000).toISOString() };
   return [s.id, s];
 }));
 store.get('s2099').activity = { run: { state: 'running' } };
 const cache = createSessionListCache({ now: () => clock,
-  loadAll: async person => { fullReads++; return [...store.values()].map(s => ({ ...s, group: person })); },
-  loadOne: async (id, person) => { singleReads.push(id); const s = store.get(id); return s ? { ...s, group: person } : null; },
+  loadAll: async () => { fullReads++; return [...store.values()].map(s => ({ ...s })); },
+  loadOne: async id => { singleReads.push(id); const s = store.get(id); return s ? { ...s } : null; },
+  project: (s, person) => ({ ...s, group: person }),
 });
 const initial = await cache.read({ personId: 'p' });
-assert.equal(JSON.parse(initial.body).sessions.length, 2100);
+assert.equal(JSON.parse(initial.body).sessions.length, 7000);
 for (const response of await Promise.all(Array.from({ length: 20 }, () => cache.read({ personId: 'p' })))) {
   assert.equal(response, initial, 'unchanged reads reuse the serialized response and ETag');
 }
@@ -42,10 +43,17 @@ assert.equal(refs.sessions, undefined);
 assert.match(refs.sessionRefs[0].summaryEtag, /^"[a-f0-9]+"$/);
 cache.invalidate({ type: 'sessions_invalidated' });
 await cache.read({ personId: 'p' });
-assert.equal(fullReads, 3, 'global changes rediscover membership, separate person views remain isolated');
-clock += 300001;
+await Promise.all(Array.from({ length: 8 }, (_, n) => cache.read({ personId: `viewer-${n}`, refs: true })));
+assert.equal(fullReads, 1, 'global changes and eight viewer keys reuse the same base');
+clock += 600001;
 await cache.read({ personId: 'p' });
-assert.equal(fullReads, 4, 'missed external hints have a bounded demand-driven recovery');
+assert.equal(fullReads, 1, 'ten minutes does not force a cold re-read');
+for (const field of ['activity', 'localBridge', 'connectors', 'contextMode', 'deliveryIssueCount']) {
+  store.get('s0')[field] = field;
+  cache.invalidate({ type: 'session_invalidated', sessionId: 's0' });
+  const result = await cache.read({ personId: 'p' });
+  assert.equal(JSON.parse(result.body).sessions.find(s => s.id === 's0')[field], field);
+}
 
 // A mutation arriving while its record is being read must not get swallowed.
 let release, called = 0;
@@ -73,12 +81,12 @@ assert.equal(externalReads, 1, 'external metadata edits refresh just their chang
 
 let idleLoads = 0, idleClock = 0;
 const idleViews = createSessionListCache({ now: () => idleClock, maxAgeMs: 3_600_000,
-  loadAll: async person => { idleLoads++; return [{ id: 'i', name: person }]; }, loadOne: async () => null });
+  loadAll: async () => { idleLoads++; return [{ id: 'i' }]; }, loadOne: async () => null });
 await idleViews.read({ personId: 'a' }); await idleViews.read({ personId: 'b' });
 idleClock = 9 * 60_000; await idleViews.read({ personId: 'b' });
 assert.equal(idleViews.sweepIdle(10 * 60_000, 11 * 60_000), 1, 'only the view unread for the idle window is released');
 await idleViews.read({ personId: 'b' });
-assert.equal(idleLoads, 2, 'a recently read view keeps its records');
+assert.equal(idleLoads, 1, 'a recently read view keeps its overlay');
 await idleViews.read({ personId: 'a' });
-assert.equal(idleLoads, 3, 'a released view rebuilds on its next read');
-console.log('test-session-list-cache: ok (2100 records; unchanged cold records are not reread; idle views released)');
+assert.equal(idleLoads, 1, 'overlay eviction never rereads the base');
+console.log('test-session-list-cache: ok (7000 records, 8 viewer keys, no cold rebuild after hints or 10 minutes)');

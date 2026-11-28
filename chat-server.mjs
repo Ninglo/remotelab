@@ -69,7 +69,9 @@ await new Promise((resolve, reject) => {
   server.once('error', reject);
   server.listen(CHAT_PORT, CHAT_BIND_HOST, resolve);
 });
-const stopRuntimeHealth = startRuntimeHealth();
+const { takeSessionListMetrics, startSessionListVersionCheck } = await import('./chat/router-session-main-routes.mjs');
+const stopRuntimeHealth = startRuntimeHealth({ takeSessionListMetrics });
+const stopSessionListVersionCheck = startSessionListVersionCheck();
 const stopRecentErrorServiceSource = startRecentErrorServiceSource();
 const stopRecentErrorAlerts = startRecentErrorAlerts();
 const cacheRelease = startCacheRelease();
@@ -114,6 +116,7 @@ const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
 
 async function shutdown() {
   stopRuntimeHealth();
+  stopSessionListVersionCheck();
   stopRecentErrorServiceSource();
   stopRecentErrorAlerts();
   cacheRelease.stop();

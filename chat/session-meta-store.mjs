@@ -323,6 +323,8 @@ export async function loadSessionMetaVersionIndex() {
   const metas = indexed ? null : await catalog.readSnapshot(snapshot);
   snapshot.versionIndex = indexed ? new Map(snapshot.data.order.map(id => [id, snapshot.data.records[id]]))
     : new Map(metas.map(meta => [meta.id, createHash('sha256').update(JSON.stringify(meta)).digest('hex')]));
+  snapshot.versionIndex.catalogSchema = indexed ? snapshot.data.schema : 'legacy';
+  snapshot.versionIndex.catalogRevision = indexed ? snapshot.data.revision : null;
   return snapshot.versionIndex;
 }
 

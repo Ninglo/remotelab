@@ -964,6 +964,10 @@ async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
     ? getSessionArchiveMutationEpoch()
     : 0;
   const data = await fetchJsonOrRedirect(url, buildSessionRefreshRequestOptions(forceFresh));
+  if (typeof jsonResponseCache !== 'undefined' && typeof buildJsonCacheKey === 'function' && typeof resolveRequestUrl === 'function') {
+    const etag = jsonResponseCache.get(buildJsonCacheKey(resolveRequestUrl(url)))?.etag;
+    if (etag) sidebarSummaryVersions.set(sessionId, etag);
+  }
   if (
     typeof isSessionArchiveMutationEpochCurrent === "function"
     && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
@@ -973,6 +977,53 @@ async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
       : (sessions.find((session) => session.id === sessionId) || null);
   }
   return upsertSession(data.session);
+}
+
+const sidebarSummaryVersions = new Map();
+let sidebarRefsInFlight = null;
+function rememberSidebarRefs(refs) {
+  if (!Array.isArray(refs)) return;
+  for (const ref of refs) if (ref?.id && ref.summaryEtag) sidebarSummaryVersions.set(ref.id, ref.summaryEtag);
+}
+
+async function syncSessionSidebarRefs() {
+  if (sidebarRefsInFlight) return sidebarRefsInFlight;
+  const sequence = ++sessionsListRequestSequence;
+  const mutationEpoch = sessionListMutationEpoch;
+  const archiveEpoch = typeof getSessionArchiveMutationEpoch === 'function' ? getSessionArchiveMutationEpoch() : 0;
+  sidebarRefsInFlight = (async () => {
+    const readIndex = async archived => {
+      const path = archived ? '/api/sessions/archived' : '/api/sessions';
+      const data = await fetchJsonOrRedirect(`${path}?view=refs`);
+      if (!Array.isArray(data?.sessionRefs)) throw new Error('Session reference list unavailable');
+      const rows = [];
+      for (let n = 0; n < data.sessionRefs.length; n += 8) {
+        const batch = await Promise.all(data.sessionRefs.slice(n, n + 8).map(async ref => {
+          const known = findClientSessionRecord(ref.id);
+          if (known && Boolean(known.archived) === archived && sidebarSummaryVersions.get(ref.id) === ref.summaryEtag) return known;
+          try {
+            const summary = await fetchJsonOrRedirect(getSessionSidebarUrl(ref.id));
+            return summary?.session || null;
+          } catch (error) {
+            if (error?.status === 403 || error?.status === 404) return null;
+            throw error;
+          }
+        }));
+        rows.push(...batch.filter(row => row && Boolean(row.archived) === archived));
+      }
+      return { ...data, rows };
+    };
+    const [active, archived] = await Promise.all([readIndex(false), archivedSessionsLoaded ? readIndex(true) : null]);
+    if (sequence !== sessionsListRequestSequence || mutationEpoch !== sessionListMutationEpoch
+      || (typeof isSessionArchiveMutationEpochCurrent === 'function' && !isSessionArchiveMutationEpochCurrent(archiveEpoch))) return;
+    sidebarSummaryVersions.clear();
+    rememberSidebarRefs(active.sessionRefs);
+    rememberSidebarRefs(archived?.sessionRefs);
+    applySessionListState(active.rows, { archivedCount: active.archivedCount });
+    if (archived) applyArchivedSessionListState(archived.rows, { archivedCount: archived.archivedCount });
+    lastSessionsListRefreshAt = Date.now();
+  })().finally(() => { sidebarRefsInFlight = null; });
+  return sidebarRefsInFlight;
 }
 
 async function fetchArchivedSessions({ forceFresh = false } = {}) {
@@ -1023,6 +1074,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
           ? getArchivedSessions()
           : sessions.filter((session) => session?.archived === true);
       }
+      rememberSidebarRefs(data.sessionRefs);
       const archivedSessionsPayload = data.sessions || [];
       const nextArchivedSessions = applyArchivedSessionListState(archivedSessionsPayload, {
         archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
@@ -1097,6 +1149,7 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
   ) {
     return sessions;
   }
+  rememberSidebarRefs(data.sessionRefs);
   const sessionsPayload = data.sessions || [];
   applySessionListState(data.sessions || [], {
     archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
@@ -1659,7 +1712,8 @@ async function refreshRealtimeViews({
     ? shouldRefreshForegroundSessionList({ forceFresh })
     : true;
   if (shouldRefreshSessionsList) {
-    await fetchSessionsList({ forceFresh }).catch(() => {});
+    if (hasLoadedSessions) await syncSessionSidebarRefs().catch(() => {});
+    else await fetchSessionsList({ forceFresh }).catch(() => {});
   }
   if (pendingNavigationState) {
     restoreSessionSelection();
@@ -1676,8 +1730,8 @@ async function refreshRealtimeViews({
       refreshedSessionsList: shouldRefreshSessionsList,
     })
     : (typeof archivedSessionsLoaded !== "undefined" && archivedSessionsLoaded);
-  if (shouldRefreshArchived) {
-    await fetchArchivedSessions({ forceFresh }).catch(() => {});
+  if (shouldRefreshArchived && !shouldRefreshSessionsList) {
+    await syncSessionSidebarRefs().catch(() => {});
   }
 }
 

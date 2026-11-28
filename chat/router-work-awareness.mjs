@@ -121,7 +121,6 @@ export async function handleWorkAwarenessRoutes({ req, res, pathname, parsedUrl,
     else if (pathname.endsWith('/review')) result = await reviewRelatedWork(options);
     else throw Object.assign(new Error('Unsupported work operation'), { statusCode: 405 });
     broadcastAll({ type: 'session_invalidated', sessionId });
-    broadcastAll({ type: 'sessions_invalidated' });
     writeJson(res, 200, result);
   } catch (error) { writeJson(res, error.statusCode || 400, { error: error.message }); }
   return true;

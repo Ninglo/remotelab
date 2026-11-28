@@ -3,9 +3,24 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collectServiceIncidents, mergeServiceJournal, mergeServiceCycles, serviceIncidentAttention } from '../chat/service-incidents.mjs';
+import { collectServiceIncidents, mergeServiceJournal, mergeServiceCycles, runtimeEventLoopAttention, serviceIncidentAttention } from '../chat/service-incidents.mjs';
 import { dispatchMonitoringAlerts, renderMonitoringAlert } from '../chat/monitoring-alerts.mjs';
 const unit = 'example.service';
+test('event-loop alerts require three consecutive fresh samples for the same service process', () => {
+  const service = { unit, pid: 42 };
+  const data = (values, stepMs = 10_000) => {
+    const eventLoopSamples = values.map((p99Ms, i) => ({ at: new Date(100_000 + i * stepMs).toISOString(), p99Ms }));
+    return { pid: 42, observedAt: eventLoopSamples.at(-1).at, eventLoopSamples };
+  };
+  assert.equal(runtimeEventLoopAttention(data([700]), service), null);
+  assert.equal(runtimeEventLoopAttention(data([700, 50, 700]), service), null);
+  assert.equal(runtimeEventLoopAttention(data([700, 780, 990], 30_000), service), null);
+  const hot = data([700, 780, 990]);
+  assert.equal(runtimeEventLoopAttention(hot, { ...service, pid: 43 }), null);
+  assert.equal(runtimeEventLoopAttention(hot, service).kind, 'serviceEventLoop');
+  assert.deepEqual(runtimeEventLoopAttention(data([700, 780, 90]), service), { unit, recovered: true });
+  assert.deepEqual(runtimeEventLoopAttention(hot, service, { eventLoopThresholdMs: 1000 }), { unit, recovered: true });
+});
 const row = (MESSAGE, n, other={}) => ({ MESSAGE, __CURSOR: `cursor${n}`, __REALTIME_TIMESTAMP: String(1_790_000_000_000_000+n*1000), ...other });
 const rows = [row('FATAL ERROR: JavaScript heap out of memory',1,{_SYSTEMD_INVOCATION_ID:'inv'}),
  row(`${unit}: Main process exited, code=dumped, status=6/ABRT`,2,{UNIT:unit,INVOCATION_ID:'inv'}),

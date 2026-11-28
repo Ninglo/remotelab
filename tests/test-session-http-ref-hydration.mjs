@@ -237,7 +237,7 @@ function createContext() {
     applyNavigationState() {},
     fetch: async (url) => {
       fetchCalls.push(String(url));
-      if (String(url) === '/api/sessions') {
+      if (String(url) === '/api/sessions?withRefs=1') {
         return createFetchResponse({
           sessions: [
             {
@@ -288,7 +288,7 @@ await context.fetchSessionsList();
 
 assert.deepEqual(
   context.fetchCalls,
-  ['/api/sessions'],
+  ['/api/sessions?withRefs=1'],
   'session list refresh should hydrate from the default list endpoint',
 );
 assert.equal(context.renderCalls.length, 1, 'session list refresh should rerender the sidebar once');

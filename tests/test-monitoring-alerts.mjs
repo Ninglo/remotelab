@@ -53,6 +53,19 @@ function fixture() {
   getState: () => state, getSends: () => sends, getUpdates: () => updates };
 }
 
+test('confirmed event-loop pressure sends once and recovery does not send another alert', async () => {
+  const f = fixture(), unit = 'core.service';
+  const pressure = snapshot([{ kind: 'serviceEventLoop', id: unit, unit, subject: unit,
+    severity: 'critical', detail: 'p99 > 500ms' }]);
+  const args = { ...f.options, config: { confirmationObservations: 3 } };
+  await dispatchMonitoringAlerts({ ...args, snapshot: pressure });
+  await dispatchMonitoringAlerts({ ...args, snapshot: pressure });
+  assert.equal(f.getSends(), 1);
+  await dispatchMonitoringAlerts({ ...args, snapshot: { ...snapshot([]), runtimeEventLoop: { unit, recovered: true } } });
+  assert.equal(f.getSends(), 1);
+  assert.equal(Object.values(f.getState().incidents)[0].active, false);
+});
+
 test('retired services close as stopped and legacy card wording is corrected once in place', async () => {
   const f = fixture();
   const failed = snapshot([{ kind: 'service', id: 'retired.service', subject: 'Retired', severity: 'critical' }]);
