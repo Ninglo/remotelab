@@ -76,6 +76,8 @@ import { IS_GUEST_INSTANCE, CONFIG_DIR } from '../lib/config.mjs';
 import { DEFAULT_PERSON_ID, SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
+import { enforceModelSourceAccess, verifiedSourcePerson } from '../lib/model-source-scope.mjs';
+import { codexAccounts as sourceCodexAccounts } from '../lib/codex-accounts.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
   resolveCodexDeveloperInstructions,
@@ -3432,6 +3434,17 @@ async function recordWorkInputAndDeliver(session, record) {
 const liveReplyAcknowledgedInputs = new Set();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
+  authorizeInput: async (record, manifest, run) => {
+    const definition = await getToolDefinitionAsync(manifest.tool);
+    await enforceModelSourceAccess(manifest.tool, verifiedSourcePerson(record.options), { managed: definition?.managedProviderSource });
+    const policy = record.options?.codexAccountPolicy;
+    if (policy?.groupAccountIds?.length) {
+      const groups = await sourceCodexAccounts.groupAccess(policy);
+      if (!groups.length || (run?.codexAccount?.id && !groups.some(account => account.id === run.codexAccount.id))) {
+        throw new Error('小组 Codex 使用权限已变更，这条追加消息未送入。');
+      }
+    }
+  },
   prepareInput: async (record, manifest) => {
     if (record.options?.nativeQuestionId) {
       let systemOutcome;
@@ -3711,9 +3724,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
         : text?.trim(),
     }, activeNative ? activeRequest.runtimeSelection : null);
-  if (!priorRequest && !usesCodexAccountPool(
-    (await getToolDefinitionAsync(runtimeSelection.tool))?.runtimeFamily, runtimeSelection.model,
-  )) {
+  const selectedDefinition = await getToolDefinitionAsync(runtimeSelection.tool);
+  await enforceModelSourceAccess(runtimeSelection.tool, verifiedSourcePerson(priorRequest?.options || options),
+    { managed: selectedDefinition?.managedProviderSource });
+  if (!priorRequest && !usesCodexAccountPool(selectedDefinition?.runtimeFamily, runtimeSelection.model)) {
     options.codexAccountPolicy = null;
   }
   if (runtimeSelection.tool === PERSONAL_ANTIGRAVITY_TOOL) {
@@ -4134,6 +4148,8 @@ async function prepareRequestRunOnce(record) {
       modelContextSlots: promptPackage.modelContextSlots,
       internalOperation: options.internalOperation || null,
       viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
+      ...(effectiveToolDefinition?.managedProviderSource ? { managedProviderSource: true } : {}),
+      modelSourcePersonId: verifiedSourcePerson(options),
       ...(effectiveTool === PERSONAL_ANTIGRAVITY_TOOL
         ? { personalAntigravityDeviceId: options.personalAntigravityDeviceId,
           personalAntigravityFreshThread: options.freshThread === true } : {}),

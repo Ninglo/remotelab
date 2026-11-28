@@ -17,14 +17,19 @@ await copyFile(new URL('./fixtures/codex-personal-account.cjs', import.meta.url)
 await chmod(join(bin, 'codex'), 0o755);
 const people = ['a', 'b', 'admin', 'c'].map((id, index) => ({ id: 'person_' + id, name: id, handle: id,
   credentials: [{ id: 'credential_' + id, type: 'token', token: String(index + 1).repeat(64) }],
-  identities: [{ id: 'identity_' + id, kind: 'web', realm: 'remotelab', subjectId: id }] }));
+  identities: [{ id: 'identity_' + id, kind: 'web', realm: 'remotelab', subjectId: id },
+    { id: 'identity_feishu_' + id, kind: 'feishu', realm: 'bot-2', subjectId: 'ou_' + id }] }));
 await writeFile(join(config, 'auth.json'), JSON.stringify({ version: 2, primaryPersonId: 'person_admin',
   administratorPersonIds: ['person_admin'], serviceToken: 'f'.repeat(64), people }));
 await writeFile(join(config, 'auth-sessions.json'), JSON.stringify(Object.fromEntries(people.map(p =>
   [p.handle, { personId: p.id, expiry: Date.now() + 3600_000 }]))));
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'personal-fixture', name: 'Personal fixture',
   command: join(bin, 'codex'), runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user',
+  models: [{ id: 'fixture', label: 'Fixture' }] }, { id: 'scoped-fixture', name: 'Scoped API fixture',
+  command: join(bin, 'codex'), runtimeFamily: 'codex-json', inputMode: 'native', promptMode: 'bare-user', managedProviderSource: true,
   models: [{ id: 'fixture', label: 'Fixture' }] }]));
+const { modelSourceStore } = await import('../lib/model-source-scope.mjs');
+await modelSourceStore.update('scoped-fixture', 'person_a', { revision: 0, scope: 'personal', memberPersonIds: [], enabled: true }, { create: true });
 const { codexAccounts: pool } = await import('../lib/codex-accounts.mjs');
 await writeFile(join(codexHome, 'fixture.json'), JSON.stringify({ id: 'shared', remaining: 100 }));
 await writeFile(join(codexHome, 'auth.json'), JSON.stringify({ tokens: { account_id: 'workspace',
@@ -132,6 +137,50 @@ try {
   assert.equal(rateLimited.codexAccount.id, a.id);
   assert.equal(rateLimited.personalCodexFallback, undefined); await idle(sessions.a);
   console.log('PASS: real HTTP member/admin/service boundaries, two independent device logins, owner routing, exhaustion continuation and notice, restart, recovery and no fallback on 429');
+  // Group owner controls the same binding without consuming or admitting it into the public pool.
+  await writeFile(join(a.home, 'fixture.json'), JSON.stringify({ id: 'a', remaining: 100 }));
+  await pool.mutate(data => { delete data.accounts.find(account => account.id === a.id).cooldownUntil; });
+  await call('a', '/api/model-sources/codex-sharing', { scope: 'group', memberPersonIds: ['person_c'], revision: 0 });
+  const groupSession = (await call('c', '/api/sessions', { folder: home, tool: 'personal-fixture', name: 'group member' }, 201)).session.id;
+  const groupRun = await finished(await submit('c', groupSession));
+  assert.deepEqual([groupRun.codexAccount.id, groupRun.codexAccount.scope], [a.id, 'group']);
+  assert.equal((await call('c', '/api/model-sources')).codex.groups[0].id, a.id);
+  assert.equal((await call('admin', '/api/codex-auth/status')).codexAuth.accountList.accounts.length, 1);
+  assert.equal((await finished(await submit('admin', sessions.admin))).codexAccount.id, 'default');
+  const oldPolicy = await pool.executionPolicy('person_c');
+  await call('a', '/api/model-sources/codex-sharing', { scope: 'personal', memberPersonIds: [], revision: 1 });
+  await assert.rejects(() => pool.acquireForRun({ accountPolicy: oldPolicy }), /使用权限已变更/);
+  await idle(groupSession);
+  assert.equal((await finished(await submit('c', groupSession))).codexAccount.id, 'default');
+
+  const getSources = who => call(who, '/api/model-sources');
+  const route = '/api/model-sources/scoped-fixture/sharing';
+  const settings = { scope: 'group', memberPersonIds: ['person_c', 'person_b'], revision: 1, enabled: true };
+  const check = who => ({ tool: 'scoped-fixture', sourceContext: { connector: 'feishu', sourceRouteId: 'bot-2', sender: { openId: 'ou_' + who } } });
+  await call('admin', '/api/models?tool=scoped-fixture', undefined, 403);
+  await call('service', '/api/model-sources/check', check('c'), 403);
+  await call('admin', route, settings, 403);
+  await call('service', route, settings, 403);
+  await call('a', route, settings);
+  await call('a', route, settings, 409);
+  for (const who of ['a', 'b', 'c']) {
+    assert.equal((await getSources(who)).sources[0].scope, 'group');
+    await call('service', '/api/model-sources/check', check(who));
+  }
+  assert.equal((await getSources('admin')).sources.length, 0);
+  assert(!(await call('admin', '/api/tools')).tools.some(tool => tool.id === 'scoped-fixture'));
+  assert((await call('c', '/api/tools')).tools.some(tool => tool.id === 'scoped-fixture'));
+  await call('service', '/api/model-sources/check', check('admin'), 403);
+  const apiSession = (await call('c', '/api/sessions', { folder: home, tool: 'scoped-fixture', name: 'group API fixture' }, 201)).session.id;
+  const apiMessage = { requestId: 'model-source-fixture-a', text: 'Continue fixture task.', tool: 'scoped-fixture', model: 'fixture' };
+  const apiRunId = (await call('c', '/api/sessions/' + apiSession + '/messages', apiMessage, 202)).run.id;
+  runs.push(apiRunId); await finished(apiRunId); await idle(apiSession);
+  await call('a', route, { scope: 'personal', memberPersonIds: [], revision: 2, enabled: true });
+  const denied = await call('c', '/api/sessions/' + apiSession + '/messages', { requestId: 'model-source-fixture-b', text: 'Inherit old setting.' }, 403);
+  assert.equal(denied.code, 'MODEL_SOURCE_FORBIDDEN');
+  await call('a', route, { scope: 'shared', memberPersonIds: [], revision: 3, enabled: true });
+  await call('admin', '/api/models?tool=scoped-fixture');
+  console.log('PASS: group Codex allocation and revocation, API owner-only writes, three scopes, Feishu identity and Web stored runtime denial');
   if (process.env.PERSONAL_CODEX_TEST_PLAYWRIGHT) {
     const { chromium } = await import(pathToFileURL(process.env.PERSONAL_CODEX_TEST_PLAYWRIGHT));
     browser = await chromium.launch({ executablePath: process.env.PERSONAL_CODEX_TEST_CHROME, headless: true, args: ['--no-sandbox'] });
@@ -164,6 +213,16 @@ try {
     await context.addCookies([{ name: 'session_token', value: 'a', url: base }]);
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    await page.goto(base + '/?tab=settings&skipInstall=1#settings-model-sources');
+    const sharing = page.locator('#settings-model-sources form').filter({ hasText: '我的 Codex 绑定' });
+    await sharing.locator('select').selectOption('group');
+    await sharing.locator('input[value="person_c"]').check();
+    await sharing.getByRole('button', { name: '确认并保存范围' }).click();
+    await page.getByRole('status').filter({ hasText: '已保存。' }).waitFor();
+    assert.deepEqual((await call('c', '/api/model-sources')).codex.groups.map(group => group.id), [a.id]);
+    await sharing.locator('select').selectOption('personal');
+    await sharing.getByRole('button', { name: '确认并保存范围' }).click();
+    await waitFor(async () => !(await call('c', '/api/model-sources')).codex.groups.length, 'group revocation through settings UI');
     await page.goto(base + '/?tab=settings&skipInstall=1#settings-personal-codex');
     await page.locator('#personalCodexStatus').filter({ hasText: /已绑定|Bound/ }).waitFor().catch(async error => {
       console.error({ url: page.url(), errors, body: (await page.locator('body').innerText()).slice(0, 3500) }); throw error;

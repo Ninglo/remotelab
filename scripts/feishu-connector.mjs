@@ -2149,6 +2149,15 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 }
 
 async function processFeishuMessage(runtime, summary, command, helpers) {
+  const authorizeSelection = async tool => {
+    if (['codex', 'claude', 'pi', 'antigravity', 'personal-antigravity'].includes(tool)) return;
+    const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
+    const payload = { tool, sourceContext: buildSessionSourceContext({ ...summary, sourceRouteId: runtime.config.sourceRouteId || 'default' }) };
+    const checked = await request('/api/model-sources/check', { method: 'POST', body: payload });
+    if (checked.response?.ok) return;
+    throw Object.assign(new Error(checked.json?.error || '无法核验所选模型来源，请稍后重试。'),
+      { code: checked.json?.code, retryable: checked.response?.status !== 403 });
+  };
   const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
   if (command?.poolBReset) {
     const enqueue = helpers.queueFeishuReply || queueFeishuReply;
@@ -2250,6 +2259,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime, summary),
       prepared: helpers.preparedRuntimeCommand,
       savePlan: helpers.saveRuntimeCommand,
+      authorizeSelection,
     });
     if (runtime.groupConfiguration && !buildFeishuTopicId(summary) && participationEnabled(runtime, summary)) {
       const controller = participationController(runtime, helpers);
@@ -2269,6 +2279,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     if (!helpers.preparedRuntimeCommand && helpers.saveRuntimeCommand) await helpers.saveRuntimeCommand(commandPlan);
     await applyFeishuRuntimeCommandPlan(commandPlan, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+      authorizeSelection,
     });
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }

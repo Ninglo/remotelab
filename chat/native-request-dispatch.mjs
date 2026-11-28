@@ -58,7 +58,7 @@ export function canForwardNativeRequest(record, head) {
 
 // Each pending promise waits only for a native input receipt. It never prevents
 // the next input from reaching the same Harness, including Claude's delayed ack.
-export function createNativeRequestDispatcher({ store, getRun, getManifest, runDirectory, prepareInput, recordInput, settle, changed, onError, reject: rejectInput }) {
+export function createNativeRequestDispatcher({ store, getRun, getManifest, runDirectory, authorizeInput = async () => {}, prepareInput, recordInput, settle, changed, onError, reject: rejectInput }) {
   const tasks = new Map();
   const reject = rejectInput || (async (record, error) => {
     await store.settle(record.key, { state: 'failed', payload: null, error });
@@ -89,6 +89,11 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
       await reject(record, receipt.error || 'Native input acknowledgement was lost; automatic replay was suppressed.');
       return;
     }
+    const manifest = await getManifest(rootId);
+    if (manifest) {
+      try { await authorizeInput(record, manifest, run); }
+      catch (error) { await reject(record, error.message); return; }
+    }
     try {
       const result = await submitNativeInput(runDirectory(rootId), record.nativeInput);
       if (!result?.accepted) { if (record.nativeInput?.questionId) await expiredQuestion(); else await clear(record); return; }
@@ -113,7 +118,10 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
         if (!canForwardNativeRequest(record, head)) return;
         const manifest = await getManifest(head.runId);
         if (manifest?.inputMode !== 'native') return;
-        if ((await getRun(head.runId))?.cancelRequested) return;
+        const run = await getRun(head.runId);
+        if (run?.cancelRequested) return;
+        try { await authorizeInput(record, manifest, run); }
+        catch (error) { await reject(record, error.message); return; }
         const prepared = await prepareInput(record, manifest);
         const text = typeof prepared === 'string' ? prepared : prepared.text;
         const context = typeof prepared === 'string' ? '' : prepared.context || '';

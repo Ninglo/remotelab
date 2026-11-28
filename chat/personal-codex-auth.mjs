@@ -46,6 +46,9 @@ export function createPersonalCodexAuthManager({ pool = codexAccounts,
     const error = failures.get(personId) || account?.credentialIssue
       || (account?.boundAt && !loggedIn ? '个人 Codex 授权已失效或未完成，请重新授权' : '');
     return decorate({ available: Boolean(await resolveCommand()), loggedIn, bound: Boolean(account?.boundAt), deviceLoginActive: false,
+      sharing: { scope: account?.groupSharing ? 'group' : 'personal',
+        memberPersonIds: account?.groupSharing?.memberPersonIds || [], revision: account?.sharingRevision || 0 },
+      groups: await pool.visibleGroups(personId),
       phase: loggedIn ? 'authenticated' : error ? 'failed' : 'idle',
       account: loggedIn ? account.account : null, usage: loggedIn ? account.usage : null,
       checkedAt: account?.checkedAt || null, error });

@@ -8,6 +8,9 @@ No password or credential-file upload is required. The user may need to enable
 device-code authorization in ChatGPT's Security settings, or obtain workspace
 administrator enablement. [OpenAI device authorization](https://developers.openai.com/codex/auth#device-code-authorization).
 
+To grant selected people access to your binding, use [Model sources](model-source-sharing.md).
+Shared Codex accounts still use the separate administrator-managed pool.
+
 The authenticated RemoteLab Person owns the binding. Browser and connector
 identities linked to that same Person use it; names and email similarity do not
 link identities. One personal account is supported per Person. Public account
@@ -42,7 +45,8 @@ the binding UI, clear the setting and restart; restoring it restores access.
 
 | Condition | Execution account |
 | --- | --- |
-| No personal binding | Existing shared allocation |
+| No personal binding, authorized group binding | An eligible group account, isolated from the public pool |
+| No personal binding or group grant | Existing shared allocation |
 | Bound and usable, including low positive or unknown quota | That Person's account |
 | Confirmed subscription exhaustion from fresh quota or the provider error | Shared pool; deterministic conversation notice |
 | Authentication failure, incomplete reauthorization or rate limiting alone | Report the failure; no automatic use of shared quota |

@@ -40,7 +40,8 @@ import {
   resolveRuntimeProfile,
   runtimeProfileFromUiSelection,
 } from '../lib/runtime-profile.mjs';
-import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
+import { getAvailableToolsAsync, getToolDefinitionAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
+import { canUseModelSource, modelSourceStore, LEGACY_CLAUDE_SOURCE, enforceModelSourceAccess } from '../lib/model-source-scope.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
 import { PERSONAL_ANTIGRAVITY_TOOL } from './personal-antigravity.mjs';
@@ -1851,14 +1852,29 @@ export async function handleControlRoutes({
       writeJson(res, 200, result);
       return true;
     }
+    if (authSession?.authKind !== 'service' && (toolId === LEGACY_CLAUDE_SOURCE || (await getToolDefinitionAsync(toolId))?.managedProviderSource)) {
+      res.setHeader('Cache-Control', 'private, no-store');
+      try {
+        await enforceModelSourceAccess(toolId, authSession?.personId, { managed: true });
+        writeJson(res, 200, await getModelsForTool(toolId, { refresh }));
+      } catch (error) { writeJson(res, error.statusCode || 503, { error: error.message }); }
+      return true;
+    }
     const result = await getModelsForTool(toolId, { refresh });
     writeJsonCached(req, res, result);
     return true;
   }
 
   if (pathname === '/api/tools' && req.method === 'GET') {
-    const tools = await getAvailableToolsAsync();
-    writeJsonCached(req, res, { tools });
+    const configured = await getAvailableToolsAsync();
+    if (authSession?.authKind === 'service') { writeJsonCached(req, res, { tools: configured }); return true; }
+    res.setHeader('Cache-Control', 'private, no-store');
+    const decisions = await Promise.all(configured.map(async tool => {
+      if (tool.id !== LEGACY_CLAUDE_SOURCE && !tool.managedProviderSource) return true;
+      try { return canUseModelSource(await modelSourceStore.read(tool.id), authSession?.personId); }
+      catch { return false; } // A broken managed source must not hide the existing public tools.
+    }));
+    writeJson(res, 200, { tools: configured.filter((_, index) => decisions[index]) });
     return true;
   }
 

@@ -502,8 +502,9 @@ reasoning. Put `baseUrl` (HTTPS) and `authToken` in the instance's private
 `provider-runtime-homes/claude-topic-pilot/profile.json` (mode 0600; directory
 name retained for existing Claude sessions), not in Bot settings or chat.
 Set `claudeShortcutHarness` to the tool ID in the Bot's config and restart the
-connector. The shortcuts then work for any authorized sender in any of that
-Bot's chats, including existing Standard Sessions. `/claude <task>` selects
+connector. Set up [source sharing](model-source-sharing.md) before rollout;
+only senders authorized for the source can select or run it, including in an
+existing Standard Session. `/claude <task>` selects
 Opus 5.5 and `/claude-x <task>` selects Fable 5.2, both at `high`. Selecting an
 external model sends the task and its relevant conversation context to that
 provider. Claude Code uses its normal tools and permissions; the provider

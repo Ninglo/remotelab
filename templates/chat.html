@@ -318,6 +318,7 @@
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
             <a class="settings-toc-link" href="#settings-personal-antigravity" data-settings-target="settings-personal-antigravity" id="personalAntigravityNav" hidden>我的 Antigravity</a>
             <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title data-personal-codex-access hidden>我的 Codex</a>
+            <a class="settings-toc-link" href="#settings-model-sources" data-settings-target="settings-model-sources">模型来源</a>
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
             <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
@@ -354,6 +355,13 @@
                   </ol>
                   <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">检查连接</button>
                 </div>
+              </div>
+            </section>
+            <section class="settings-group" id="settings-model-sources" data-settings-section>
+              <div class="settings-group-header"><h3>模型来源</h3><p>管理个人、小组和公用的模型调用权限。公用 Codex 账号仍在「连接」中管理。</p></div>
+              <div class="settings-group-body personal-codex">
+                <button class="settings-app-btn" type="button">刷新来源</button>
+                <p role="status"></p><div data-model-source-content></div>
               </div>
             </section>
             <section class="settings-group" id="settings-personal-codex" data-settings-section data-personal-codex-access hidden>
@@ -945,6 +953,7 @@
 <script src="chat/voice-shortcut.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/personal-codex.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/model-sources.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/personal-antigravity.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script type="module" src="chat/message-reply-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

@@ -439,6 +439,27 @@
           "sourceRevision": "64277afac8f8c2966a56eb2aee10088c788ea195"
         },
         {
+          "id": "model-source-sharing",
+          "name": "个人、小组和公用模型来源",
+          "purpose": "绑定人可以把一个模型来源限于本人、名单内成员或对本实例开放。",
+          "entry": "设置 → 模型来源；新的受管 API 由运维先登记真实上传者，凭据单独保存。",
+          "condition": "成员按已验证的 RemoteLab 身份匹配，管理员不自动获得小组权限。小组 Codex 不进入公用账号池；API 来源在新请求、排队启动及运行中追加输入时重新检查。",
+          "example": "在已绑定的 Codex 账号选择小组，勾选成员并确认；继续使用现有公用池的人不用改设置。",
+          "sources": [
+            "docs/model-source-sharing.md",
+            "lib/model-source-scope.mjs",
+            "lib/tools.mjs",
+            "chat/router-control-routes.mjs",
+            "chat/router-model-source-routes.mjs",
+            "chat/native-request-dispatch.mjs",
+            "scripts/register-model-source.mjs",
+            "static/chat/model-sources.js",
+            "templates/chat.html",
+            "tests/test-http-personal-codex.mjs"
+          ],
+          "commands": []
+        },
+        {
           "id": "questions",
           "name": "执行中的提问、追加输入与停止",
           "purpose": "在工作过程中回答缺失信息、补充约束或要求停止。",

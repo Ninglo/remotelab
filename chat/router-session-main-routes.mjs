@@ -100,7 +100,7 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
+export async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
   if (authSession?.authKind !== 'service') return { identityId: authSession.identityId, personId: authSession.personId };
   const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {};
   const sender = context.sender && typeof context.sender === 'object' ? context.sender : {};
@@ -571,7 +571,8 @@ export async function handleSessionMainRoutes({
           }) || outcome.session),
         });
       } catch (error) {
-        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED', 'THREAD_CONTINUATION_EXPIRED'].includes(error?.code) ? 409 : 400;
+        const statusCode = error?.code === 'MODEL_SOURCE_FORBIDDEN' ? 403
+          : ['SESSION_ARCHIVED', 'SESSION_BUSY', 'QUESTION_EXPIRED', 'THREAD_CONTINUATION_EXPIRED'].includes(error?.code) ? 409 : 400;
         writeJson(res, statusCode, { error: error.message || 'Failed to submit message', ...(error.code ? { code: error.code } : {}) });
       }
       return true;

@@ -145,6 +145,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector; includes asynchronous Jev social reactions with separate appropriateness and emoji confidence, diagnostic receipts, and optional main-Session corrections, with final reactions taking precedence over late quick feedback.
+- [Model source sharing](model-source-sharing.md) — Personal, Group and Public access to Codex bindings and managed API sources.
 - [Feishu third-party Claude shortcuts](feishu-bot-setup.md#harness-and-model-commands) — per-Bot provider configuration for `/claude` and `/claude-x`, with separate provider credentials.
 - [Feishu API observability](feishu-api-observability.md) — local request ledger, usage aggregation, privacy and bounded document recovery
 - [Person-scoped workboard baseline](../notes/current/feishu-workboard-pilot.md) — accepted checklist/result behavior, opt-in scope, durable operation and isolated regression entry

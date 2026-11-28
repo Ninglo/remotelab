@@ -317,7 +317,10 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   return { commands, operations, selection, sessionId: session?.id || '', text: notes.join('\n\n') || help };
 }
 
-export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
+export async function applyFeishuRuntimeCommandPlan(plan, { request, authorizeSelection } = {}) {
+  if (authorizeSelection && plan.selection && (plan.operations?.length || plan.commands?.some(command => CONFIG_COMMANDS.has(command.name) && command.value))) {
+    await authorizeSelection(plan.selection.tool);
+  }
   let text = plan.text;
   for (const operation of plan.operations || []) {
     if (operation.scope === 'session-progress') {
@@ -347,11 +350,11 @@ export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
 }
 
 export async function handleFeishuRuntimeCommands(runtime, summary, commands, options) {
-  const { request, savePlan = async () => {}, prepared = null } = options;
+  const { request, authorizeSelection, savePlan = async () => {}, prepared = null } = options;
   const plan = prepared || await prepareFeishuRuntimeCommandPlan(runtime, summary, commands, options);
   if (plan.error) return plan.text;
   if (!prepared) await savePlan(plan);
-  return applyFeishuRuntimeCommandPlan(plan, { request });
+  return applyFeishuRuntimeCommandPlan(plan, { request, authorizeSelection });
 }
 
 export async function handleFeishuRuntimeCommand(runtime, summary, command, options) {

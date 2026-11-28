@@ -26,10 +26,16 @@ try {
   const calls = [];
   let brokenCatalog = '';
   let claudeAvailable = true;
+  let denyProvider = false;
   const request = async (path, options = {}) => {
     calls.push({ path, ...options });
     let json;
     if (path === '/api/tools') json = { tools: [{ id: 'codex', available: true }, { id: 'pi', available: true }, { id: 'claude', available: claudeAvailable }, { id: 'claude-provider', available: true }, { id: 'missing', available: false }] };
+    else if (path === '/api/model-sources/check') {
+      assert.equal(options.body.sourceContext.sourceRouteId, 'bot-2');
+      if (denyProvider) return { response: { ok: false, status: 403 }, json: { code: 'MODEL_SOURCE_FORBIDDEN', error: 'Restricted source' } };
+      json = { allowed: true };
+    }
     else if (path.startsWith('/api/models?tool=')) {
       const tool = decodeURIComponent(path.split('=')[1]);
       if (tool === brokenCatalog) throw new Error('Current provider is unavailable');
@@ -385,6 +391,14 @@ try {
       else assert.equal(sotaPlan.operations.length, 0);
     }
   }
+  const beforeDeniedProvider = structuredClone(session);
+  const beforeDeniedSubmissions = sotaSubmissions;
+  denyProvider = true;
+  await assert.rejects(() => handleMessage(runtime, { ...summary, messageId: 'provider-denied', messageText: '/claude-x 测试' }, 'test', sotaHelpers),
+    { code: 'MODEL_SOURCE_FORBIDDEN', retryable: false });
+  assert.deepEqual(session, beforeDeniedProvider);
+  assert.equal(sotaSubmissions, beforeDeniedSubmissions);
+  denyProvider = false;
   const beforeProviderConflict = sotaSubmissions;
   await handleMessage(runtime, { ...summary, messageId: 'provider-conflict', messageText: '/claude-x --effort low 测试' }, 'test', sotaHelpers);
   assert.match(replies.at(-1), /单独使用/);

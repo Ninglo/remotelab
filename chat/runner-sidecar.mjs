@@ -27,6 +27,8 @@ import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
 import { codexAccounts, classifyCodexAccountFailure } from '../lib/codex-accounts.mjs';
+import { enforceModelSourceAccess } from '../lib/model-source-scope.mjs';
+import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { usesCodexAccountPool } from './codex-account-context.mjs';
 import { resolvePiModelRoute } from './pi-models.mjs';
 import { preparePooledPiRuntime } from './pi-pooled-runtime.mjs';
@@ -322,6 +324,10 @@ async function main() {
     throw new Error('Synthetic sidecar failure before tool spawn');
   }
 
+  const definition = await getToolDefinitionAsync(manifest.tool);
+  await enforceModelSourceAccess(manifest.tool, manifest.modelSourcePersonId, {
+    managed: manifest.managedProviderSource || definition?.managedProviderSource,
+  });
   const materializedImages = await materializeFileAssetAttachments(manifest.options?.images || []);
   if (materializedImages.some((attachment) => typeof attachment?.assetId === 'string' && typeof attachment?.savedPath === 'string')) {
     await appendRunSpoolRecord(runId, {
