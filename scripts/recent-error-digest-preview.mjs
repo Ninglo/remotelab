@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { digestOptions, readDigestWindow, renderRecentErrorDigest } from '../lib/recent-error-digest.mjs';
 import { validateRepairReceipts, repairReports } from '../lib/recent-error-repairs.mjs';
+import { readIncidentExitSignals } from '../chat/recent-error-service-source.mjs';
 import { recentErrorsConfig } from '../lib/recent-errors.mjs';
 
 const {values}=parseArgs({options:{since:{type:'string'},until:{type:'string'},analyze:{type:'boolean'}}});
@@ -14,7 +15,8 @@ const since=Date.parse(values.since),until=Date.parse(values.until);
 const db=new DatabaseSync(join(CONFIG_DIR,'recent-errors.sqlite'),{readOnly:true});
 const prepare=(store,sql)=>store.prepare(sql);
 try {
-  const groups=readDigestWindow(db,prepare,{since,until,now:Date.now()});
+  const serviceSignals=await readIncidentExitSignals(config.serviceUnits).catch(()=>new Map());
+  const groups=readDigestWindow(db,prepare,{since,until,now:Date.now(),serviceSignals});
   const analyze=values.analyze ? (await import('../chat/recent-error-alerts.mjs')).analyzeRecentErrors : null;
   const {valid,invalid}=await validateRepairReceipts(config.repairs);
   const repairs=valid.length && db.prepare("SELECT 1 FROM sqlite_master WHERE name='error_repair_tracking'").get()

@@ -14,6 +14,8 @@
 
 启用交接：“在指定 RemoteLab 实例启用近期报错，核对已登记的服务、Bot 和原监控群。隔离验证第 3 次触发、分析及送达去重，再启用真实目标；不补发旧报错或发测试群消息。”在目标实例 `CONFIG_DIR/recent-errors.json` 配置 `enabled:true`、原 `serviceUnits`，以及 `groupAlerts:{enabledAt,profile,chatId}`。群配置须与 `monitoring.json` 的现有 `alertDelivery` 相符，并核实为内部群；变更群不自动迁移推送。`alertDelivery.enabled:false` 暂停新推送；停止本功能可移除 `groupAlerts` 或将 `enabled` 设为 false。默认关闭，受限 HR 实例不启用，页面和原文保留原管理员边界。
 
+退出信号仅从同一服务退出事件的标准状态行提取；没有该行显示「未记录」。Gate 分析接收去重后的涉及对象数和已知总时限（不是内部查询的耗时上限）；不输出对象 ID、查询标签和原始上下文。
+
 覆盖飞书输入处理、请求准备和启动、运行终态及部分结构化运行时重试、已有消息投递失败回执、定时任务检查和前后置脚本。服务退出复用同实例现有观察器的有界 `service-incidents/state.json`，只导入明确列出的 unit，不另读系统日志；没有观察器就没有这一路样本。其他接入方式、任意工具命令和业务应用日志目前不覆盖；除已有服务退出证据外不回填历史。页面没有样本不等于无故障。报错详情保存有长度限制的原始诊断首行并脱敏，不复制输入、命令参数和堆栈。首行只向通过原权限检查的个人管理员浏览器返回，不进摘要或服务凭据响应。旧记录只有在可核对到原执行终态或同一服务退出证据时才显示原文；否则明确标注未留存。注意避免在人工复验说明填敏感内容。采集故障有单独日志、不改变原请求行为。
 
 SQLite 按条保存，原报错记录及推送判定保留 30 天；保留旧版复验记录的既定留存期。读接口 `/api/monitoring/recent-errors` 聚合分页，个人管理员可请求 `?samples=1` 随列表取少量明细，`?cluster=<id>` 读取后续明细。隔离验收：`tests/test-recent-errors.mjs`、`tests/test-recent-error-alerts.mjs` 和 `tests/test-recent-errors-browser.mjs`。

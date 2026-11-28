@@ -2,7 +2,27 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
+import { serviceExitSignal } from '../lib/recent-error-public.mjs';
 import { recentErrors, recentErrorsConfig } from '../lib/recent-errors.mjs';
+
+export function incidentExitSignal(event) {
+  for (const item of event.evidence || []) {
+    const signal=serviceExitSignal(item.message);
+    if (signal) return signal;
+  }
+  return null;
+}
+
+export async function readIncidentExitSignals(units, file=join(CONFIG_DIR, 'service-incidents', 'state.json')) {
+  if (!units?.length) return new Map();
+  let metadata;
+  try { metadata=await stat(file); } catch (e) { if(e.code==='ENOENT') return new Map(); throw e; }
+  if (metadata.size > 4*1024*1024) throw Error('Unbounded service incident projection');
+  const state=await readRecord(file);
+  if (!Array.isArray(state?.events) || state.events.length>256) throw Error('Service incidents unavailable');
+  return new Map(state.events.filter(e=>units.includes(e.unit) && /^[a-f0-9]{64}$/.test(e.id))
+    .map(e=>[e.id,incidentExitSignal(e)]).filter(([,signal])=>signal));
+}
 
 // Reuse the local crash observer's bounded projection (not a second journal
 // reader). Keep the observation cursor only after every selected event commits;
@@ -33,7 +53,7 @@ export function startRecentErrorServiceSource({
         const diagnostic = event.evidence?.find(item => typeof item.message === 'string' && item.message.startsWith('FATAL ERROR:'))
           || event.evidence?.find(item => typeof item.message === 'string' && /Main process exited,|Failed with result/.test(item.message));
         await monitor.record('service-exit', { operation: event.id, component: event.unit, diagnostic: diagnostic?.message ?? null,
-          at: event.at, error: event.reason, reference: event.id });
+          at: event.at, error: event.reason, reference: event.id, exitSignal:incidentExitSignal(event) });
       }
       seen = activeIds;
       fileVersion = signature;

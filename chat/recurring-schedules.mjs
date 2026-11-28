@@ -830,7 +830,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
           current.skippedCount += 1;
           skipped += 1;
         } else if (gateError) {
-          await observeRecentError('schedule-gate', { operation: [current.id, occurrences.latestAt], error: gateError,
+          await observeRecentError('schedule-gate', { operation: [current.id, occurrences.latestAt], error: gateError, gateTimeoutSeconds:current.gate?.timeoutSeconds,
             at: now, sessionId: current.sourceSessionId, reference: current.id });
           current.checkCount += 1;
           current.gateErrorCount += 1;
