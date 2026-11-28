@@ -29,9 +29,10 @@
   entry.append(node('strong','近期报错'),count);
   const coverage = node('details'), coverageList = node('ul');
   coverage.append(node('summary','采集范围与缺口'),coverageList);
-  const list = node('div'), listNext = node('div'), notice = node('p');
+  const list = node('div'), listNext = node('div'), notice = node('p'), repairList=node('ul');
+  const repairLabel={observing:'修复观察中',closed:'已验证关闭',recurring:'复发'};
   notice.setAttribute('role','status');
-  disclosure.append(entry, notice, list, listNext, button('刷新报错',()=>load()), coverage);
+  disclosure.append(entry, notice, repairList, list, listNext, button('刷新报错',()=>load()), coverage);
   root.append(disclosure);
   let loaded=false, unavailable=false, loading=false;
   const labels = new Map();
@@ -40,6 +41,7 @@
     const box=node('details'); box.className='recent-error-cluster'; box.dataset.cluster=row.id;
     const label=node('summary');
     label.append(node('strong',row.label),node('span',`${labels.get(row.source)||row.source} · 近 7 天 ${row.recentRecords} 条 · 最近 ${time(row.lastAt)}`));
+    if (row.repair && repairLabel[row.repair.state]) label.append(node('span',` · ${repairLabel[row.repair.state]}`));
     const records=node('ul'); records.className='recent-error-records';
     const controls=node('div');
     box.append(label,records,controls);
@@ -94,6 +96,8 @@
         coverageList.replaceChildren(...data.sources.map(source=>node('li',`${source.label}：${source.firstObservedAt?`最早取到 ${time(source.firstObservedAt)}`:'暂无报错样本（不是健康确认）'}`)),
           node('li','未接入的业务服务、普通工具命令退出及未结构化日志不在此处；旧记录原文不一定可恢复。'));
         count.textContent=`近 ${data.windowDays} 天`;
+        repairList.replaceChildren(...(data.repairs||[]).map(r=>node('li',`${r.label||'报错'} · ${repairLabel[r.state]} · ${r.signature.slice(0,12)}`)),
+          ...(data.invalidRepairs||[]).map(r=>node('li',`回执无效：${r.reason}`)));
         list.replaceChildren(...data.rows.map(row=>{const box=rowView(row);box.open=opened.has(row.id);return box;}));
         if(!data.rows.length)list.append(node('p','暂无近期报错记录。'));
       } else {

@@ -1,4 +1,5 @@
 import { DAY, digestOptions, digestPeriod, renderRecentErrorDigest } from '../lib/recent-error-digest.mjs';
+import { loadedRepairReceipts } from '../lib/recent-error-repairs.mjs';
 import { groupErrorLine, originalLink } from '../lib/recent-error-public.mjs';
 export { groupErrorLine } from '../lib/recent-error-public.mjs';
 import { join } from 'node:path';
@@ -40,7 +41,7 @@ async function verifyGroup(config) {
   return group.external === false && group.chat_mode === 'group';
 }
 
-async function dispatchDigest({ monitor, group, since, target, publicBase, now, analyze, readDelivery, send, destination }) {
+async function dispatchDigest({ monitor, group, since, target, publicBase, now, analyze, readDelivery, send, destination, receiptView }) {
   const options=digestOptions(group);
   const {date,until}=digestPeriod(now(),options);
   const startAt=group.digestEnabledAt ? Date.parse(group.digestEnabledAt) : since;
@@ -64,7 +65,8 @@ async function dispatchDigest({ monitor, group, since, target, publicBase, now, 
     const from=Math.max(until-3*DAY,state.lastDelivered ?? 0);
     if (from >= until) return {enabled:true};
     const groups=await monitor.digestWindow({since:from,until});
-    const args={...options,groups,since:from,until,publicBase};
+    const repairs=receiptView.valid.length ? await monitor.repairReports(receiptView.valid,until-1) : [];
+    const args={...options,groups,since:from,until,publicBase,repairs,invalid:receiptView.invalid};
     const fallback=await renderRecentErrorDigest({...args,analyze:async()=>null});
     if (!await monitor.digestClaim(target,date,from,until,fallback) || !fallback) return {enabled:true};
     const body=await renderRecentErrorDigest({...args,analyze});
@@ -104,7 +106,9 @@ export async function dispatchRecentErrorAlerts({ monitor=recentErrors, loadConf
       || currentConfig?.enabled!==true || targetFor(currentConfig)!==target || !await verify(currentConfig)) return null;
     return {connector:'feishu',sourceRouteId:config.profile,target:{chatId:config.chatId,chatType:'group',conversationKind:'main'}};
   };
-  if (mode==='digest') return dispatchDigest({monitor,group:options.groupAlerts,since,target,publicBase,now,analyze,readDelivery,send,destination});
+  const receiptView=await loadedRepairReceipts(options.repairs,now());
+  if (receiptView.valid.length) await monitor.trackRepairs(receiptView.valid);
+  if (mode==='digest') return dispatchDigest({monitor,group:options.groupAlerts,since,target,publicBase,now,analyze,readDelivery,send,destination,receiptView});
   const lastDigest=(await monitor.digestState(target,'')).lastDelivered;
   const jobs = await monitor.alertJobs({since:Math.max(since,lastDigest ?? 0),target});
   for (const job of jobs.filter(j=>j.state==='queued')) {

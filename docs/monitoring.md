@@ -8,6 +8,8 @@
 
 `groupAlerts.mode: "digest"` 复用原 15 秒循环，北京时间 09:00 单次汇总，`digestAt`、`timeZone`、`maxRows`、`maxAnalyses` 缺省分别为 `09:00`、`Asia/Shanghai`、10、8。窗口从上次确认送达到本期截止点（左闭右开），首次或缺失最多回看 72 小时。同一天恢复则继续本期，空窗只留回执；投递失败或结果不明不盲重发。迁移可用 `digestEnabledAt` 避免在今天截止点之后启用时补发该期，原群和隐私校验保持不变。按独立操作去重，单次及证据不足只报合计；模型失败保留该行。服务退出只进日报，原崩溃观察器继续即时告警。旧配置不指定 mode 仍按即时模式运行；设置 `mode: "instant"` 可回滚，不重发已确认纳入日报的记录。只读预览：`node scripts/recent-error-digest-preview.mjs --since <ISO> --until <ISO>`，默认不调用模型，不投递。
 
+修复回执由维护方保存到 `recent-errors.json` 的 `repairs[]`，每个 v2 `signature` 只能有一条生效记录；替换时把旧回执移至 `repairHistory[]`。字段：`signature`、完整 `commit`、`deployment: {commit,startedAt,verifiedAt,evidence}`、`verification`、`recordedBy`。部署版本须包含修复提交，开始时间须晚于提交，复验不能晚于现在。日报和只读页面共用状态：部署后再发生标复发；否则在 24 小时与修复前最多五次发生的中位间隔三倍取大、最长七天的观察窗口结束且复验有效后才关闭。失败回执不更改状态；日报列无效原因，不公开证据位置或回执人。部署版本和实际行为仍须在施工时取证，不能只填日期或 SHA。
+
 即时模式：同一错误签名在启用后滚动 24 小时内独立发生 3 次，按实际发生时间取三次证据，调一次无工具的只读分析 Agent，然后通过现有消息出站队列推送原监控群。重试保留明细，不凑同一请求的次数；同类 24 小时最多推一次。消息含时间、可共享的实际报错、已知失败机制或有依据的分析及修改方向。像 `Gate timed out after 30s` 这类固定诊断按原文展示，并说明前置检查超时、未触发任务；不能推断卡在哪个子步骤。有关联会话时提供按原可见权限跳转的链接，不在群消息中传递会话 ID、会话标题或私有正文。诊断证据不足或只有泛化分析时留在网页、不推群；固定诊断本身能给出可操作方向时，可在 Agent 不可用的情况下说明已核实事实。不自动重试业务、改代码或补救。现有资源告警和原日志不变。
 
 启用交接：“在指定 RemoteLab 实例启用近期报错，核对已登记的服务、Bot 和原监控群。隔离验证第 3 次触发、分析及送达去重，再启用真实目标；不补发旧报错或发测试群消息。”在目标实例 `CONFIG_DIR/recent-errors.json` 配置 `enabled:true`、原 `serviceUnits`，以及 `groupAlerts:{enabledAt,profile,chatId}`。群配置须与 `monitoring.json` 的现有 `alertDelivery` 相符，并核实为内部群；变更群不自动迁移推送。`alertDelivery.enabled:false` 暂停新推送；停止本功能可移除 `groupAlerts` 或将 `enabled` 设为 false。默认关闭，受限 HR 实例不启用，页面和原文保留原管理员边界。

@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { digestOptions, readDigestWindow, renderRecentErrorDigest } from '../lib/recent-error-digest.mjs';
+import { validateRepairReceipts, repairReports } from '../lib/recent-error-repairs.mjs';
 import { recentErrorsConfig } from '../lib/recent-errors.mjs';
 
 const {values}=parseArgs({options:{since:{type:'string'},until:{type:'string'},analyze:{type:'boolean'}}});
@@ -15,5 +16,8 @@ const prepare=(store,sql)=>store.prepare(sql);
 try {
   const groups=readDigestWindow(db,prepare,{since,until,now:Date.now()});
   const analyze=values.analyze ? (await import('../chat/recent-error-alerts.mjs')).analyzeRecentErrors : null;
-  console.log(await renderRecentErrorDigest({...digestOptions(config.groupAlerts),groups,since,until,publicBase:PUBLIC_BASE_URL,analyze}) || '本期为空');
+  const {valid,invalid}=await validateRepairReceipts(config.repairs);
+  const repairs=valid.length && db.prepare("SELECT 1 FROM sqlite_master WHERE name='error_repair_tracking'").get()
+    ? repairReports(db,prepare,{repairs:valid,now:until-1}) : [];
+  console.log(await renderRecentErrorDigest({...digestOptions(config.groupAlerts),groups,since,until,publicBase:PUBLIC_BASE_URL,analyze,repairs,invalid}) || '本期为空');
 } finally { db.close(); }

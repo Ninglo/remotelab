@@ -1,5 +1,6 @@
 import { getSessionToken } from '../lib/auth.mjs';
-import { recentErrors, recentErrorsEnabled, recentErrorExcerpt } from '../lib/recent-errors.mjs';
+import { loadedRepairReceipts } from '../lib/recent-error-repairs.mjs';
+import { recentErrors, recentErrorsConfig, recentErrorsEnabled, recentErrorExcerpt } from '../lib/recent-errors.mjs';
 import { getRun } from './runs.mjs';
 import { canAccessSession, isSessionAdministrator, hrBrowserRestricted } from './session-access.mjs';
 
@@ -46,15 +47,20 @@ export async function handleRecentErrors({ req, res, pathname, authSession, writ
           }
         }
       }));
+      const {valid,invalid}=await loadedRepairReceipts((await recentErrorsConfig())?.repairs);
+      const repairs=valid.length ? await monitor.repairReports(valid) : [];
+      const repairMap=new Map(repairs.map(r=>[r.signature,r]));
       if (cluster === null) {
         const view = await monitor.list({ before, samples: personalBrowser && query.get('samples') === '1' });
         await Promise.all(view.rows.filter(row => row.events).map(row => prepare(row.events,row.source)));
-        return reply(200, view);
+        for(const row of view.rows) if (repairMap.has(row.id)) row.repair=repairMap.get(row.id);
+        return reply(200, { ...view,repairs,invalidRepairs:invalid });
       }
       if (!fingerprint.test(cluster)) return reply(400, { error: 'Invalid error cluster' });
       const detail = await monitor.detail(cluster, { before });
       if (!detail) return reply(404, { error: 'Unknown error cluster' });
       await prepare(detail.events, detail.cluster.source, true);
+      if(repairMap.has(cluster)) detail.cluster.repair=repairMap.get(cluster);
       return reply(200, detail);
     }
     if (pathname.endsWith('/repair')) return reply(410, { error: 'Recent errors is read-only; repair workflow retired' });
