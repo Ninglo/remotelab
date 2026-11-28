@@ -143,11 +143,14 @@ JSON file. The file can also be edited directly:
 }
 ```
 
-The file is read for each new Auto Session, so future SOTA or sweet-spot model
-changes do not require code changes or a service restart. Missing or invalid
-fields keep their tier defaults. The persisted routing receipt contains the
-chosen tier, concrete route, confidence summary, latency, and fallback reason;
-it never contains the API key or user prompt.
+The file is read for each new Auto Session and on the next idle turn in a
+Feishu group conversation still using its inherited Codex Auto tier. The group
+keeps its chosen tier without calling Jev again; explicit settings, experiment
+assignments, and already admitted turns do not change. Changes to the tier
+mappings do not require a service restart. Missing or invalid fields keep
+their tier defaults. The persisted routing receipt contains the chosen tier,
+concrete route, confidence summary, latency, and fallback reason; it never
+contains the API key or user prompt.
 
 ### Runtime experiments after Auto routing
 

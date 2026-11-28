@@ -10,12 +10,38 @@ import {
   normalizeRuntimeProfile,
   resolveRuntimeProfile,
 } from '../lib/runtime-profile.mjs';
-import { JEV_AUTO_MODEL_ID, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
+import { getJevTierProfiles, JEV_AUTO_MODEL_ID, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
 import { applyRuntimeExperiment } from './runtime-experiments.mjs';
 import { buildPiModelRouteId } from './pi-models.mjs';
 import { clampReasoningEffort } from '../lib/reasoning-effort-policy.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
+
+async function refreshInheritedGroupTier(session, options, profile) {
+  const source = options.sourceContext || options.sourceDelivery?.target;
+  if (options.internalOperation || options.recordUserMessage === false || session.feishuRuntimeSelection
+      || source?.chatType !== 'group' || (source.connector || options.sourceDelivery?.connector) !== 'feishu'
+      || !['auto', 'default'].includes(options.runtimeSelectionScope)) return null;
+
+  const receipt = session.autoRouting;
+  // Only a matching Auto receipt proves the concrete saved model was a default.
+  // Keep explicit selections and experiment assignments on their own policy.
+  if (receipt?.provider !== 'typesafe' || receipt.experiment || profile.tool !== 'codex'
+      || !['tool', 'model', 'effort'].every(key => receipt.route?.[key] === profile[key])) return null;
+  const tier = receipt.status === 'fallback' ? 'quality' : receipt.decision?.tier;
+  if (!tier) return null;
+  const profiles = await getJevTierProfiles();
+  if (!Object.hasOwn(profiles, tier)) return null;
+  const current = profiles[tier];
+  const route = {
+    tool: profile.tool,
+    model: normalizeRuntimeModelForTool(profile.tool, current.model),
+    effort: clampReasoningEffort(current.effort),
+  };
+  if (route.model === profile.model && route.effort === profile.effort) return null;
+  return { ...route, thinking: session.thinking === true,
+    autoRoutingReceipt: { ...receipt, route, profileRefreshedAt: new Date().toISOString() } };
+}
 
 // Resolve once at admission; the notice and detached runner share this snapshot.
 export async function resolveSessionRuntimeSelection(session = {}, options = {}, activeRuntimeSelection = null) {
@@ -58,6 +84,10 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {},
   savedProfile.model = normalizeRuntimeModelForTool(savedProfile.tool, savedProfile.model);
   requestedProfile.model = normalizeRuntimeModelForTool(requestedProfile.tool, requestedProfile.model);
   let profile = resolveRuntimeProfile(savedProfile, requestedProfile);
+  if (carriesDefaultSnapshot && !activeRuntimeSelection) {
+    const refreshed = await refreshInheritedGroupTier(session, options, profile);
+    if (refreshed) return refreshed;
+  }
   const sameTool = profile.tool === savedProfile.tool;
   if (!profile.model || !profile.effort) {
     profile = completeRuntimeProfile(profile, await getModelsForTool(profile.tool));

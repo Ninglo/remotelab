@@ -336,8 +336,13 @@ can be overridden per group with `groups` below.
 
 ### Harness and model commands
 
-Every new Standard Session starts from Auto. An existing Session keeps its own
-runtime snapshot until explicitly changed.
+New Standard Sessions start from Auto unless the connector or a command pins a
+runtime. In a Feishu group, an existing conversation that inherited a Codex
+Auto tier keeps that tier. A model or Effort change to the tier takes effect
+when the next turn starts, without rerouting the conversation. Manually chosen
+models, experiment assignments, and in-flight turns are unchanged. New entry
+messages show the model of their own run; previously sent messages are not
+rewritten.
 Task commands use one primary reply action, optional modifiers, then task text.
 The short mobile-friendly form is `/thread task text`. Put `--harness`,
 `--model`, and `--effort` before the task text when needed. The connector also

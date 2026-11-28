@@ -125,6 +125,38 @@ try {
     'the Session snapshot applies to every connector surface');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, defaults), defaults,
     'Web UI requests can still make their own explicit selection');
+  const { updateJevRoutingSettings } = await import('../lib/jev-auto-router.mjs');
+  const { buildSessionEntry, appendSessionEntryFooter } = await import('../lib/session-navigation.mjs');
+  const legacySol = { tool: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' };
+  const oldAuto = { ...legacySol, id: 'legacy-group', sourceId: 'feishu', runtimeTier: 'quality',
+    autoRouting: { provider: 'typesafe', status: 'routed', decision: { tier: 'quality' }, route: legacySol } };
+  const groupInput = { ...legacySol, runtimeSelectionScope: 'auto',
+    sourceContext: { connector: 'feishu', chatType: 'group', conversationKind: 'main' } };
+  const updated = await resolveSessionRuntimeSelection(oldAuto, groupInput);
+  assert.deepEqual(updated.autoRoutingReceipt.route, { ...legacySol, model: 'gpt-6.2-sol' });
+  assert.ok(updated.autoRoutingReceipt.profileRefreshedAt);
+  const rendered = appendSessionEntryFooter('继续处理', buildSessionEntry(oldAuto, { runtimeSelection: updated }));
+  assert.match(rendered, /模型：gpt-6\.2-sol · 思考强度：xhigh/);
+  assert.doesNotMatch(rendered, /gpt-6\.1-sol/);
+  assert.equal(oldAuto.autoRouting.route.model, 'gpt-6.1-sol', 'admission never rewrites prior receipts');
+  const topicInput = { ...groupInput, sourceContext: { ...groupInput.sourceContext, conversationKind: 'topic' } };
+  const fallbackReceipt = { provider: 'typesafe', status: 'fallback', route: legacySol };
+  assert.equal((await resolveSessionRuntimeSelection({ ...oldAuto, autoRouting: fallbackReceipt }, topicInput)).model, 'gpt-6.2-sol');
+  assert.equal((await resolveSessionRuntimeSelection(oldAuto, groupInput, legacySol)).model, 'gpt-6.1-sol', 'active Runs keep their original snapshot');
+  for (const saved of [legacySol, { ...oldAuto, feishuRuntimeSelection: legacySol },
+    { ...oldAuto, autoRouting: { ...oldAuto.autoRouting, experiment: { arm: 'variant' } } }]) {
+    assert.equal((await resolveSessionRuntimeSelection(saved, groupInput)).model, legacySol.model,
+      'concrete manual selections and experiment variants are not defaults');
+  }
+  for (const input of [{ ...groupInput, sourceContext: { connector: 'feishu', chatType: 'p2p' } },
+    { ...groupInput, recordUserMessage: false }, { ...groupInput, internalOperation: 'trigger_delivery' }]) {
+    assert.equal((await resolveSessionRuntimeSelection(oldAuto, input)).model, legacySol.model,
+      'private chat and background requests retain their runtime rules');
+  }
+  await updateJevRoutingSettings({ tiers: { quality: { model: 'gpt-6.2-astra', effort: 'high' } } });
+  const latest = await resolveSessionRuntimeSelection({ ...updated, autoRouting: updated.autoRoutingReceipt }, groupInput);
+  assert.deepEqual(latest.autoRoutingReceipt.route, { tool: 'codex', model: 'gpt-6.2-astra', effort: 'high' },
+    'model/effort upgrades follow the configured tier, not a hard-coded release pair');
   const qualified = { model: 'openai-codex/gpt-6.2-astra', effort: 'medium', thinking: false };
   assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex', ...qualified }),
     { tool: 'codex', ...qualified, model: 'gpt-6.2-astra' }, 'saved mixed profiles preserve the chosen model in native Codex');
