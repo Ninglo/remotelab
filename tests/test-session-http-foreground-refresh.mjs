@@ -304,7 +304,8 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
 
 const firstContext = createContext({
   fetchImpl(url) {
-    if (url === '/api/sessions') {
+    if (url === '/api/sessions?view=refs') return createFetchResponse({ sessionRefs: [{ id: 'current-session', summaryEtag: 'current-v2' }], archivedCount: 0 });
+    if (url === '/api/sessions?withRefs=1') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -319,7 +320,7 @@ const firstContext = createContext({
         archivedCount: 0,
       }, { url: 'http://127.0.0.1/api/sessions' });
     }
-    if (url === '/api/sessions/current-session') {
+    if (['/api/sessions/current-session', '/api/sessions/current-session?view=sidebar'].includes(url)) {
       return createFetchResponse({
         session: buildSession({
           id: 'current-session',
@@ -361,7 +362,8 @@ await firstContext.documentListeners.get('visibilitychange')();
 assert.deepEqual(
   firstContext.fetchCalls.map((entry) => entry.url),
   [
-    '/api/sessions',
+    '/api/sessions?view=refs',
+    '/api/sessions/current-session?view=sidebar',
     '/api/sessions/current-session',
     '/api/sessions/current-session/events?filter=visible',
   ],
@@ -377,13 +379,13 @@ await firstContext.windowListeners.get('focus')();
 
 assert.equal(
   firstContext.fetchCalls.length,
-  3,
+  4,
   'foreground recovery should throttle duplicate focus-based refreshes fired right after visibilitychange',
 );
 
 const targetedContext = createContext({
   fetchImpl(url) {
-    if (url === '/api/sessions') {
+    if (url === '/api/sessions?withRefs=1') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -455,7 +457,7 @@ assert.equal(firstContext.applyNavigationStateCalls.length, 1, 'notification nav
 assert.equal(firstContext.focusCount, 1, 'notification navigation should focus the existing chat window');
 assert.equal(
   firstContext.fetchCalls.length,
-  6,
+  7,
   'notification-opened sessions should trigger another fresh recovery sync when the tab comes back',
 );
 
@@ -465,7 +467,8 @@ const secondContext = createContext({
     tab: 'sessions',
   },
   fetchImpl(url) {
-    if (url === '/api/sessions') {
+    if (url === '/api/sessions?view=refs') return createFetchResponse({ sessionRefs: ['fresh-session', 'current-session'].map(id => ({ id, summaryEtag: id })), archivedCount: 0 });
+    if (url === '/api/sessions?withRefs=1') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -488,7 +491,8 @@ const secondContext = createContext({
         archivedCount: 0,
       }, { url: 'http://127.0.0.1/api/sessions' });
     }
-    if (url === '/api/sessions/fresh-session') {
+    if (url === '/api/sessions/current-session?view=sidebar') return createFetchResponse({ session: buildSession({ id: 'current-session' }) });
+    if (['/api/sessions/fresh-session', '/api/sessions/fresh-session?view=sidebar'].includes(url)) {
       return createFetchResponse({
         session: buildSession({
           id: 'fresh-session',

@@ -5,9 +5,11 @@ import { CONFIG_DIR } from '../lib/config.mjs';
 import { writeDurableJson } from '../lib/durable-records.mjs';
 
 // Small local telemetry only. No transcript, environment, credentials or heap dump.
-export function startRuntimeHealth({ file = join(CONFIG_DIR, 'runtime-health.json'), intervalMs = 10_000 } = {}) {
+export function startRuntimeHealth({ file = join(CONFIG_DIR, 'runtime-health.json'), intervalMs = 10_000,
+  takeSessionListMetrics = () => ({}) } = {}) {
   const lag = monitorEventLoopDelay({ resolution: 20 }); lag.enable();
   let gcMs = 0, gcCount = 0, writing = false;
+  const eventLoopSamples = [];
   const observer = new PerformanceObserver(list => {
     for (const entry of list.getEntries()) { gcMs += entry.duration; gcCount++; }
   });
@@ -18,7 +20,10 @@ export function startRuntimeHealth({ file = join(CONFIG_DIR, 'runtime-health.jso
     const value = { version: 1, pid: process.pid, observedAt: new Date().toISOString(), uptimeSeconds: process.uptime(),
       ...process.memoryUsage(), heapLimit: getHeapStatistics().heap_size_limit,
       eventLoopP99Ms: Number.isFinite(lag.percentile(99)) ? lag.percentile(99) / 1e6 : null,
-      gcMs, gcCount };
+      gcMs, gcCount, ...takeSessionListMetrics() };
+    eventLoopSamples.push({ at: value.observedAt, p99Ms: value.eventLoopP99Ms });
+    if (eventLoopSamples.length > 3) eventLoopSamples.shift();
+    value.eventLoopSamples = eventLoopSamples.slice();
     gcMs = 0; gcCount = 0; lag.reset();
     try { await writeDurableJson(file, value); }
     catch (error) { console.error('[runtime-health]', error.code || error.message); }

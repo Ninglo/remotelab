@@ -78,9 +78,31 @@ function matchingDeliveries(records, options) {
     ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
 }
 
+let issueIndex = null;
 export async function listSourceDeliveryIssues(options = {}) {
-  return requests.projectActive(records => matchingDeliveries(records, options)
-    .map(entry => deliveryIssue(entry, options.now ?? Date.now())).filter(Boolean));
+  if (Object.keys(options).some(key => key !== 'sessionId')) {
+    return requests.projectActive(records => matchingDeliveries(records, options)
+      .map(entry => deliveryIssue(entry, options.now ?? Date.now())).filter(Boolean));
+  }
+  const at = Date.now(), revision = requests.deliveriesRevision();
+  if (issueIndex?.revision !== revision || at - issueIndex.at >= 1000) {
+    const next = { revision, at };
+    next.pending = requests.projectActive(records => matchingDeliveries(records, {})
+      .map(entry => deliveryIssue(entry, at)).filter(Boolean)).then(issues => {
+      const grouped = new Map();
+      for (const issue of issues) {
+        if (!grouped.has(issue.sessionId)) grouped.set(issue.sessionId, []);
+        grouped.get(issue.sessionId).push(issue);
+      }
+      return { issues, grouped };
+    }).catch(error => {
+      if (issueIndex === next) issueIndex = null;
+      throw error;
+    });
+    issueIndex = next;
+  }
+  const { issues, grouped } = await issueIndex.pending;
+  return structuredClone(options.sessionId ? grouped.get(options.sessionId) || [] : issues);
 }
 
 // Optional transport feedback (e.g. native typing) observes durable requests,
@@ -219,7 +241,7 @@ async function publishDeliveryMutation({ key, record, entry, priorReceipt }) {
   }
   if (!entry.target?.privateOpenId) await rememberFeishuThreadSurface(entry);
   await requests.archiveFinished(key);
-  broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
+  broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId, deliveryIssuesChanged: true });
 }
 
 async function inspectAndClaimSourceDelivery(options = {}) {
@@ -401,7 +423,7 @@ export async function dismissSourceDeliveryIssue(id, { issueVersion, personId = 
       deliveries[index] = { ...entry, dismissedIssue: { issueVersion, at: nowIso(), personId } };
       return { ...current, deliveries };
     });
-    broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
+    broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId, deliveryIssuesChanged: true });
     return record.deliveries[index];
   });
 }

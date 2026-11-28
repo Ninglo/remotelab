@@ -1,5 +1,6 @@
 import { registerEventAttachments } from './session-attachment-access.mjs';
-import { canReadSession, isSessionAdministrator, sessionAccessFilter } from './session-access.mjs';
+import { canReadSession, isSessionAdministrator } from './session-access.mjs';
+import { projectSessionPersonView } from './session-person-view.mjs';
 import { runtimeHrPolicy } from '../lib/hr-policy.mjs';
 import { observeIntervention } from './usage-controls.mjs';
 import { homedir } from 'os';
@@ -9,7 +10,7 @@ import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
 import { findSessionConversation } from './session-conversations.mjs';
 import { validateFeishuThreadOrigin, sameFeishuConversation } from './feishu-thread-continuation.mjs';
-import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
+import { getAuthReadSnapshot, SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, findLatestUserMessage, getHistorySnapshot, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
@@ -28,7 +29,7 @@ import {
   getSessionEventsAfter,
   getSessionSourceContext,
   getSessionTimelineEvents,
-  listSessions,
+  listSessionsForSidebar,
   mergeSessionPersonViewOwnership,
   sendMessage,
   submitHttpMessage,
@@ -67,17 +68,23 @@ function createClientSessionDetail(session) {
   return createSessionDetail(session);
 }
 
-async function listSessionListItemsForClient(options = {}) {
-  const sessions = await listSessions(options);
-  return sessions.filter(sessionAccessFilter(options.accessActor || { personId: options.viewPersonId })).map(createSessionListItem);
-}
-
 async function getSessionForClient(id, options = {}) {
   return createClientSessionDetail(await getSession(id, options));
 }
 
+const sidebarPointReads = new Map();
 async function getSessionListItemForClient(id, options = {}) {
-  return createSessionListItem(await getSession(id, options));
+  // Concurrent tabs may ask for the same hot row. Share the disk read only;
+  // each authenticated caller still gets its own authorized overlay.
+  let pending = sidebarPointReads.get(id);
+  if (!pending) {
+    pending = getSession(id, { unprojected: true }).finally(() => sidebarPointReads.delete(id));
+    sidebarPointReads.set(id, pending);
+  }
+  const row = await pending;
+  if (!row) return null;
+  const { deliveryIssueCount, deliveryIssues, ...base } = row;
+  return createSessionListItem({ ...projectSessionPersonView(base, options.viewPersonId), deliveryIssueCount });
 }
 
 function listActor(key) {
@@ -86,15 +93,25 @@ function listActor(key) {
 }
 const sessionListCache = createSessionListCache({
   loadVersions: loadSessionMetaVersionIndex,
-  loadAll: key => listSessionListItemsForClient({ includeArchived: true, viewPersonId: listActor(key).personId, accessActor: listActor(key) }),
-  loadOne: async (id, key) => {
+  loadAll: listSessionsForSidebar,
+  loadOne: id => getSession(id, { forList: true, unprojected: true }),
+  project: (row, key, authDocument) => {
     const actor = listActor(key);
-    const session = await getSession(id, { viewPersonId: actor.personId, forList: true });
-    return canReadSession(actor, session) ? createSessionListItem(session) : null;
+    if (!canReadSession(actor, row, authDocument)) return null;
+    const { deliveryIssueCount, ...base } = row;
+    return createSessionListItem({ ...projectSessionPersonView(base, actor.personId), deliveryIssueCount });
   },
 });
 onSessionInvalidation(sessionListCache.invalidate);
 export const sweepIdleSessionListViews = (maxIdleMs, now) => sessionListCache.sweepIdle(maxIdleMs, now);
+export const takeSessionListMetrics = () => sessionListCache.takeMetrics();
+export function startSessionListVersionCheck(intervalMs = 60_000) {
+  const timer = setInterval(() => {
+    Promise.resolve(sessionListCache.checkVersions()).catch(error => console.error('[session-list]', error.message));
+  }, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -203,9 +220,11 @@ export async function handleSessionMainRoutes({
         authSession?.personId || '', authSession?.identityId || '', hr?.policy?.version || '',
         hr?.restrictedRuntime === true, hr?.instance || '', hr?.enforceAfter || '',
       ]),
+      accessRevision: getAuthReadSnapshot(),
       sourceId: normalizeSessionSourceId(parsedUrl.query.sourceId),
       folder: typeof parsedUrl.query.folder === 'string' ? parsedUrl.query.folder : '',
       archived: sessionGetRoute.kind === 'archived-list', refs: view === 'refs',
+      withRefs: parsedUrl.query.withRefs === '1',
     });
     writeJsonCached(req, res, null, { prepared });
     return true;

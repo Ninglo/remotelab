@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { fork } from 'node:child_process';
+import { execFile, fork } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { mkdtemp, rm, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -15,7 +17,24 @@ if (process.argv[2] === 'child') {
   const home=await mkdtemp(join(tmpdir(),'history-cross-process-'));setIsolatedTestHome(home);
   const children=[];
   try {
+    const fs = createRequire(import.meta.url)('node:fs/promises');
+    const originalRead = fs.readFile;
+    let contextReads = 0;
+    fs.readFile = (...args) => { if (String(args[0]).endsWith('/context.json')) contextReads++; return originalRead(...args); };
+    syncBuiltinESMExports();
     const h=await import('../chat/history.mjs'); const {CHAT_HISTORY_DIR}=await import('../lib/config.mjs');
+    await h.setContextHead('fixture', { summary: 'parent summary', activeFromSeq: 1 });
+    const before = await h.getHistorySnapshot('fixture', { metadataOnly: true });
+    assert.equal(before.activeFromSeq, 1);
+    await h.getHistorySnapshot('fixture', { metadataOnly: true });
+    assert.equal(contextReads, 1, 'unchanged context is not reread');
+    await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
+      `import { setContextHead } from ${JSON.stringify(new URL('../chat/history.mjs', import.meta.url).href)};
+       await setContextHead('fixture', { summary: 'child summary', activeFromSeq: 2 });`]);
+    assert.equal((await h.getHistorySnapshot('fixture', { metadataOnly: true })).activeFromSeq, 2);
+    assert.equal(contextReads, 2, 'atomic write by another process invalidates the stamp');
+    fs.readFile = originalRead;
+    syncBuiltinESMExports();
     assert.equal(await h.getHistoryHeadSeq('fixture'),0);
     let ready=0;const seqs=[];
     for(const label of ['card','main'])children.push(fork(new URL(import.meta.url),['child',label],{env:process.env,stdio:['ignore','ignore','inherit','ipc']}));

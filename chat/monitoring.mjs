@@ -27,7 +27,7 @@ export function summarizeAlertDelivery(state) {
     uncertain: current.filter(b => b.status === 'needs_review').length };
 }
 
-import { serviceIncidentAttention } from './service-incidents.mjs';
+import { runtimeEventLoopAttention, serviceIncidentAttention } from './service-incidents.mjs';
 import { assessDiskGrowth, diskGrowthAttention, DISK_GROWTH_FILE } from './disk-growth.mjs';
 const exec = promisify(execFile);
 const GiB = 1024 ** 3;
@@ -247,6 +247,8 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
     const diskGrowth = assessDiskGrowth(disks, growthHistory, config.diskGrowth, now());
     analysis.attention.push(...diskGrowthAttention(diskGrowth, disks));
     analysis.attention.push(...serviceIncidentAttention(savedIncidents?.cycles || savedIncidents?.events || [], services, { now: now(), gaps, repairs: config.serviceIncidents?.repairs }).filter(item => !item.recovered));
+    const runtimeEventLoop = runtimeFresh ? runtimeEventLoopAttention(runtimeHealth, runtimeService, config.runtimeHealth) : null;
+    if (runtimeEventLoop && !runtimeEventLoop.recovered) analysis.attention.push(runtimeEventLoop);
     if (runtimeFresh && runtimeHealth.heapUsed / runtimeHealth.heapLimit >= 0.85) analysis.attention.push({ kind: 'servicePressure', id: runtimeService.unit, unit: runtimeService.unit, subject: runtimeService.label, severity: 'critical', detail: `堆用量 ${(runtimeHealth.heapUsed / GiB).toFixed(2)} / ${(runtimeHealth.heapLimit / GiB).toFixed(2)} GiB`, signals: { pid: runtimeHealth.pid } });
     if (apiHealth && !apiHealth.coverage.complete) gaps.push({ source: 'feishuApi', code: 'PARTIAL_LOG_COVERAGE' });
     const alertDelivery = summarizeAlertDelivery(alertState);
@@ -261,7 +263,7 @@ export function createMonitoringReader({ configFile = join(CONFIG_DIR, 'monitori
       calendars: timer?.timer?.calendars || [], lastTriggeredAt: timer?.timer?.lastTriggeredAt || null,
       lastObservedAt: alertState?.observedAt || null,
       source: timer ? 'service_manager' : 'unverified', recoveryEnabled: config.recovery?.enabled === true };
-    return { generatedAt, windowDays: days, observation, diskGrowth, runtimeHealth: runtimeFresh ? runtimeHealth : null,
+    return { generatedAt, windowDays: days, observation, diskGrowth, runtimeHealth: runtimeFresh ? runtimeHealth : null, runtimeEventLoop,
       usage: usage ? { window: usage.window, totals: usage.totals, byDay: usage.byDay, dailyTrend: usage.dailyTrend, byModel: usage.byModel?.slice(0, 5),
         byOperation: usage.byOperation?.slice(0, 5), byOperationGroup: usage.byOperationGroup?.slice(0, 5) } : null,
       accounts, accountContinuity: continuity, disks, automations, services, automaticRequests, apiHealth, alertDelivery, ...analysis, recovery: recoveryItems,

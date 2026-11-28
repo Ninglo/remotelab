@@ -78,9 +78,8 @@ const context = {
   getCurrentSession() {
     return { id: 'session_current' };
   },
-  refreshRealtimeViews(options = {}) {
+  scheduleSidebarInvalidation(options = {}) {
     refreshCalls.push(options);
-    return Promise.resolve();
   },
   scheduleReconnect() {},
   hasSeenWsOpen: false,
@@ -105,11 +104,8 @@ assert.equal(createdSockets.length, 2, 'reconnect should create a fresh WebSocke
 createdSockets[1].onopen();
 
 assert.equal(refreshCalls.length, 1, 'reconnect should trigger exactly one recovery refresh');
-assert.equal(
-  refreshCalls[0]?.viewportIntent,
-  'preserve',
-  'reconnect recovery should preserve the current reading position instead of acting like a new session entry',
-);
+assert.equal(refreshCalls[0]?.all, true, 'reconnect asks for one reference-index catch-up');
+assert.equal(refreshCalls[0]?.current, true, 'reconnect also refreshes the open transcript without a new attachment');
 
 assert.equal(statusCalls.length, 2, 'each open should refresh the visible connection status');
 

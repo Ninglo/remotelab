@@ -21,7 +21,7 @@ function connect() {
   ws.onopen = () => {
     updateStatus("connected", getCurrentSession());
     if (hasSeenWsOpen) {
-      refreshRealtimeViews({ viewportIntent: "preserve" }).catch(() => {});
+      scheduleSidebarInvalidation({ all: true, current: true });
     } else {
       hasSeenWsOpen = true;
     }
@@ -438,6 +438,48 @@ function getCurrentSession() {
     : (sessions.find((s) => s.id === currentSessionId) || null);
 }
 
+const dirtySidebarIds = new Set();
+let sidebarInvalidationTimer = null;
+let sidebarInvalidationInFlight = false;
+let sidebarIndexDirty = false;
+let sidebarOpenSessionDirty = false;
+let sidebarDeliveryIssuesDirty = false;
+function scheduleSidebarInvalidation({ id, all, current, deliveryIssues } = {}) {
+  if (id) dirtySidebarIds.add(id);
+  sidebarIndexDirty ||= Boolean(all);
+  sidebarOpenSessionDirty ||= Boolean(current);
+  sidebarDeliveryIssuesDirty ||= Boolean(deliveryIssues);
+  if (document.hidden || sidebarInvalidationInFlight || sidebarInvalidationTimer !== null) return;
+  sidebarInvalidationTimer = setTimeout(async () => {
+    sidebarInvalidationTimer = null;
+    if (document.hidden) return;
+    sidebarInvalidationInFlight = true;
+    const ids = [...dirtySidebarIds];
+    const full = sidebarIndexDirty, focused = sidebarOpenSessionDirty, issues = sidebarDeliveryIssuesDirty;
+    dirtySidebarIds.clear();
+    sidebarIndexDirty = sidebarOpenSessionDirty = sidebarDeliveryIssuesDirty = false;
+    try {
+      if (full) {
+        await syncSessionSidebarRefs();
+        if (focused && currentSessionId) await refreshCurrentSession({ forceFresh: true });
+      } else {
+        for (let n = 0; n < ids.length; n += 8) {
+          await Promise.allSettled(ids.slice(n, n + 8).map(sessionId => refreshSidebarSession(sessionId, { forceFresh: true })));
+        }
+      }
+    } catch (error) {
+      console.warn('[sessions] sidebar sync failed', error?.message || error);
+    } finally {
+      if (issues && typeof RemoteLabNotifications !== 'undefined') RemoteLabNotifications.refreshDeliveryIssues().catch(() => {});
+      sidebarInvalidationInFlight = false;
+      if (dirtySidebarIds.size || sidebarIndexDirty || sidebarDeliveryIssuesDirty) scheduleSidebarInvalidation();
+    }
+  }, 250);
+}
+if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', () => {
+  if (!document.hidden && (dirtySidebarIds.size || sidebarIndexDirty || sidebarDeliveryIssuesDirty)) scheduleSidebarInvalidation();
+});
+
 function handleWsMessage(msg) {
   switch (msg.type) {
     case "build_info":
@@ -445,28 +487,15 @@ function handleWsMessage(msg) {
       break;
 
     case "sessions_invalidated":
-      fetchSessionsList({ forceFresh: true }).catch(() => {});
-      if (archivedSessionsLoaded) {
-        fetchArchivedSessions({ forceFresh: true }).catch(() => {});
-      }
+      scheduleSidebarInvalidation({ all: true, current: true });
       if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
         window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
       }
       break;
 
     case "session_invalidated":
-      if (typeof RemoteLabNotifications !== "undefined") {
-        RemoteLabNotifications.refreshDeliveryIssues().catch(() => {});
-      }
-      if (!msg.sessionId) {
-        refreshRealtimeViews({ forceFresh: true }).catch(() => {});
-        break;
-      }
-      if (msg.sessionId === currentSessionId) {
-        refreshCurrentSession({ forceFresh: true }).catch(() => {});
-      } else {
-        refreshSidebarSession(msg.sessionId, { forceFresh: true }).catch(() => {});
-      }
+      scheduleSidebarInvalidation({ id: msg.sessionId, all: !msg.sessionId,
+        current: !msg.sessionId || msg.sessionId === currentSessionId, deliveryIssues: msg.deliveryIssuesChanged === true });
       break;
 
     case "system_notification":
@@ -486,6 +515,7 @@ function handleWsMessage(msg) {
       break;
 
     case "people_updated":
+      scheduleSidebarInvalidation({ all: true, current: true });
       if (typeof requestPeople === "function") {
         requestPeople().then(() => {
           if (typeof renderPeopleSettings === "function") void renderPeopleSettings();

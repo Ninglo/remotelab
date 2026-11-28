@@ -218,10 +218,11 @@ const RemoteLabNotifications = (() => {
       delete readVersions[issue.id];
       persist();
       render();
-      await Promise.all([
-        refreshDeliveryIssues(),
-        typeof refreshSidebarSession === "function" ? refreshSidebarSession(issue.sessionId, { forceFresh: true }).catch(() => {}) : null,
-      ]);
+      if (typeof scheduleSidebarInvalidation === 'function') {
+        scheduleSidebarInvalidation({ id: issue.sessionId, deliveryIssues: true });
+      } else {
+        await refreshDeliveryIssues();
+      }
     } catch {
       dismissError = issue.id;
       await refreshDeliveryIssues();

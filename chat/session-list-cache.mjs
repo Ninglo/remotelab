@@ -1,117 +1,147 @@
 import { createHash } from 'node:crypto';
+import { setImmediate as yieldToIO } from 'node:timers/promises';
 
 const hash = value => `"${createHash('sha1').update(value).digest('hex')}"`;
 const encode = session => {
   const json = JSON.stringify(session);
-  return { session, json, ref: JSON.stringify({ id: session.id,
-    summaryEtag: hash(`{"session":${json}}`) }) };
+  return { session, json, ref: JSON.stringify({ id: session.id, summaryEtag: hash(`{"session":${json}}`) }) };
 };
+const scopeHints = new Set(['people_updated', 'instance_settings_updated']);
+const versionHints = new Set(['sessions_invalidated', ...scopeHints, 'connectors_updated', 'local_bridge_updated']);
+const surfaceHints = { connectors_updated: 'connectors', local_bridge_updated: 'localBridge' };
 
-// Cold records are projected/encoded once, then only changed IDs are read.
-// The bounded fallback is demand-driven recovery for an external writer that
-// omitted its change hint, never a background polling job.
-export function createSessionListCache({ loadAll, loadOne, loadVersions, now = Date.now,
-  maxAgeMs = 300000, maxViews = 8 } = {}) {
-  const views = new Map();
+// One viewer-independent projection. Filter and apply the viewer's overlay
+// before encoding any row; IDs/refs and archived counts use the same ACL.
+export function createSessionListCache({ loadAll, loadOne, loadVersions, project = item => item,
+  now = Date.now, versionPollMs = 60_000, maxViews = 8 } = {}) {
+  let records = null, versions = null, pending = null, lastCheck = -Infinity, check = true;
+  let sessionListFullLoads = 0, sessionListResponses = 0;
+  const views = new Map(), dirty = new Set(), hot = new Set();
+  let hotReadAt = now();
   function invalidate(message) {
-    if (message.type === 'session_invalidated' && message.sessionId) {
-      for (const view of views.values()) view.dirty.add(message.sessionId);
-    } else if (['sessions_invalidated', 'instance_settings_updated', 'people_updated',
-      'connectors_updated', 'local_bridge_updated'].includes(message.type)
-      || (message.type === 'session_invalidated' && !message.sessionId)) {
-      for (const view of views.values()) view.reset = true;
+    if (message.type === 'session_invalidated' && message.sessionId) dirty.add(message.sessionId);
+    if (versionHints.has(message.type) || (message.type === 'session_invalidated' && !message.sessionId)) check = true;
+    if (scopeHints.has(message.type)) views.clear();
+    const surface = surfaceHints[message.type];
+    if (surface) for (const [id, row] of records || []) {
+      // Global transport changes affect only sessions eligible for that surface,
+      // including sessions that did not have a connected surface before.
+      if (row[surface] || row.sourceId !== 'chat' || (surface === 'localBridge' && row.folder)) dirty.add(id);
     }
   }
-  async function refresh(view, personId) {
-    if (view.pending) return view.pending;
-    if (now() - view.hotReadAt >= 1000) {
-      for (const id of view.hotIds) view.dirty.add(id);
-      view.hotReadAt = now();
+  function refresh({ checkVersions = true } = {}) {
+    if (pending) return pending;
+    if (now() - hotReadAt >= 1000) {
+      for (const id of hot) dirty.add(id);
+      hotReadAt = now();
     }
-    const reset = view.reset || now() - view.loadedAt >= maxAgeMs;
-    if (!reset && !view.dirty.size) return;
-    // Clear consumed hints before I/O: hints arriving during a read survive for
-    // the next request, including a concurrent global invalidation.
-    const dirty = [...view.dirty];
-    view.dirty.clear();
-    view.reset = false;
-    view.pending = (async () => {
+    const checkNow = loadVersions && (checkVersions || check || now() - lastCheck >= versionPollMs);
+    if (records && !dirty.size && !checkNow) return;
+    const batch = new Set(dirty);
+    dirty.clear();
+    if (checkNow) check = false;
+    pending = (async () => {
       try {
-        if (reset) {
-          view.records = new Map((await loadAll(personId)).map(s => [s.id, encode(s)]));
-          view.loadedAt = now();
-          view.hotIds.clear();
-          for (const [id, { session: s }] of view.records) {
-            if (isHot(s)) view.hotIds.add(id);
-          }
+        const next = checkNow ? await loadVersions() : versions;
+        const rebuild = !records || (versions && next && (next.catalogSchema !== versions.catalogSchema
+          || (Number.isInteger(next.catalogRevision) && next.catalogRevision < versions.catalogRevision)));
+        if (rebuild) {
+          sessionListFullLoads++;
+          const all = await loadAll();
+          records = new Map(all.map(s => [s.id, s]));
+          hot.clear();
+          for (const s of all) if (isHot(s)) hot.add(s.id);
+          views.clear();
         } else {
-          const changed = await Promise.all(dirty.map(async id => [id, await loadOne(id, personId)]));
-          for (const [id, session] of changed) {
-            if (session) view.records.set(id, encode(session));
-            else view.records.delete(id);
-            if (isHot(session)) view.hotIds.add(id);
-            else view.hotIds.delete(id);
+          if (versions && next && next !== versions) {
+            for (const [id, version] of next) if (versions.get(id) !== version) batch.add(id);
+            for (const id of versions.keys()) if (!next.has(id)) batch.add(id);
+          }
+          if (batch.size) {
+            const ids = [...batch];
+            for (let n = 0; n < ids.length; n += 16) {
+              const changed = await Promise.all(ids.slice(n, n + 16).map(async id => [id, await loadOne(id)]));
+              for (const [id, item] of changed) {
+                if (item) records.set(id, item); else records.delete(id);
+                if (isHot(item)) hot.add(id); else hot.delete(id);
+                for (const view of views.values()) {
+                  view.rows.delete(id);
+                  view.responses.clear();
+                }
+              }
+              if (n + 16 < ids.length) await yieldToIO();
+            }
           }
         }
-        view.responses.clear();
+        versions = next;
+        if (checkNow) lastCheck = now();
       } catch (error) {
-        view.reset ||= reset;
-        for (const id of dirty) view.dirty.add(id);
+        if (checkNow) check = true;
+        for (const id of batch) dirty.add(id);
         throw error;
-      } finally { view.pending = null; }
-    })();
-    return view.pending;
+      }
+    })().finally(() => { pending = null; });
+    return pending;
   }
-  async function read({ personId = '', sourceId = '', folder = '', archived = false,
-    refs = false } = {}) {
+  async function read({ personId = '', sourceId = '', folder = '', archived = false, refs = false,
+    withRefs = false, accessRevision = null } = {}) {
+    // A hint arriving during disk I/O must not be lost. It remains pending for
+    // the next read, independently from requests already using this snapshot.
+    await refresh();
     let view = views.get(personId);
-    if (!view) {
-      view = { records: new Map(), dirty: new Set(), hotIds: new Set(), hotReadAt: now(), reset: true, loadedAt: 0,
-        responses: new Map(), pending: null };
+    if (!view || view.accessRevision !== accessRevision) {
+      view = { rows: new Map(), responses: new Map(), accessRevision };
+      views.delete(personId);
       views.set(personId, view);
       if (views.size > maxViews) views.delete(views.keys().next().value);
     }
     view.readAt = now();
-    if (loadVersions) {
-      const versions = await loadVersions();
-      if (view.versions && view.versions !== versions) {
-        for (const [id, version] of versions) {
-          if (view.versions.get(id) !== version) view.dirty.add(id);
-        }
-        for (const id of view.versions.keys()) if (!versions.has(id)) view.dirty.add(id);
-      }
-      view.versions = versions;
-    }
-    await refresh(view, personId);
-    const key = JSON.stringify([sourceId, folder, archived, refs]);
+    sessionListResponses++;
+    const key = JSON.stringify([sourceId, folder, archived, refs, withRefs]);
     if (view.responses.has(key)) return view.responses.get(key);
-    const filtered = [...view.records.values()].filter(({ session: s }) =>
-      (!sourceId || s.sourceId === sourceId) && (!folder || s.folder === folder));
-    const archivedCount = filtered.filter(({ session: s }) => s.archived === true).length;
-    const selected = filtered.filter(({ session: s }) => (s.archived === true) === archived);
+    const selected = [];
+    let archivedCount = 0;
+    for (const [id, item] of records) {
+      if ((sourceId && item.sourceId !== sourceId) || (folder && item.folder !== folder)) continue;
+      if (!view.rows.has(id)) {
+        const session = project(item, personId, accessRevision);
+        view.rows.set(id, session ? { session } : null);
+      }
+      const row = view.rows.get(id);
+      if (!row) continue;
+      if (row.session.archived === true) archivedCount++;
+      if ((row.session.archived === true) === archived) {
+        if (!row.encoded) row.encoded = encode(row.session);
+        selected.push(row.encoded);
+      }
+    }
     selected.sort(({ session: a }, { session: b }) => {
-      const orderA = a.sidebarOrder, orderB = b.sidebarOrder;
-      if (orderA && orderB && orderA !== orderB) return orderA - orderB;
+      if (a.sidebarOrder && b.sidebarOrder && a.sidebarOrder !== b.sidebarOrder) return a.sidebarOrder - b.sidebarOrder;
       return Number(b.pinned === true) - Number(a.pinned === true)
         || (Date.parse(b.updatedAt || b.created) || 0) - (Date.parse(a.updatedAt || a.created) || 0);
     });
-    const body = `{"${refs ? 'sessionRefs' : 'sessions'}":[${selected.map(r => refs ? r.ref : r.json).join(',')}],"archivedCount":${archivedCount}}`;
+    const pairedRefs = withRefs && !refs ? `,"sessionRefs":[${selected.map(r => r.ref).join(',')}]` : '';
+    const body = `{"${refs ? 'sessionRefs' : 'sessions'}":[${selected.map(r => refs ? r.ref : r.json).join(',')}],"archivedCount":${archivedCount}${pairedRefs}}`;
     const response = { body, etag: hash(body) };
     view.responses.set(key, response);
     if (view.responses.size > 16) view.responses.delete(view.responses.keys().next().value);
     return response;
   }
-  // A view holds every session plus encoded list bodies; drop views no client
-  // has read recently. The next read rebuilds it from the indexed catalog.
   function sweepIdle(maxIdleMs, at = now()) {
     let released = 0;
-    for (const [personId, view] of views) {
-      if (view.pending || at - (view.readAt || 0) < maxIdleMs) continue;
-      views.delete(personId); released += 1;
+    for (const [key, view] of views) {
+      if (at - view.readAt < maxIdleMs) continue;
+      views.delete(key); released++;
     }
     return released;
   }
-  return { read, invalidate, sweepIdle };
+  function takeMetrics() {
+    const result = { sessionListFullLoads, sessionListResponses };
+    sessionListFullLoads = 0; sessionListResponses = 0;
+    return result;
+  }
+  return { read, invalidate, sweepIdle, takeMetrics,
+    checkVersions: () => records ? refresh({ checkVersions: false }) : undefined };
 }
 
 function isHot(session) {

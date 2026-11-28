@@ -1268,22 +1268,12 @@ async function enrichSessionMeta(meta, _options = {}) {
 
 async function enrichSessionMetaForClient(meta, options = {}) {
   if (!meta) return null;
-  const session = projectSessionPersonView(
-    await enrichSessionMeta(meta, options),
-    options.viewPersonId,
-  );
+  const enriched = await enrichSessionMeta(meta, options);
+  const session = options.unprojected === true ? enriched : projectSessionPersonView(enriched, options.viewPersonId);
   if (options.includeQueuedMessages) {
     session.queuedMessages = getFollowUpQueue(meta).map(serializeQueuedFollowUp);
   }
   return session;
-}
-
-function broadcastSessionsInvalidation() {
-  broadcastAll({ type: 'sessions_invalidated' });
-}
-
-function broadcastScopedSessionsInvalidation(_session) {
-  broadcastSessionsInvalidation();
 }
 
 function broadcastSessionInvalidation(sessionId) {
@@ -2190,6 +2180,22 @@ export async function listSessions({
   })));
 }
 
+export async function listSessionsForSidebar() {
+  const metas = (await loadSessionsMeta()).filter(shouldExposeSession);
+  const issueCounts = new Map();
+  for (const issue of await listSourceDeliveryIssues()) {
+    issueCounts.set(issue.sessionId, (issueCounts.get(issue.sessionId) || 0) + 1);
+  }
+  const rows = [];
+  // Avoid queuing thousands of concurrent fs operations on cold startup.
+  for (let offset = 0; offset < metas.length; offset += 16) {
+    rows.push(...await Promise.all(metas.slice(offset, offset + 16).map(async meta => ({
+      ...await enrichSessionMeta(meta), deliveryIssueCount: issueCounts.get(meta.id) || 0,
+    }))));
+  }
+  return rows;
+}
+
 export async function getSession(id, options = {}) {
   const meta = await findSessionMeta(id);
   if (!meta) return null;
@@ -2643,7 +2649,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     event: 'session_created', sessionId: created.session.id, actorKind: 'system', surface: 'runtime' });
 
   if ((created.created || created.changed) && shouldExposeSession(created.session)) {
-    broadcastScopedSessionsInvalidation(created.session);
+    broadcastSessionInvalidation(created.session.id);
   }
 
   if (extra.feishuAdmissionOnly === true) return created.session;
@@ -2674,9 +2680,6 @@ export async function setSessionArchived(id, archived = true) {
     return enrichSessionMeta(result.meta);
   }
 
-  if (shouldExposeSession(current)) {
-    broadcastSessionsInvalidation();
-  }
   broadcastSessionInvalidation(id);
   return enrichSessionMeta(result.meta);
 }
@@ -2696,9 +2699,6 @@ export async function setSessionPinned(id, pinned = true) {
   });
 
   if (!result.meta) return null;
-  if (result.changed && shouldExposeSession(result.meta)) {
-    broadcastSessionsInvalidation();
-  }
   if (result.changed) {
     broadcastSessionInvalidation(id);
   }
@@ -2792,7 +2792,7 @@ export async function bindSessionAutomation(id, { taskId, homeSessionId, previou
     if (session.automationTaskId === taskId && session.automationHomeSessionId === homeSessionId) return false;
     session.automationTaskId = taskId; session.automationHomeSessionId = homeSessionId; return true;
   });
-  if (result?.changed) broadcastSessionsInvalidation();
+  if (result?.changed) broadcastSessionInvalidation(id);
   return result?.meta || null;
 }
 
@@ -2875,7 +2875,8 @@ export async function mergeSessionPersonViewOwnership(sourcePersonId, targetPers
     if (updatedSessions > 0) await persist(metas);
     return { updatedSessions };
   });
-  if (result.updatedSessions > 0) broadcastSessionsInvalidation();
+  // A cross-person ownership merge changes access as well as personal overlays.
+  if (result.updatedSessions > 0) broadcastAll({ type: 'sessions_invalidated' });
   return result;
 }
 
@@ -2997,10 +2998,7 @@ async function applySessionStateSuggestion(id, suggestion = {}, classification =
   });
 
   if (!result.meta) return null;
-  if (result.changed) {
-    broadcastSessionInvalidation(id);
-    broadcastSessionsInvalidation();
-  }
+  if (result.changed) broadcastSessionInvalidation(id);
   const enriched = projectSessionPersonView(await enrichSessionMeta(result.meta), viewPersonId);
   return await maybeRetireWelcomeOnboarding(id, enriched) || enriched;
 }
@@ -3380,9 +3378,6 @@ export async function updateSessionRuntimePreferences(id, patch = {}, { expected
   }
 
   broadcastSessionInvalidation(id);
-  if (shouldExposeSession(result.meta)) {
-    broadcastSessionsInvalidation();
-  }
   return enrichSessionMeta(result.meta);
 }
 
@@ -4440,7 +4435,7 @@ export async function forkSession(sessionId, options = {}) {
 
   observeUsage({ eventId: usageKey(`fork:${source.id}:${child.id}`), event: 'session_linked',
     sessionId: child.id, parentSessionId: source.id, actorKind: 'system', surface: 'runtime', operation: 'fork' });
-  broadcastSessionsInvalidation();
+  broadcastSessionInvalidation(child.id);
   return getSession(child.id, { viewPersonId });
 }
 

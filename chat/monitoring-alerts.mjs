@@ -77,6 +77,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
     const service = snapshot.services.find(s => s.pid === snapshot.runtimeHealth.pid);
     if (service) recovered.add(hash(`servicePressure:${service.unit}`));
   }
+  if (snapshot.runtimeEventLoop?.recovered) recovered.add(hash(`serviceEventLoop:${snapshot.runtimeEventLoop.unit}`));
   for (const account of snapshot.accounts || []) {
     if (['available', 'exhausted'].includes(account.status)) recovered.add(hash(`account:${account.id}`));
     if (account.status === 'available') recovered.add(hash(`quota:${account.id}`));
@@ -96,8 +97,8 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       if (stopped || !item.lastError && (succeeded || checked || repaired)) recovered.add(hash(`automation:${item.id}`));
     }
   }
-  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'automation', 'api', 'poolSource', 'poolTask', 'poolIdle'].includes(item.kind)
-    && !(['service', 'serviceCrash', 'servicePressure'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
+  for (const item of [...snapshot.attention.filter(item => !item.recovered && ['disk', 'diskGrowth', 'service', 'serviceCrash', 'servicePressure', 'serviceEventLoop', 'automation', 'api', 'poolSource', 'poolTask', 'poolIdle'].includes(item.kind)
+    && !(['service', 'serviceCrash', 'servicePressure', 'serviceEventLoop'].includes(item.kind) && (config.ignoreUnits || []).includes(item.unit || item.id))
     && !(item.kind === 'automation' && (config.ignoreAutomationIds || []).includes(item.id))), ...accountAlerts(snapshot, config)]) {
     const key = hash(`${item.kind}:${item.id || item.subject}`); current.add(key);
     const previous = state.incidents[key];
@@ -109,7 +110,7 @@ async function dispatchAlerts({ config, snapshot, stateFile,
       && (config.criticalAutomationIds || []).includes(item.id);
     const configuredCount = Number(config.confirmationObservations);
     const confirmationCount = Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 10 ? configuredCount : 1;
-    let requiredCount = item.kind === 'serviceCrash' ? 1 : item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
+    let requiredCount = ['serviceCrash', 'serviceEventLoop'].includes(item.kind) ? 1 : item.kind === 'disk' || item.kind === 'api' && item.code === 99991403 ? 1 : item.kind === 'automation' ? 3
       : item.kind === 'accountContinuity' ? Math.max(3, confirmationCount) : confirmationCount;
     const recent = !previous?.active ? recentAlertBatch(state, item, now) : null;
     const reuse = recent && recent.messageId && recent.status === 'sent';

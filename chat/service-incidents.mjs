@@ -157,6 +157,24 @@ export function serviceIncidentAttention(events, services, { now = Date.now(), g
   });
 }
 
+export function runtimeEventLoopAttention(runtime, service, { eventLoopThresholdMs = 500 } = {}) {
+  if (!runtime || !service?.unit || runtime.pid !== service.pid) return null;
+  const threshold = Number(eventLoopThresholdMs);
+  if (!Number.isFinite(threshold) || threshold <= 0) return null;
+  const samples = Array.isArray(runtime.eventLoopSamples) ? runtime.eventLoopSamples.slice(-3) : [];
+  const last = samples.at(-1);
+  if (!last || last.at !== runtime.observedAt || !Number.isFinite(last.p99Ms)) return null;
+  if (last.p99Ms <= threshold) return { unit: service.unit, recovered: true };
+  if (samples.length !== 3 || !samples.every((sample, i) => {
+    const at = Date.parse(sample.at), gap = i ? at - Date.parse(samples[i - 1].at) : 0;
+    return Number.isFinite(at) && Number.isFinite(sample.p99Ms) && sample.p99Ms > threshold
+      && (!i || (gap >= 8_000 && gap <= 20_000));
+  })) return null;
+  return { kind: 'serviceEventLoop', severity: 'critical', id: service.unit, unit: service.unit,
+    subject: service.label || service.unit, detail: `连续 3 次采样的事件循环 p99 超过 ${threshold} ms，最近一次 ${Math.round(last.p99Ms)} ms`,
+    signals: { p99Ms: last.p99Ms, thresholdMs: threshold } };
+}
+
 export async function recordRuntimeSample(sample, directory = join(CONFIG_DIR, 'runtime-health-history')) {
   if (!sample?.observedAt || !Number.isFinite(Date.parse(sample.observedAt))) return;
   await mkdir(directory, { recursive: true });

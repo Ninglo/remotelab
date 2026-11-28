@@ -14,6 +14,8 @@ The deterministic daily disk collector (`scripts/disk-daily-check.mjs --output-d
 
 [Short-term disk growth warnings](monitoring.md#short-term-disk-growth) use the existing minute observer and delivery ledger, independently of capacity thresholds. The [SG syslog maintenance notes](monitoring.md) cover size-based rotation, log retention, and the verified `scripts/archive-rotated-syslog.sh` recovery tool.
 
+[Web sidebar incremental reads](session-catalog.md#web-侧栏增量读取) describes reference versions, per-viewer permissions, and the shared list projection. `scripts/bench-session-list-fanout.mjs` compares browser-tab fanout using synthetic history and a loopback server; run it under `scripts/run-with-clean-instance-env.mjs`, never against a live instance.
+
 This repo now keeps documentation in four layers:
 
 - `README.md` / `README.zh.md` — top-level product overview, setup path, and daily operations
