@@ -9,6 +9,15 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { createRecentErrorMonitor, describeRecentError, recentErrorExcerpt } from '../lib/recent-errors.mjs';
 import { startRecentErrorServiceSource } from '../chat/recent-error-service-source.mjs';
 
+const gate = (message, component) => describeRecentError('schedule-gate', message, message, component);
+const variants = Array.from({length: 5}, (_,i) => gate(`Gate exited with 1: ${JSON.stringify({type:'GateError',message:`query-${i}: query timed out; owned process group terminated`})}`, `schedule-${i}`));
+assert.equal(new Set(variants.map(x=>x.cluster)).size, 1);
+const deadlines = [5,30].map(s=>gate(`Gate timed out after ${s}s`));
+assert.equal(deadlines[0].cluster, deadlines[1].cluster);
+assert.deepEqual(deadlines.map(x=>x.timeoutSeconds), [5,30]);
+assert.equal(new Set([variants[0],deadlines[0],...['ETIMEDOUT','ENOENT','Detached runner disappeared before writing a result','different'].map(x=>gate(x))].map(x=>x.cluster)).size, 6);
+assert.notEqual(gate('Gate timed out after 30s on dependency').cluster, deadlines[0].cluster);
+
 const root = await mkdtemp(join(tmpdir(),'recent-errors-test-'));
 const file = join(root, 'monitor');
 let now = 1_790_000_000_000;
