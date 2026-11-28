@@ -4,25 +4,25 @@
   const root = document.getElementById("settings-personal-codex");
   if (!root) return;
   let state = null, busy = false, initialized = false, error = "", feedback = "", timer = null, delay = 250;
-  let pollingDeadline = 0, refreshPromise = null;
+  let pollingDeadline = 0, refreshPromise = null, bindingSignature;
   const copy = (zh, en) => document.documentElement.lang.startsWith("en") ? en : zh;
   const visible = () => document.getElementById("settingsPanel")?.classList.contains("visible") && !document.hidden;
   const stopPolling = () => { clearTimeout(timer); timer = null; };
   function render() {
     for (const title of document.querySelectorAll("[data-personal-codex-title]")) title.textContent = copy("我的 Codex", "My Codex");
-    byId("Intro").textContent = copy("绑定你自己的 ChatGPT 账号，仅用于你发起的 Codex 任务。", "Bind your ChatGPT account for Codex tasks you initiate.");
-    byId("Policy").textContent = copy(
-      "个人账号优先使用，绝不分配给其他用户。目前仅在确认个人额度耗尽后转用公共池，并在当前对话提醒；额度恢复后的新请求重新优先使用个人账号。",
-      "Your account is preferred and never allocated to another user. For now, confirmed quota exhaustion falls back to the shared pool with a conversation notice. New requests prefer your account again when quota recovers.");
-    byId("Help").textContent = copy(
-      "无需上传账号文件或提供密码。点击绑定，在 OpenAI 页面完成授权后返回；未绑定时沿用公共池。公共账号由管理员管理。",
-      "No credential file or password upload. Start binding, authorize on OpenAI, then return. Unbound users use the shared pool. Shared accounts are managed by administrators.");
+    const group = (root.closest('[data-codex-binding]')?.dataset.codexBinding || state?.sharing?.scope) === 'group';
+    byId("Intro").textContent = copy("用自己的 ChatGPT 账号绑定 Codex。", "Bind Codex with your own ChatGPT account.");
+    byId("Policy").textContent = group
+      ? copy("仅本人和已授权成员可使用；小组账号不可用时，不会自动改用公用池。", "Only you and selected members can use this binding. Group requests do not fall back to the public pool on failure.")
+      : copy("个人绑定优先，仅本人可用。确认额度耗尽时转用公用池，并在对话中提醒。", "Your private binding takes precedence. Confirmed exhaustion falls back to the public pool with a conversation notice.");
+    byId("Policy").hidden = !state?.bound;
+    byId("Help").textContent = state?.bound ? "" : copy("在 OpenAI 页面完成授权，无需上传账号文件或提供密码。", "Authorize on OpenAI. No password or credential file is required.");
     const active = state?.deviceLoginActive;
     byId("Status").textContent = !state ? copy("正在读取…", "Loading…")
-      : state.loggedIn ? copy("已绑定 · 个人账号优先", "Bound · personal account preferred")
+      : state.loggedIn ? (group ? copy("已绑定 · 小组", "Bound · group") : copy("已绑定 · 个人", "Bound · personal"))
         : active ? copy("等待你在 OpenAI 完成授权", "Waiting for OpenAI authorization")
           : state.phase === "failed" ? copy("需要重新授权", "Authorization needed")
-            : copy("未绑定 · 使用公共池", "Unbound · using shared pool");
+            : copy("未绑定", "Not bound");
     byId("Refresh").textContent = copy("刷新状态", "Refresh status");
     byId("Refresh").disabled = busy;
     byId("Bind").textContent = busy ? copy("正在处理…", "Working…")
@@ -61,6 +61,13 @@
     byId("Error").hidden = !byId("Error").textContent;
     byId("Feedback").textContent = feedback;
     byId("Feedback").hidden = !feedback;
+    if (state) {
+      const signature = String(state.bound);
+      if (bindingSignature !== signature) {
+        bindingSignature = signature;
+        window.dispatchEvent(new Event('remotelab:personal-codex-changed'));
+      }
+    }
   }
   async function request(action, body) {
     return (await fetchJsonOrRedirect("/api/personal-codex/" + action, {
@@ -115,7 +122,7 @@
     const url = new URL(window.location.href);
     url.hash = "settings-personal-codex";
     history.replaceState(null, "", url);
-    root.scrollIntoView({ behavior: "auto", block: "start" });
+    window.remotelabOpenSettingsTarget?.(root.id);
     void refresh();
   }
   document.getElementById("myCodexButton")?.addEventListener("click", open);
@@ -142,6 +149,7 @@
       else if (initialized && visible()) void refresh();
     },
     shown() { if (initialized) void refresh(); },
+    layoutChanged() { render(); },
   };
   render();
 })();

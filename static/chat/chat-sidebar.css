@@ -285,6 +285,53 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .settings-group-body {
   border-top: 1px solid var(--border);
 }
+.settings-fold > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.settings-fold > summary::-webkit-details-marker { display: none; }
+.settings-fold > summary::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border: solid var(--text-muted);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+  margin-right: 4px;
+}
+.settings-fold[open] > summary::after { transform: rotate(45deg); }
+.settings-fold > summary:focus-visible { outline: 2px solid var(--focus-border); outline-offset: 2px; }
+.settings-fold-major > summary { flex-wrap: wrap; }
+.settings-fold-major > summary h3 { flex: 1; }
+.settings-fold-major > summary p { order: 1; flex-basis: 100%; margin-top: -7px; }
+.settings-account-provider {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+}
+#settingsOtherAccountProviders:empty { display: none; }
+.settings-account-provider > summary { font-size: 15px; font-weight: 640; }
+.settings-account-scope, .settings-account-public { margin: 0 0 14px; padding: 4px 0 4px 12px; border-left: 2px solid var(--border); }
+.settings-account-scope > h4 { margin: 0 0 6px; color: var(--text-secondary); font-size: 13px; font-weight: 620; }
+.settings-account-public > summary { color: var(--text-secondary); font-weight: 620; }
+.settings-account-scope .settings-group { margin-bottom: 6px; }
+.settings-account-scope .settings-group-header { margin: 0; }
+.settings-account-scope .settings-group-header h3 { font-size: 14px; }
+.settings-account-scope .settings-group-body { padding: 8px 0; border-top: 0; }
+.settings-account-public > :is(div, p) { min-width: 0; overflow-wrap: anywhere; }
+.settings-source-editor form { display: grid; gap: 8px; align-items: start; }
+.settings-source-editor form > button { justify-self: start; }
+.settings-source-editor fieldset { min-width: 0; border: 1px solid var(--border); border-radius: 8px; }
+.settings-source-members { overflow: auto; max-height: 12rem; margin-top: 6px; }
+.settings-source-members label { display: block; padding: 4px; overflow-wrap: anywhere; }
+.settings-source-members label[hidden] { display: none; }
+.settings-people-search { margin: 12px 0; max-width: 420px; }
 .settings-guide-footer {
   border-top: 1px solid var(--border);
   padding-top: 18px;

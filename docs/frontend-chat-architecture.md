@@ -69,6 +69,15 @@ Settings values are ignored. Deferred Session loading preserves a newer user
 choice, including closing Settings before that load finishes. The navigation
 regressions live in `tests/test-monitor-navigation-race.mjs`.
 
+Settings opens with [Accounts](model-source-sharing.md) first. In each provider,
+Personal and Group show the relevant bindings; Public starts collapsed and its
+native login status is fetched when opened. The Settings directory opens a
+collapsed destination when selected, and old account anchors still resolve.
+People is collapsed near the bottom and renders the searchable directory on
+open. The current user's Session view stays in Sessions; advanced Auto routing
+also starts collapsed. Voice settings are under This device. Connections keeps
+external-service authorization, not model-provider or voice configuration.
+
 New Sessions start in Auto. Switching to Custom without an existing concrete
 selection uses `gpt-6.2-sol` with `low` effort. Keep the fallback values in
 `bootstrap.js`, `sidebar-ui.js`, and `tooling.js` aligned with

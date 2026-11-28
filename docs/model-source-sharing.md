@@ -1,7 +1,10 @@
 # Model source sharing: personal, group and public
 
-In **Settings → Model sources** (`/?tab=settings#settings-model-sources`), the
-binding owner selects the scope and confirms the member list. Groups are fixed
+In **Settings → Accounts** (`/?tab=settings#settings-accounts`), open a provider
+and then the binding's **Manage sharing** control. The owner selects the scope
+and confirms the member list. The binding is shown in its current scope; Public
+starts collapsed. The older `#settings-model-sources` link still opens Accounts
+with Codex expanded. Groups are fixed
 lists of verified RemoteLab People, not Feishu chats. Web and linked Feishu
 identities refer to the same People. An invite gives invocation rights, never
 ownership or the ability to delegate. Administrator status is not a grant.

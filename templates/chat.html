@@ -316,55 +316,29 @@
             <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
           </header>
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
-            <a class="settings-toc-link" href="#settings-personal-antigravity" data-settings-target="settings-personal-antigravity" id="personalAntigravityNav" hidden>我的 Antigravity</a>
-            <a class="settings-toc-link" href="#settings-personal-codex" data-settings-target="settings-personal-codex" data-personal-codex-title data-personal-codex-access hidden>我的 Codex</a>
-            <a class="settings-toc-link" href="#settings-model-sources" data-settings-target="settings-model-sources">模型来源</a>
-            <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
+            <a class="settings-toc-link active" href="#settings-accounts" data-settings-target="settings-accounts" aria-current="location" data-i18n="settings.accounts.title">Accounts</a>
+            <a class="settings-toc-link" href="#settings-general" data-settings-target="settings-general" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
-            <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">消息</a>
-            <a class="settings-toc-link" href="#settings-people" data-settings-target="settings-people" data-i18n="settings.group.people">People</a>
+            <a class="settings-toc-link" href="#settings-message-replies" data-settings-target="settings-message-replies" data-i18n="settings.replies.title">Messages</a>
             <a class="settings-toc-link" href="#settings-personal-memory" data-settings-target="settings-personal-memory" data-personal-memory-title>个人记忆</a>
             <a class="settings-toc-link" href="#settings-connections" data-settings-target="settings-connections" data-i18n="settings.group.connections">Connections</a>
             <a class="settings-toc-link" href="#settings-device" data-settings-target="settings-device" data-i18n="settings.group.device">This device</a>
+            <a class="settings-toc-link" href="#settings-people" data-settings-target="settings-people" data-i18n="settings.group.people">People</a>
           </nav>
 
           <div class="settings-content">
-            <section class="settings-group" id="settings-personal-antigravity" data-settings-section hidden>
-              <div class="settings-group-header">
-                <h3>我的 Antigravity</h3>
-                <p>在 Index 对话中选用「Antigravity · 个人 Google」时，本次请求使用你自己的 Google Antigravity 额度。</p>
-              </div>
-              <div class="settings-group-body personal-codex">
-                <p id="personalAntigravityStatus" role="status">未连接</p>
-                <div class="settings-app-actions">
-                  <button id="personalAntigravitySetup" type="button" class="settings-app-btn personal-codex-primary" aria-expanded="false" aria-controls="personalAntigravityLogin">连接个人 Gemini</button>
-                  <button id="personalAntigravityDisconnect" type="button" class="settings-app-btn" hidden>断开连接</button>
-                </div>
-                <div id="personalAntigravityLogin" class="personal-codex-device" hidden>
-                  <ol>
-                    <li><a href="api/personal-antigravity/worker" download>下载连接程序</a>。电脑需要 Node.js 22 或更新版本和 Antigravity CLI。</li>
-                    <li>进入下载连接程序的目录，在终端运行下方命令并用自己的 Google 账号登录，然后退出 Antigravity。已有登录可跳过这步。
-                      <p><code>node personal-antigravity-device.mjs --login</code></p>
-                    </li>
-                    <li>运行连接命令，再生成连接码并粘贴到终端。连接码 5 分钟内有效。
-                      <p><code id="personalAntigravityConnectCommand"></code></p>
-                      <button id="personalAntigravityPair" type="button" class="settings-app-btn">生成连接码</button>
-                      <code id="personalAntigravityCode"></code>
-                    </li>
-                    <li>在终端选择日常模式或逐条确认，保持连接程序运行。开启日常模式后，你在 Index 网页私人会话中选用个人 Gemini 时，可以直接发送消息。</li>
-                  </ol>
-                  <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">检查连接</button>
-                </div>
-              </div>
-            </section>
-            <section class="settings-group" id="settings-model-sources" data-settings-section>
-              <div class="settings-group-header"><h3>模型来源</h3><p>管理个人、小组和公用的模型调用权限。公用 Codex 账号仍在「连接」中管理。</p></div>
-              <div class="settings-group-body personal-codex">
-                <button class="settings-app-btn" type="button">刷新来源</button>
-                <p role="status"></p><div data-model-source-content></div>
-              </div>
-            </section>
-            <section class="settings-group" id="settings-personal-codex" data-settings-section data-personal-codex-access hidden>
+            <section class="settings-group" id="settings-accounts" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.accounts.title">Accounts</h3>
+                <p data-i18n="settings.accounts.note">Choose a provider to manage personal, group and public model accounts.</p>
+              </header>
+              <p class="settings-section-note" id="settings-model-sources" role="status" hidden></p>
+              <details class="settings-fold settings-account-provider" id="settings-accounts-codex">
+                <summary>Codex</summary>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.personal">Personal</h4>
+                  <div data-codex-binding="personal">
+            <section class="settings-group" id="settings-personal-codex" data-personal-codex-access hidden>
               <header class="settings-group-header">
                 <h3 data-personal-codex-title>我的 Codex</h3>
                 <p id="personalCodexIntro">绑定你自己的 ChatGPT 账号，仅用于你发起的 Codex 任务。</p>
@@ -398,6 +372,99 @@
                 <p id="personalCodexError" role="alert" hidden></p>
                 <p id="personalCodexFeedback" role="status" hidden></p>
               </div>
+            </section>
+                  </div>
+                  <div data-source-slot="codex:personal"></div>
+                </div>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.group">Group</h4>
+                  <div data-codex-binding="group"></div>
+                  <div data-source-slot="codex:group"></div>
+                </div>
+                <details class="settings-fold settings-account-public" data-account-public="codex">
+                  <summary data-i18n="settings.accounts.shared">Public</summary>
+                  <div id="settingsCodexAuthMount"></div>
+                  <p class="settings-section-note" id="settingsCodexPublicNote" data-i18n="settings.accounts.codexPublic">The instance uses its existing public pool. Only administrators can manage it.</p>
+                  <div data-source-slot="codex:shared"></div>
+                </details>
+              </details>
+              <details class="settings-fold settings-account-provider" id="settings-accounts-claude">
+                <summary>Claude</summary>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.personal">Personal</h4>
+                  <div data-source-slot="claude:personal"></div>
+                </div>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.group">Group</h4>
+                  <div data-source-slot="claude:group"></div>
+                </div>
+                <details class="settings-fold settings-account-public" data-account-public="claude">
+                  <summary data-i18n="settings.accounts.shared">Public</summary>
+                  <div id="settingsClaudeAuthMount"></div>
+                  <div data-source-slot="claude:shared"></div>
+                </details>
+              </details>
+              <details class="settings-fold settings-account-provider" id="settings-accounts-google" hidden>
+                <summary id="personalAntigravityNav">Google / Antigravity</summary>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.personal">Personal</h4>
+            <section class="settings-group" id="settings-personal-antigravity" hidden>
+              <div class="settings-group-header">
+                <h3>我的 Antigravity</h3>
+                <p>在 Index 对话中选用「Antigravity · 个人 Google」时，本次请求使用你自己的 Google Antigravity 额度。</p>
+              </div>
+              <div class="settings-group-body personal-codex">
+                <p id="personalAntigravityStatus" role="status">未连接</p>
+                <div class="settings-app-actions">
+                  <button id="personalAntigravitySetup" type="button" class="settings-app-btn personal-codex-primary" aria-expanded="false" aria-controls="personalAntigravityLogin">连接个人 Gemini</button>
+                  <button id="personalAntigravityDisconnect" type="button" class="settings-app-btn" hidden>断开连接</button>
+                </div>
+                <div id="personalAntigravityLogin" class="personal-codex-device" hidden>
+                  <ol>
+                    <li><a href="api/personal-antigravity/worker" download>下载连接程序</a>。电脑需要 Node.js 22 或更新版本和 Antigravity CLI。</li>
+                    <li>进入下载连接程序的目录，在终端运行下方命令并用自己的 Google 账号登录，然后退出 Antigravity。已有登录可跳过这步。
+                      <p><code>node personal-antigravity-device.mjs --login</code></p>
+                    </li>
+                    <li>运行连接命令，再生成连接码并粘贴到终端。连接码 5 分钟内有效。
+                      <p><code id="personalAntigravityConnectCommand"></code></p>
+                      <button id="personalAntigravityPair" type="button" class="settings-app-btn">生成连接码</button>
+                      <code id="personalAntigravityCode"></code>
+                    </li>
+                    <li>在终端选择日常模式或逐条确认，保持连接程序运行。开启日常模式后，你在 Index 网页私人会话中选用个人 Gemini 时，可以直接发送消息。</li>
+                  </ol>
+                  <button id="personalAntigravityRefresh" type="button" class="settings-app-btn">检查连接</button>
+                </div>
+              </div>
+            </section>
+                  <div data-source-slot="google:personal"></div>
+                </div>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.group">Group</h4>
+                  <div data-source-slot="google:group"></div>
+                </div>
+                <details class="settings-fold settings-account-public" data-account-public="google">
+                  <summary data-i18n="settings.accounts.shared">Public</summary>
+                  <div data-source-slot="google:shared"></div>
+                </details>
+              </details>
+              <details class="settings-fold settings-account-provider" id="settings-accounts-pi">
+                <summary>Pi</summary>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.personal">Personal</h4>
+                  <div data-source-slot="pi:personal"></div>
+                </div>
+                <div class="settings-account-scope">
+                  <h4 data-i18n="settings.accounts.group">Group</h4>
+                  <div data-source-slot="pi:group"></div>
+                </div>
+                <details class="settings-fold settings-account-public" data-account-public="pi">
+                  <summary data-i18n="settings.accounts.shared">Public</summary>
+                  <div id="settingsPiAuthMount"></div>
+                  <p class="settings-section-note" data-i18n="settings.accounts.piCodex">Pi with OpenAI Codex uses the account scopes under Codex.</p>
+                  <div data-source-slot="pi:shared"></div>
+                </details>
+              </details>
+              <div id="settingsOtherAccountProviders"></div>
             </section>
             <section class="settings-group" id="settings-general" data-settings-section>
               <header class="settings-group-header">
@@ -455,8 +522,8 @@
                     <select class="settings-inline-select" id="sessionAutoArchiveSelect" aria-label="Choose auto archive delay" data-i18n-aria-label="settings.autoArchive.ariaLabel"></select>
                   </div>
                 </div>
-                <div class="settings-section" id="autoRoutingSettingsSection">
-                  <div class="settings-section-title" data-i18n="settings.autoRouting.title">Auto routing</div>
+                <details class="settings-section settings-fold" id="autoRoutingSettingsSection">
+                  <summary class="settings-section-title" data-i18n="settings.autoRouting.title">Auto routing</summary>
                   <div class="settings-section-note" data-i18n="settings.autoRouting.note">Configure the five tiers for new Sessions and the Quick reply prompt.</div>
                   <div class="auto-routing-tier-grid" id="autoRoutingTierGrid"></div>
                   <label class="settings-person-field auto-routing-prompt-field">
@@ -476,7 +543,7 @@
                     <span class="settings-section-note" id="autoRoutingPreviewResult" role="status" aria-live="polite"></span>
                   </div>
                   <pre class="auto-routing-preview-details" id="autoRoutingPreviewDetails" hidden></pre>
-                </div>
+                </details>
                 <div class="settings-section">
                   <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
                   <div class="settings-apps-list" id="settingsSessionPresentationList">
@@ -551,44 +618,6 @@
               </div>
             </section>
 
-            <section class="settings-group" id="settings-people" data-settings-section>
-              <header class="settings-group-header">
-                <h3 data-i18n="settings.group.people">People</h3>
-                <p data-i18n="settings.group.peopleNote">Profiles and sign-in methods for this shared instance.</p>
-              </header>
-              <div class="settings-group-body">
-                <div class="settings-section settings-people-section">
-                  <div class="settings-section-heading">
-                    <div>
-                      <div class="settings-section-title" data-i18n="settings.people.title">People</div>
-                      <div class="settings-section-note" data-i18n="settings.people.note">Ordinary users can access only Sessions they created. Administrators can access all Sessions.</div>
-                    </div>
-                    <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
-                  </div>
-                  <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
-                    <div class="settings-person-profile-grid">
-                      <label class="settings-person-field">
-                        <span data-i18n="settings.people.nameLabel">Name</span>
-                        <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
-                      </label>
-                      <label class="settings-person-field">
-                        <span data-i18n="settings.people.handleLabel">Username</span>
-                        <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
-                      </label>
-                    </div>
-                    <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
-                    <div class="settings-person-form-actions">
-                      <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
-                      <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
-                    </div>
-                  </div>
-                  <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
-                  <div class="settings-people-list" id="settingsPeopleList"></div>
-                  <a id="administratorManagementLink" href="/admin/session-administrators" hidden>管理员授权</a>
-                </div>
-              </div>
-            </section>
-
             <section class="settings-group" id="settings-connections" data-settings-section>
               <header class="settings-group-header">
                 <h3 data-i18n="settings.group.connections">Connections</h3>
@@ -602,8 +631,17 @@
                     <div class="settings-app-empty" data-i18n="settings.connectors.loading">Loading connectors…</div>
                   </div>
                 </div>
-                <div class="settings-section">
-                  <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-device" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.device">This device</h3>
+                <p data-i18n="settings.group.deviceNote">Browser notifications and app installation.</p>
+              </header>
+              <div class="settings-group-body">
+                <details class="settings-section settings-fold" id="settings-voice">
+                  <summary class="settings-section-title" data-i18n="settings.voice.title">Voice Input</summary>
                   <div class="settings-voice-shortcut">
                     <div class="settings-section-title" data-i18n="settings.voiceShortcut.title">Voice input shortcut</div>
                     <div class="settings-section-note" data-i18n="settings.voiceShortcut.note">Personal setting. Off with no keys assigned by default; works only while this page is active.</div>
@@ -676,16 +714,7 @@
                       <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
                     </div>
                   </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="settings-group" id="settings-device" data-settings-section>
-              <header class="settings-group-header">
-                <h3 data-i18n="settings.group.device">This device</h3>
-                <p data-i18n="settings.group.deviceNote">Browser notifications and app installation.</p>
-              </header>
-              <div class="settings-group-body">
+                </details>
                 <div class="settings-section" id="settingsPushSection" hidden>
                   <div class="settings-section-title" data-i18n="settings.push.title">Browser notifications</div>
                   <div class="settings-section-note" id="settingsPushStatus" role="status" aria-live="polite"></div>
@@ -705,6 +734,47 @@
                 </div>
               </div>
             </section>
+            <details class="settings-group settings-fold settings-fold-major" id="settings-people" data-settings-section>
+              <summary class="settings-group-header">
+                <h3 data-i18n="settings.group.people">People</h3>
+                <p data-i18n="settings.group.peopleNote">Profiles and sign-in methods for this shared instance.</p>
+              </summary>
+              <div class="settings-group-body">
+                <div class="settings-section settings-people-section">
+                  <div class="settings-section-heading">
+                    <div>
+                      <div class="settings-section-note" data-i18n="settings.people.note">Ordinary users can access only Sessions they created. Administrators can access all Sessions.</div>
+                    </div>
+                    <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
+                  </div>
+                  <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
+                    <div class="settings-person-profile-grid">
+                      <label class="settings-person-field">
+                        <span data-i18n="settings.people.nameLabel">Name</span>
+                        <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
+                      </label>
+                      <label class="settings-person-field">
+                        <span data-i18n="settings.people.handleLabel">Username</span>
+                        <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
+                      </label>
+                    </div>
+                    <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
+                    <div class="settings-person-form-actions">
+                      <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
+                      <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
+                    </div>
+                  </div>
+                  <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
+                  <label class="settings-person-field settings-people-search"><span data-i18n="settings.accounts.peopleSearch">Find people</span>
+                    <input class="settings-inline-input" id="settingsPeopleSearch" type="search" autocomplete="off" data-i18n-placeholder="settings.accounts.peopleSearchHint" placeholder="Search by name or username">
+                  </label>
+                  <p class="settings-section-note" id="settingsPeopleEmpty" data-i18n="settings.accounts.peopleEmpty" hidden>No matching people.</p>
+                  <div class="settings-people-list" id="settingsPeopleList"></div>
+                  <a id="administratorManagementLink" href="/admin/session-administrators" hidden>管理员授权</a>
+                </div>
+              </div>
+            </details>
+
             <footer class="settings-guide-footer">
               <a id="settingsSystemGuideLink" href="https://zhangyu.jiujianian.dev/public-pages/remotelab-architecture-atlas/project.html" target="_blank" rel="noopener noreferrer" aria-label="RemoteLab system guide (opens in a new tab)" data-i18n-aria-label="settings.guide.ariaLabel">
                 <span data-i18n="settings.guide.title">RemoteLab system guide</span><span aria-hidden="true">↗</span>

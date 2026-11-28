@@ -196,6 +196,9 @@ try {
         assert.equal(await deniedPage.locator(selector).isVisible(), false, who + ' cannot see ' + selector);
       }
       if (who === 'admin') {
+        await deniedPage.goto(base + '/?tab=settings&skipInstall=1#settings-accounts-codex');
+        await deniedPage.locator('#settings-accounts-codex[open]').waitFor();
+        await deniedPage.locator('[data-account-public="codex"]:not([open]) > summary').click();
         await deniedPage.locator('#settingsCodexAuthSection').waitFor({ timeout: 5000 }).catch(async error => {
           console.error(JSON.stringify({ pageErrors, ui: await deniedPage.evaluate(() => ({
             auth: window.__REMOTELAB_BOOTSTRAP__?.auth, person: currentPerson,
@@ -204,6 +207,13 @@ try {
           throw error;
         });
         assert(!(await deniedPage.locator('#settingsCodexScopeNote').innerText()).includes('我的 Codex'));
+        await deniedPage.locator('[data-settings-target="settings-people"]').click();
+        const findPeople = deniedPage.locator('#settingsPeopleSearch');
+        await findPeople.fill('@b');
+        await deniedPage.locator('#settingsPeopleList [data-person-id="person_b"] > summary').waitFor();
+        assert.equal(await deniedPage.locator('#settingsPeopleList [data-person-id="person_a"]').count(), 0);
+        await findPeople.fill('not-a-test-user');
+        await deniedPage.locator('#settingsPeopleEmpty').waitFor();
       } else assert.equal(await deniedPage.locator('#settingsCodexAuthSection').count(), 0);
       assert.deepEqual(personalRequests, [], 'hidden preview performs no personal API requests');
       assert.deepEqual(pageErrors, []);
@@ -213,16 +223,34 @@ try {
     await context.addCookies([{ name: 'session_token', value: 'a', url: base }]);
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(base + '/?tab=settings&skipInstall=1#settings-model-sources');
-    const sharing = page.locator('#settings-model-sources form').filter({ hasText: '我的 Codex 绑定' });
+    await page.goto(base + '/?tab=settings&skipInstall=1');
+    await page.locator('#settingsPanel.visible').waitFor();
+    assert.equal(await page.locator('.settings-content > [data-settings-section]').first().getAttribute('id'), 'settings-accounts');
+    assert.equal(await page.locator('#settings-people').evaluate(node => node.open), false);
+    assert.equal(await page.locator('#settings-accounts-codex').evaluate(node => node.open), false);
+    await page.locator('#settings-accounts-codex > summary').click();
+    assert.equal(await page.locator('[data-account-public="codex"]').evaluate(node => node.open), false);
+    const editor = page.locator('[data-source-editor="/codex-sharing"]');
+    await editor.locator('summary').click();
+    const sharing = editor.locator('form');
     await sharing.locator('select').selectOption('group');
+    await sharing.locator('input[type=search]').fill('@c');
+    assert.equal(await sharing.locator('input[value="person_b"]').isVisible(), false);
     await sharing.locator('input[value="person_c"]').check();
     await sharing.getByRole('button', { name: '确认并保存范围' }).click();
-    await page.getByRole('status').filter({ hasText: '已保存。' }).waitFor();
+    await page.getByRole('status').filter({ hasText: '共享范围已保存。' }).waitFor();
+    assert.equal(await page.locator('[data-codex-binding="group"] #settings-personal-codex').isVisible(), true);
+    assert.equal(await editor.evaluate(node => node.parentElement.dataset.sourceSlot), 'codex:group');
     assert.deepEqual((await call('c', '/api/model-sources')).codex.groups.map(group => group.id), [a.id]);
     await sharing.locator('select').selectOption('personal');
     await sharing.getByRole('button', { name: '确认并保存范围' }).click();
     await waitFor(async () => !(await call('c', '/api/model-sources')).codex.groups.length, 'group revocation through settings UI');
+    await page.locator('[data-settings-target="settings-people"]').click();
+    await page.locator('#settingsPeopleList [data-person-id="person_a"] > summary').waitFor();
+    assert.equal(await page.locator('#settingsPeopleList [data-person-id="person_b"]').count(), 0);
+    assert.equal(await page.locator('#settings-voice').evaluate(node => node.open), false);
+    await page.goto(base + '/?tab=settings&skipInstall=1#settings-model-sources');
+    await page.locator('#settings-accounts-codex[open] > summary').waitFor();
     await page.goto(base + '/?tab=settings&skipInstall=1#settings-personal-codex');
     await page.locator('#personalCodexStatus').filter({ hasText: /已绑定|Bound/ }).waitFor().catch(async error => {
       console.error({ url: page.url(), errors, body: (await page.locator('body').innerText()).slice(0, 3500) }); throw error;

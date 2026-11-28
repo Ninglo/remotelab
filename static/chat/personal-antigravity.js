@@ -49,7 +49,10 @@
   window.remotelabPersonalAntigravity = {
     init(auth) {
       panel.hidden = auth?.features?.personalAntigravityBinding !== true;
-      field('Nav').hidden = panel.hidden;
+      const provider = panel.closest('.settings-account-provider');
+      if (provider) provider.hidden = panel.hidden && provider.dataset.hasSources !== 'true';
+      else if (field('Nav')) field('Nav').hidden = panel.hidden;
+      if (!panel.hidden && location.hash === '#settings-personal-antigravity') window.remotelabOpenSettingsTarget?.(panel.id);
     },
     shown() { void update('status'); },
   };

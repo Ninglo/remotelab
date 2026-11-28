@@ -67,11 +67,24 @@ function initSettingsNavigation() {
     }
   };
 
+  const openTarget = target => {
+    for (let node = target; node && node !== settingsPanel; node = node.parentElement) {
+      if (node.tagName === "DETAILS") node.open = true;
+    }
+  };
+  window.remotelabOpenSettingsTarget = id => {
+    const target = document.getElementById(id);
+    if (!target || target.hidden || !settingsPanel.contains(target)) return;
+    openTarget(target);
+    target.scrollIntoView({ behavior: "auto", block: "start" });
+    setActiveSection(target.closest("[data-settings-section]")?.id);
+  };
   for (const link of links) {
     link.addEventListener("click", (event) => {
       const target = document.getElementById(link.dataset.settingsTarget || "");
       if (!target) return;
       event.preventDefault();
+      openTarget(target);
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
       target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
       setActiveSection(target.id);
@@ -105,13 +118,9 @@ function initSettingsNavigation() {
   window.addEventListener("resize", updateActiveSection);
   settingsToc.dataset.bound = "true";
   updateActiveSection();
-  const linkedSection = document.getElementById(window.location.hash.slice(1));
-  if (linkedSection && !linkedSection.hidden && sections.includes(linkedSection)) {
-    window.requestAnimationFrame(() => {
-      linkedSection.scrollIntoView({ behavior: "auto", block: "start" });
-      setActiveSection(linkedSection.id);
-    });
-  }
+  const anchor = () => window.remotelabOpenSettingsTarget(window.location.hash.slice(1));
+  window.requestAnimationFrame(anchor);
+  window.addEventListener("hashchange", anchor);
 }
 
 function getSessionAutoArchiveOptions() {
@@ -527,14 +536,23 @@ async function renderPeopleSettings({ refresh = false } = {}) {
   const people = getPeopleDirectory();
   renderCurrentPersonSettings(people);
   renderVoiceShortcutSettings(people);
+  if (!document.getElementById("settings-people")?.open) return;
+  const search = document.getElementById("settingsPeopleSearch")?.value.trim().toLocaleLowerCase().replace(/^@/, "") || "";
+  const expanded = new Set([...settingsPeopleList.querySelectorAll("details[open]")].map(card => card.dataset.personId));
   const visiblePeople = people
-    .filter((person) => person.system !== true)
+    .filter(person => person.system !== true && [person.name, person.handle].some(value => String(value || "").toLocaleLowerCase().includes(search)))
     .sort((left, right) => {
       if (left.id === currentPerson?.id) return -1;
       if (right.id === currentPerson?.id) return 1;
       return String(left.name || "").localeCompare(String(right.name || ""));
     });
-  settingsPeopleList.replaceChildren(...visiblePeople.map((person) => buildPersonCard(person)));
+  settingsPeopleList.replaceChildren(...visiblePeople.map(person => {
+    const card = buildPersonCard(person);
+    card.dataset.personId = person.id;
+    card.open = expanded.has(person.id);
+    return card;
+  }));
+  document.getElementById("settingsPeopleEmpty").hidden = visiblePeople.length > 0;
 }
 
 function setPersonCreateExpanded(expanded) {
@@ -551,6 +569,10 @@ function resetPersonCreateForm() {
 
 function initPeopleSettings() {
   if (!settingsPeopleList) return;
+  document.getElementById("settingsPeopleSearch")?.addEventListener("input", () => void renderPeopleSettings());
+  document.getElementById("settings-people")?.addEventListener("toggle", event => {
+    if (event.currentTarget.open) void renderPeopleSettings({ refresh: true });
+  });
   settingsPersonCreateToggle?.addEventListener("click", () => {
     setPersonCreateExpanded(settingsPersonCreatePanel?.hidden !== false);
   });
@@ -745,8 +767,8 @@ function ensureCodexAuthSection() {
     </div>
     <div class="settings-app-empty inline-status" id="settingsCodexAuthError" hidden></div>
   `;
-  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
-  if (connectionsBody) connectionsBody.prepend(section);
+  const mount = document.getElementById("settingsCodexAuthMount");
+  if (mount) mount.append(section);
   else settingsPanel.prepend(section);
   document.getElementById("settingsCodexAuthCheckBtn")?.addEventListener("click", () => {
     void refreshCodexAuthStatus({ force: true });
@@ -1196,10 +1218,8 @@ function ensurePiAuthSection() {
     </div>
     <div class="settings-app-empty inline-status" id="settingsPiAuthError" hidden></div>
   `;
-  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
-  const codexSection = document.getElementById("settingsCodexAuthSection");
-  if (codexSection?.parentElement === connectionsBody) codexSection.after(section);
-  else if (connectionsBody) connectionsBody.prepend(section);
+  const mount = document.getElementById("settingsPiAuthMount");
+  if (mount) mount.append(section);
   else settingsPanel.prepend(section);
   document.getElementById("settingsPiAuthCheckBtn")?.addEventListener("click", () => {
     void refreshPiAuthStatus({ force: true });
@@ -1411,10 +1431,8 @@ function ensureClaudeAuthSection() {
     </div>
     <div class="settings-app-empty inline-status" id="settingsClaudeAuthError" hidden></div>
   `;
-  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
-  const piSection = document.getElementById("settingsPiAuthSection");
-  if (piSection?.parentElement === connectionsBody) piSection.after(section);
-  else if (connectionsBody) connectionsBody.prepend(section);
+  const mount = document.getElementById("settingsClaudeAuthMount");
+  if (mount) mount.append(section);
   else settingsPanel.prepend(section);
   document.getElementById("settingsClaudeAuthCheckBtn")?.addEventListener("click", () => { void refreshClaudeAuthStatus(); });
   document.getElementById("settingsClaudeAuthLoginBtn")?.addEventListener("click", () => { void startClaudeLogin(); });
@@ -2789,11 +2807,8 @@ function renderSettingsSessionPresentationPanel() {
 initUiLanguageSettings();
 initSettingsNavigation();
 ensureCodexAuthSection();
-void refreshCodexAuthStatus({ includeUsage: false });
 ensurePiAuthSection();
-void refreshPiAuthStatus();
 ensureClaudeAuthSection();
-void refreshClaudeAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
@@ -2805,13 +2820,16 @@ initPushNotificationSettings();
 void renderSettingsConnectorsPanel();
 renderSettingsSessionPresentationPanel();
 
+for (const [provider, refresh] of [["codex", () => refreshCodexAuthStatus({ force: true })], ["pi", refreshPiAuthStatus], ["claude", refreshClaudeAuthStatus]]) {
+  settingsPanel?.querySelector(`details[data-account-public="${provider}"]`)?.addEventListener("toggle", event => {
+    if (event.currentTarget.open) void refresh();
+  });
+}
+
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
   tabSettings.addEventListener("click", () => {
     renderPushNotificationSettings();
-    void refreshCodexAuthStatus({ force: true });
-    void refreshPiAuthStatus({ force: true });
-    void refreshClaudeAuthStatus();
-    void renderPeopleSettings({ refresh: true });
+    if (document.getElementById("settings-people")?.open) void renderPeopleSettings({ refresh: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
   tabSettings.dataset.connectorsBound = "true";

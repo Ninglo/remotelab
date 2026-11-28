@@ -37,7 +37,9 @@ export async function handleModelSourceRoutes({ req, res, pathname, authSession,
         if (!owned && !canUseModelSource(record, personId)) continue;
         const tool = await getToolDefinitionAsync(record.id);
         if (!tool || (record.id !== LEGACY_CLAUDE_SOURCE && !tool.managedProviderSource)) continue;
-        sources.push({ id: record.id, name: tool.name, scope: record.scope, owned, enabled: record.enabled,
+        const provider = record.id === LEGACY_CLAUDE_SOURCE || tool.runtimeFamily === 'claude-stream-json' ? 'claude'
+          : ({ 'codex-json': 'codex', 'antigravity-stream-json': 'google', 'pi-json': 'pi' })[tool.runtimeFamily] || '';
+        sources.push({ id: record.id, name: tool.name, provider, scope: record.scope, owned, enabled: record.enabled,
           ...(owned ? { revision: record.revision, memberPersonIds: record.memberPersonIds } : {}) });
       }
       const canBindCodex = isPersonalCodexAvailable(authSession);

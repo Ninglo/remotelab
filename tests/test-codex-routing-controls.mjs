@@ -85,7 +85,9 @@ try {
         await page.goto(base + '/login'); await page.click('#toggle-link');
         await page.fill('#token-input', people.find(p => p.id === who).credentials[0].token);
         await Promise.all([page.waitForURL(base + '/'), page.click('#token-form button')]);
-        await page.goto(base + '/?tab=settings#settings-connections');
+        await page.goto(base + '/?tab=settings#settings-accounts-codex');
+        const openPublic = () => page.locator('[data-account-public="codex"]:not([open]) > summary').click();
+        await openPublic();
         if (who === 'member') {
           assert.equal(await page.locator('#settingsCodexAuthSection').count(), 0);
           assert.equal(await page.evaluate(async path => (await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -100,7 +102,7 @@ try {
           await limit.fill('3'); await priority.fill('1'); await save.click();
           await page.waitForFunction(() => !document.querySelector('[data-codex-allocation-save="default"]').disabled);
           assert.equal((await pool.account('default')).maxConcurrent, 3);
-          await page.reload(); await save.waitFor({ state: 'visible' });
+          await page.reload(); await openPublic(); await save.waitFor({ state: 'visible' });
           assert.equal(await limit.inputValue(), '3'); assert.equal(await priority.inputValue(), '1');
           assert.equal(await page.locator('#settingsCodexAuthSection').evaluate(el => el.scrollWidth > el.clientWidth), false,
             'allocation controls fit the mobile viewport');
@@ -113,7 +115,7 @@ try {
             return b && !b.disabled;
           });
           assert.equal((await pool.list()).accounts.find(a => a.id === 'default').routingEnabled, false);
-          await page.reload();
+          await page.reload(); await openPublic();
           await button.waitFor({ state: 'visible' });
           assert.equal(await enable.isEnabled(), true);
           await enable.click();
@@ -149,7 +151,7 @@ try {
           await page.locator(`[data-codex-routing-account="${backup.id}"][data-codex-account-action="remove"]`).click();
           await page.waitForFunction(id => !document.querySelector(`[data-codex-routing-account="${id}"]`), backup.id);
           assert.equal((await pool.list()).accounts.some(a => a.id === backup.id), false);
-          await page.reload();
+          await page.reload(); await openPublic();
           await button.waitFor({ state: 'visible' });
           assert.equal(await page.locator(`[data-codex-routing-account="${backup.id}"]`).count(), 0);
         }

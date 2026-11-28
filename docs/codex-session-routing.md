@@ -1,20 +1,20 @@
 # Codex personal binding and shared account allocation
 
 Users with binding access bind their own account from **My Codex** in the sidebar
-(also the first Settings section). Direct link: `/?tab=settings#settings-personal-codex`.
+or from **Settings → Accounts → Codex**. Direct link: `/?tab=settings#settings-personal-codex`.
 Choose **Bind my account**, copy the device code, authorize on the official
 OpenAI page and return. Status updates automatically while this page is open.
 No password or credential-file upload is required. The user may need to enable
 device-code authorization in ChatGPT's Security settings, or obtain workspace
 administrator enablement. [OpenAI device authorization](https://developers.openai.com/codex/auth#device-code-authorization).
 
-To grant selected people access to your binding, use [Model sources](model-source-sharing.md).
+To grant selected people access, use **Manage sharing** under your Codex binding in [Accounts](model-source-sharing.md).
 Shared Codex accounts still use the separate administrator-managed pool.
 
 The authenticated RemoteLab Person owns the binding. Browser and connector
 identities linked to that same Person use it; names and email similarity do not
 link identities. One personal account is supported per Person. Public account
-binding remains under **Settings → Connections → Shared Codex accounts** and
+binding is under **Settings → Accounts → Codex → Public** and
 requires administrator access.
 
 Personal binding is enabled per instance. Set
@@ -183,7 +183,7 @@ limit and priority, verify overflow and waiting in isolation, then deploy while
 preserving running work. Use the requested account values; do not tune limits
 automatically.”
 
-Settings → Connections → Shared Codex accounts has **Enable use**, **Temporarily
+Settings → Accounts → Codex → Public has **Enable use**, **Temporarily
 disable**, and **Remove** controls. New accounts default to enabled. Disabling
 preserves credentials and running executions; subsequent requests use the remaining
 eligible pool, even when automatic retry is off. Removing hides an entry and

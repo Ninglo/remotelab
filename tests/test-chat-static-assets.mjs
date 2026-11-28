@@ -396,13 +396,13 @@ async function main() {
     assert.doesNotMatch(page.text, /id="googleOAuthSaveBtn"/);
     assert.match(page.text, /id="voiceBtn"/);
     assert.match(page.text, /id="voiceAvailabilityStatus"/, 'disabled voice input should explain why next to the microphone');
-    const voiceSettingsHtml = page.text.match(/<div class="settings-section">\s*<div class="settings-section-title" data-i18n="settings.voice.title">[\s\S]*?<\/section>/)?.[0] || '';
+    const voiceSettingsHtml = page.text.match(/<details[^>]*id="settings-voice"[^>]*>[\s\S]*?<\/details>/)?.[0] || '';
     assert.match(voiceSettingsHtml, /id="voiceShortcutEnabled"/, 'shortcut toggle should be inside Voice Input settings');
     assert.match(voiceSettingsHtml, /id="voiceShortcutRecordBtn"/, 'recording should be visible even before enabling');
     assert.match(voiceSettingsHtml, /id="voiceShortcutClearBtn"/);
     assert.ok(voiceSettingsHtml.indexOf('id="voiceShortcutRecordBtn"') < voiceSettingsHtml.indexOf('id="voiceInputProviderSelect"'),
       'shortcut recording should appear before the speech service credentials, without scrolling through them');
-    assert.doesNotMatch(page.text.split('id="settings-sessions"')[1]?.split('id="settings-people"')[0] || '',
+    assert.doesNotMatch(page.text.split('id="settings-sessions"')[1]?.split('id="settings-message-replies"')[0] || '',
       /voiceShortcut/, 'shortcut must not appear under Session opening');
 
     const enabledWithoutKeys = await request(port, 'PATCH', '/api/people/person_alpha', {
